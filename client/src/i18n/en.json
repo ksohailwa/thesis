@@ -1,0 +1,58 @@
+{
+  "app": {
+    "title": "SpellLearn",
+    "login": "Login",
+    "signup": "Sign Up",
+    "logout": "Log out",
+    "teacher": "Teacher",
+    "student": "Student",
+    "join": "Join Session",
+    "code": "Code"
+  },
+  "help": {
+    "title": "Help",
+    "gapfill": "Type the word you hear. Correct letters turn green.",
+    "system": "We show the correct spelling and definition; confirm to proceed."
+  }
+  ,
+  "common": {
+    "check": "Check",
+    "hint": "Hint",
+    "reveal": "Reveal",
+    "confirm": "Confirm",
+    "back": "Back",
+    "next": "Next",
+    "start": "Start",
+    "submit": "Submit"
+  },
+  "gapFill": {
+    "tutorial": {
+      "title": "Quick Tutorial",
+      "1": "Listen to the story audio at the top. You can pause and seek.",
+      "2": "Type directly into the blanks. Press Enter to Check.",
+      "3": "Green means correct. Red means try again.",
+      "4": "Need help? Use the Hint button or Ctrl/Cmd+H."
+    },
+    "showHints": "Show Hints",
+    "hideHints": "Hide Hints",
+    "finish": "Finish Gap-Fill",
+    "jumpNext": "Jump to next incomplete"
+  },
+  "recall": {
+    "immediate": "Immediate Recall",
+    "delayed": "Delayed Recall",
+    "avg": "Average score",
+    "unlockAt": "Delayed recall unlocks at",
+    "gotoDelayed": "Go to delayed recall"
+  }
+  ,
+  "teacherHelp": {
+    "title": "Student Instructions (based on selected language)",
+    "targets": "Target words",
+    "previewReadonly": "Inputs are read-only here; students type answers in their session."
+  },
+  "app": {
+    "preview": "Preview",
+    "student": "Student"
+  }
+}

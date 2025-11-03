@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root { height: 100%; }
+body { @apply bg-gray-50 text-gray-900 font-sans antialiased; }
+.app-header { background: var(--panel); color: var(--fg); border-color: rgba(0,0,0,0.08); }
+body.theme-dark .app-header { border-color: rgba(255,255,255,0.12); }
+
+.focus-card { @apply max-w-xl mx-auto p-6 bg-white shadow rounded border; border-color: rgba(0,0,0,0.08); }
+.focus-wide { @apply w-full p-6 bg-white shadow rounded; }
+
+.sticky-audio { @apply sticky top-0 z-10 backdrop-blur border-b mb-2; background: var(--panel); }
+body.theme-dark .sticky-audio { background: rgba(31,41,55,0.92); }
+
+/* Theme toggles */
+.theme-dark { --bg: #111827; --fg: #F3F4F6; --panel: #1F2937; }
+.theme-light { --bg: #F8FAFC; --fg: #111827; --panel: #FFFFFF; }
+body.theme-dark { background: var(--bg); color: var(--fg); }
+body.theme-dark .focus-wide, body.theme-dark .focus-card { background: var(--panel); color: var(--fg); }
+body.theme-dark .sticky-audio { background: rgba(31,41,55,0.9); }
+
+/* Subtle feedback animations */
+@keyframes flash-green { 0% { background-color: #ecfdf5; } 100% { background-color: transparent; } }
+@keyframes flash-red { 0% { background-color: #fef2f2; } 100% { background-color: transparent; } }
+.flash-green { animation: flash-green 800ms ease-out; }
+.flash-red { animation: flash-red 800ms ease-out; }
+
+/* App-wide helpers */
+.container { max-width: 1100px; margin: 0 auto; padding-left: 1rem; padding-right: 1rem; }
+.section { @apply bg-white rounded border; border-color: rgba(0,0,0,0.08); }
+body.theme-dark .section { background: var(--panel); border-color: rgba(255,255,255,0.12); }
+.card { @apply bg-white rounded shadow; }
+body.theme-dark .card { background: var(--panel); }
+
+.btn { @apply inline-flex items-center justify-center px-3 py-2 rounded border transition; border-color: rgba(0,0,0,0.1); }
+.btn:hover { @apply bg-gray-100; }
+body.theme-dark .btn:hover { background: rgba(255,255,255,0.06); }
+.btn.primary { @apply text-white; background: #2563eb; border-color: #2563eb; }
+.btn.primary:hover { background: #1d4ed8; }
+.btn.ghost { background: transparent; }
+.btn.danger { @apply text-red-700; border-color: #fecaca; }
+
+.input, .select { @apply w-full border rounded px-3 py-2; border-color: rgba(0,0,0,0.12); background: white; }
+body.theme-dark .input, body.theme-dark .select { background: var(--panel); border-color: rgba(255,255,255,0.16); color: var(--fg); }
+
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.btn { @apply inline-flex items-center justify-center px-3 py-2 rounded border transition text-sm; border-color: rgba(0,0,0,0.12); }
+.btn:hover { @apply bg-gray-100; }
+body.theme-dark .btn:hover { background: rgba(255,255,255,0.06); }
+.btn.primary { @apply text-white; background: #2563eb; border-color: #2563eb; }
+.btn.primary:hover { background: #1d4ed8; }
+.input { @apply w-full border rounded px-3 py-2; border-color: rgba(0,0,0,0.12); background: white; }
+body.theme-dark .input { background: var(--panel); border-color: rgba(255,255,255,0.16); color: var(--fg); }

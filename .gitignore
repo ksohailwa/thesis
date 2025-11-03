@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+client/.vite/
+
+# Builds
+client/dist/
+server/dist/
+client/tsconfig.tsbuildinfo
+
+# Env & secrets
+.env
+*.env
+server/.env
+client/.env
+
+# Audio artifacts
+server/static/audio/
+
+# Logs & misc
+npm-debug.log*
+yarn-error.log*
+*.log
+.DS_Store
+.eslintcache
+
+# IDE/editor
+.vscode/
+.idea/
+
