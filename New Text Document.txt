@@ -1,1 +1,15 @@
 codex resume 019a1e9b-afb1-7ea2-9c35-6e20e31b1829
+intergrate feedback within the blank
+  after typing the word and clicking check no seperate boc for feedback,
+  the already typed letters turn green for right and red for wrong
+  Progress bar and “Next blank” button in the student toolbar.
+  add hint button beside check too
+  Highlight “current sentence” while listening and smooth-scroll on check
+  keeping both full audio and small
+      per-sentence segments only for UI timing
+  on wrong attempt stop the audio
+  resume when right
+  adjust audio speed based on the defr level, as the student are non native
+  english speaker
+
+   codex resume 019a4b8a-41dc-7741-9b02-6540dd4d4f4f

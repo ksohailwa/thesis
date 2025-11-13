@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import api from '../lib/api'
 import { toMessage } from '../lib/err'
 import { useAuth } from '../store/auth'
@@ -17,7 +17,7 @@ export default function Login() {
     e.preventDefault()
     try {
       setBusy(true)
-      const { data } = await api.post('/api/auth/login', { email, password })
+      const em = (email || '').trim(); const pw = (password || '').trim(); if (!em.includes('@')) { setError('Enter a valid email address'); setBusy(false); return } if (pw.length < 6) { setError('Password must be at least 6 characters'); setBusy(false); return } const { data } = await api.post('/api/auth/login', { email: em, password: pw })
       setAuth({ accessToken: data.accessToken, role: data.role, email: data.email })
       nav(data.role === 'teacher' ? '/teacher' : '/student/join')
     } catch (e: any) {
@@ -74,4 +74,8 @@ export default function Login() {
     </div>
   )
 }
+
+
+
+
 

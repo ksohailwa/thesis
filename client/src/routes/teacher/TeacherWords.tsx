@@ -56,7 +56,7 @@ export default function TeacherWords() {
     try {
       const { data } = await api.post(`/api/experiments/${id}/suggestions`);
       setSuggestions(data?.suggestions || []);
-      setStatus('Suggestions ready. Select up to 5.');
+      setStatus('Suggestions ready. Select up to 10.');
     } catch (e: any) {
       setStatus(e?.response?.data?.error || 'Failed to get suggestions');
     }
@@ -68,7 +68,7 @@ export default function TeacherWords() {
       const next = current.filter(x=>x!==w);
       setWords(next.join(', '));
     } else {
-      const next = [...current, w].slice(0, 5);
+      const next = [...current, w].slice(0, 10);
       setWords(next.join(', '));
     }
   }
@@ -97,9 +97,13 @@ export default function TeacherWords() {
     setBusyGen(true);
     setStatus('');
     try {
-      const { data } = await api.post(`/api/experiments/${id}/generate-stories`, { cefr: level, targetWords: arr });
-      const src = data?.used === 'openai' ? 'LLM' : 'Mock';
-      setStatus(`Stories generated (${src}).`);
+      // Generate stories then TTS in one go
+      const gen = await api.post(`/api/experiments/${id}/generate-stories`, { cefr: level, targetWords: arr });
+      const tts = await api.post(`/api/experiments/${id}/tts`, {});
+      const src = gen.data?.used === 'openai' ? 'LLM' : 'Mock';
+      setStatus(`Stories + TTS generated (${src}).`);
+      setTtsA(tts.data?.H?.url || '');
+      setTtsB(tts.data?.N?.url || '');
       await loadStories();
     } catch (e: any) {
       setStatus(e?.response?.data?.error || 'Generation failed');

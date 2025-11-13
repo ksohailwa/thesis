@@ -1,4 +1,4 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import { z } from 'zod';
 import { requireAuth, requireRole, AuthedRequest } from '../middleware/auth';
 import { Experiment } from '../models/Experiment';
@@ -11,6 +11,41 @@ const router = Router();
 function makeCode(n = 6) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   return Array.from({ length: n }, () => chars[Math.floor(Math.random()*chars.length)]).join('');
+}
+
+function splitParagraphSentences(paragraph: string): string[] {
+  const parts: string[] = [];
+  const re = /([^.!?]*[.!?])/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(paragraph))) parts.push(m[1].trim());
+  if (parts.length === 0 && paragraph.trim()) parts.push(paragraph.trim());
+  return parts;
+}
+
+function validateStory(words: string[], paragraphs: string[], occ: any[]) {
+  const violations: string[] = [];
+  if (!Array.isArray(paragraphs) || paragraphs.length !== 5) violations.push('Must have exactly 5 paragraphs.');
+  const sentencesPerP = paragraphs.map(p => splitParagraphSentences(p).length);
+  // counts
+  for (const w of words) {
+    const c = occ.filter((o:any)=>o.word===w).length;
+    if (c !== 4) violations.push(`Word "${w}" must appear exactly 4 times (got ${c}).`);
+  }
+  // per-sentence constraints
+  const byKey: Record<string, string[]> = {};
+  for (const o of occ) {
+    if (o.paragraphIndex < 0 || o.paragraphIndex >= paragraphs.length) violations.push('paragraphIndex out of range');
+    const sCount = sentencesPerP[o.paragraphIndex] ?? 0;
+    if (o.sentenceIndex < 0 || o.sentenceIndex >= sCount) violations.push('sentenceIndex out of range');
+    const key = `${o.paragraphIndex}:${o.sentenceIndex}`;
+    (byKey[key] ||= []).push(o.word);
+  }
+  for (const [key, arr] of Object.entries(byKey)) {
+    const unique = Array.from(new Set(arr));
+    if (arr.length !== unique.length) violations.push(`Duplicate same word in sentence ${key}`);
+    if (unique.length > 1) violations.push(`Multiple target words share sentence ${key}`);
+  }
+  return { ok: violations.length === 0, violations };
 }
 
 router.post('/', requireAuth, requireRole('teacher'), async (req: AuthedRequest, res) => {
@@ -33,7 +68,7 @@ router.post('/:id/target-words', requireAuth, requireRole('teacher'), async (req
   const schema = z.object({ targetWords: z.array(z.string()).min(1).max(10) });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const capped = parsed.data.targetWords.slice(0, 5);
+  const capped = parsed.data.targetWords.slice(0, 10);
   const exp = await Experiment.findByIdAndUpdate(req.params.id, { targetWords: capped }, { new: true });
   if (!exp) return res.status(404).json({ error: 'Not found' });
   res.json({ ok: true });
@@ -65,48 +100,108 @@ router.post('/:id/suggestions', requireAuth, requireRole('teacher'), async (req,
 
 // Generate 2 stories (A/B) with each selected word appearing exactly 4x, never twice in the same sentence.
 router.post('/:id/generate-stories', requireAuth, requireRole('teacher'), async (req: AuthedRequest, res) => {
-  const schema = z.object({ cefr: z.string().optional(), targetWords: z.array(z.string()).min(1).max(10), topic: z.string().optional() });
+  const schema = z.object({ cefr: z.string().optional(), targetWords: z.array(z.string()).max(10).optional(), topic: z.string().optional() });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const exp = await Experiment.findById(req.params.id);
   if (!exp) return res.status(404).json({ error: 'Not found' });
-  const words = parsed.data.targetWords.slice(0, 5);
+  const all = (parsed.data.targetWords && parsed.data.targetWords.length ? parsed.data.targetWords : (exp.targetWords || [])).slice(0, 10);
+  const wordsH = all.slice(0, 5);
+  const wordsN = all.slice(5, 10).length ? all.slice(5, 10) : all.slice(0, 5);
   const oa = getOpenAI();
 
   async function genOne(label: 'H'|'N') {
     let paragraphs: string[] = [];
     let occ: any[] = [];
-    if (oa) {
-      try {
-        const r = await oa.chat.completions.create({
-          model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-          response_format: { type: 'json_object' },
-          temperature: 0.8,
-          messages: [
-            { role: 'system', content: storySystem() },
-            { role: 'user', content: storyUser((parsed.data?.cefr as any) || (exp.cefr as any) || (exp.level as any) || 'B1', words, (parsed.data as any)?.topic || '')}
-          ]
-        });
-        const text = r.choices?.[0]?.message?.content || '{}';
-        const data = JSON.parse(text);
-        paragraphs = Array.isArray(data?.story?.paragraphs) ? data.story.paragraphs.slice(0,5) : [];
-        occ = Array.isArray(data?.story?.occurrences) ? data.story.occurrences : [];
-      } catch {}
-    }
-    // minimal fallback if LLM fails
-    if (!paragraphs.length) {
-      const paras = Array.from({ length: 5 }, (_, p) => `Paragraph ${p+1}.`);
-      paragraphs = paras;
-      occ = words.flatMap(w => [0,1,2,3].map(k => ({ word: w, paragraphIndex: k%5, sentenceIndex: 0, charStart: paras[k%5].length, charEnd: paras[k%5].length + w.length })));
-    }
+    const words = label === 'H' ? wordsH : wordsN;
+      if (oa) {
+        for (let attempt = 0; attempt < 2; attempt++) {
+          try {
+            const r = await oa.chat.completions.create({
+              model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+              response_format: { type: 'json_object' },
+              temperature: 0.8,
+              messages: [
+                { role: 'system', content: storySystem() },
+                { role: 'user', content: storyUser((parsed.data?.cefr as any) || (exp.cefr as any) || (exp.level as any) || 'B1', words, (parsed.data as any)?.topic || '')}
+              ]
+            });
+            const text = r.choices?.[0]?.message?.content || '{}';
+            const data = JSON.parse(text);
+            paragraphs = Array.isArray(data?.story?.paragraphs) ? data.story.paragraphs.slice(0,5) : [];
+            occ = Array.isArray(data?.story?.occurrences) ? data.story.occurrences : [];
+            const val = validateStory(words, paragraphs, occ);
+            if (val.ok) break;
+            paragraphs = [] as any;
+            occ = [] as any;
+          } catch {}
+        }
+      }
+      // strict fallback that enforces: 4x per word, never twice in a sentence, and no two words in the same sentence
+      if (!paragraphs.length) {
+        const baseSentences: string[] = [];
+        for (let p = 0; p < 5; p++) {
+          for (let s = 0; s < 4; s++) baseSentences.push(`A short sentence ${p+1}-${s+1}.`);
+        }
+        const assigned: { word: string; paragraphIndex: number; sentenceIndex: number }[] = [];
+        const N = words.length;
+        for (let i = 0; i < N; i++) {
+          for (let k = 0; k < 4; k++) {
+            const idx = i + k * N; // guarantees unique sentence
+            const paragraphIndex = Math.floor(idx / 4);
+            const sentenceIndex = idx % 4;
+            assigned.push({ word: words[i], paragraphIndex, sentenceIndex });
+          }
+        }
+        const byP: string[][] = [];
+        for (let p = 0; p < 5; p++) byP.push(baseSentences.slice(p*4, p*4+4));
+        const occLocal: any[] = [];
+        for (const a of assigned) {
+          const before = byP[a.paragraphIndex][a.sentenceIndex];
+          const insertion = ` ${a.word}`;
+          const charStart = before.length;
+          const charEnd = charStart + insertion.length;
+          byP[a.paragraphIndex][a.sentenceIndex] = before.replace(/[.!?]+$/, '') + insertion + '.';
+          occLocal.push({ word: a.word, paragraphIndex: a.paragraphIndex, sentenceIndex: a.sentenceIndex, charStart, charEnd });
+        }
+        paragraphs = byP.map(row => row.join(' '));
+        occ = occLocal;
+      }
     const map = label === 'H' ? 'A' : 'B';
     const s = await Story.findOneAndUpdate({ experiment: exp._id, label: map }, { experiment: exp._id, label: map, paragraphs, targetOccurrences: occ }, { upsert: true, new: true });
     return s;
   }
 
-  const [sH, sN] = await Promise.all([genOne('H'), genOne('N')]);
+  // Generate sequentially to reduce token/response size pressure
+  const sH = await genOne('H');
+  // tiny gap to be gentle on provider rate limits
+  await new Promise((r) => setTimeout(r, 150));
+  const sN = await genOne('N');
   await Experiment.findByIdAndUpdate(exp._id, { stories: { H: sH._id, N: sN._id } });
-  return res.json({ ok: true, used: 'openai', wordsCount: words.length, stories: { H: sH._id, N: sN._id } });
+  return res.json({ ok: true, used: 'openai', wordsCount: { H: wordsH.length, N: wordsN.length }, stories: { H: sH._id, N: sN._id } });
+});
+
+// Generate both stories and synthesize TTS for both in one call
+router.post('/:id/generate-all', requireAuth, requireRole('teacher'), async (req: AuthedRequest, res) => {
+  const gen = await (async () => {
+    try {
+      const r = await fetch(`http://localhost:${process.env.PORT || '4000'}/api/experiments/${req.params.id}/generate-stories`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req.body || {})
+      } as any);
+      return await (r as any).json();
+    } catch { return { ok: false }; }
+  })();
+  const tts = await (async () => {
+    try {
+      const r = await fetch(`http://localhost:${process.env.PORT || '4000'}/api/experiments/${req.params.id}/tts`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({})
+      } as any);
+      return await (r as any).json();
+    } catch { return {}; }
+  })();
+  return res.json({ generated: gen, tts });
 });
 
 // Per-spec: generate a single story by label 'H'|'N' (alias to our 'A'|'B')
@@ -142,7 +237,7 @@ router.post('/:id/generate-story', requireAuth, requireRole('teacher'), async (r
     const base = (title: string) => {
       const paras: string[] = [];
       for (let p = 0; p < 5; p++) {
-        const s = (i: number) => `${title} — paragraph ${p+1}, sentence ${i+1}.`;
+        const s = (i: number) => `${title} â€” paragraph ${p+1}, sentence ${i+1}.`;
         paras.push(`${s(0)} ${s(1)} ${s(2)} ${s(3)}`);
       }
       return paras;
@@ -188,35 +283,87 @@ router.post('/:id/launch', requireAuth, requireRole('teacher'), async (req, res)
 });
 
 router.post('/:id/tts', requireAuth, requireRole('teacher'), async (req, res) => {
-  const schema = z.object({ label: z.enum(['A','B','H','N']) });
+  const schema = z.object({ label: z.enum(['A','B','H','N']).optional() });
   const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { label } = parsed.data;
   const exp = await Experiment.findById(req.params.id);
   if (!exp) return res.status(404).json({ error: 'Not found' });
-  const map = label === 'H' ? 'A' : label === 'N' ? 'B' : label;
-  const story = await Story.findOne({ experiment: exp._id, label: map as any });
-  if (!story) return res.status(404).json({ error: 'Story not found' });
   const oa = getOpenAI();
   const fs = await import('fs');
   const path = await import('path');
-  const outDir = path.join(process.cwd(), 'static', 'audio', String(exp._id));
-  fs.mkdirSync(outDir, { recursive: true });
-  const outPath = path.join(outDir, `${label}.mp3`);
-  try {
-    if (oa) {
-      const resp = await oa.audio.speech.create({ model: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts', voice: process.env.OPENAI_TTS_VOICE || 'nova', input: story.paragraphs.join('\n\n') } as any);
-      const buf = Buffer.from(await resp.arrayBuffer());
-      fs.writeFileSync(outPath, buf);
-      const rel = `/static/audio/${exp._id}/${label}.mp3`;
-      return res.json({ url: rel, used: 'openai' });
+  const outBase = path.join(process.cwd(), 'static', 'audio', String(exp._id));
+  fs.mkdirSync(outBase, { recursive: true });
+
+  function splitSentences(paragraphs: string[]): string[][] {
+    const byP: string[][] = [];
+    for (const p of paragraphs) {
+      const parts: string[] = [];
+      const re = /([^.!?]*[.!?])/g;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(p))) parts.push(m[1].trim());
+      if (parts.length === 0 && p.trim()) parts.push(p.trim());
+      byP.push(parts);
     }
-  } catch {}
-  // mock beep wav
-  const wav = Buffer.alloc(44);
-  fs.writeFileSync(outPath, wav);
-  const rel = `/static/audio/${exp._id}/${label}.mp3`;
-  return res.json({ url: rel, used: 'mock' });
+    return byP;
+  }
+
+    async function genFor(labelIn: 'H'|'N'|'A'|'B') {
+      const map = (labelIn === 'H') ? 'A' : (labelIn === 'N') ? 'B' : labelIn;
+      const story = await Story.findOne({ experiment: exp._id, label: map as any });
+      if (!story) return null;
+    const byP = splitSentences(story.paragraphs || []);
+    const segmentsByParagraph: string[][] = [];
+    if (oa) {
+      for (let p = 0; p < byP.length; p++) {
+        const segUrls: string[] = [];
+        for (let s = 0; s < byP[p].length; s++) {
+          const text = byP[p][s];
+          try {
+            const resp = await oa.audio.speech.create({ model: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts', voice: process.env.OPENAI_TTS_VOICE || 'nova', input: text } as any);
+            const buf = Buffer.from(await resp.arrayBuffer());
+            const file = path.join(outBase, `${labelIn}_p${p}_s${s}.mp3`);
+            fs.writeFileSync(file, buf);
+            const rel = `/static/audio/${exp._id}/${labelIn}_p${p}_s${s}.mp3`;
+            segUrls.push(rel);
+          } catch {}
+        }
+        segmentsByParagraph.push(segUrls);
+      }
+      // Also write a concatenated file for convenience
+      const flatFiles: string[] = [];
+      for (let p = 0; p < segmentsByParagraph.length; p++)
+        for (let s = 0; s < segmentsByParagraph[p].length; s++)
+          flatFiles.push(path.join(outBase, `${labelIn}_p${p}_s${s}.mp3`));
+        try {
+          const full = Buffer.concat(flatFiles.filter(f=>fs.existsSync(f)).map(f=>fs.readFileSync(f)));
+          fs.writeFileSync(path.join(outBase, `${labelIn}.mp3`), full);
+        } catch {}
+        const fullUrl = `/static/audio/${exp._id}/${labelIn}.mp3`;
+        try { await Story.updateOne({ _id: story._id }, { ttsAudioUrl: fullUrl }); } catch {}
+        return { segmentsByParagraph, url: fullUrl };
+      }
+    // Mock: write empty files to make URLs resolvable
+    for (let p = 0; p < byP.length; p++) {
+      const segUrls: string[] = [];
+      for (let s = 0; s < byP[p].length; s++) {
+        const file = path.join(outBase, `${labelIn}_p${p}_s${s}.mp3`);
+        fs.writeFileSync(file, Buffer.alloc(0));
+        segUrls.push(`/static/audio/${exp._id}/${labelIn}_p${p}_s${s}.mp3`);
+      }
+      segmentsByParagraph.push(segUrls);
+    }
+      const fullUrl = `/static/audio/${exp._id}/${labelIn}.mp3`;
+      try { await Story.updateOne({ _id: story._id }, { ttsAudioUrl: fullUrl }); } catch {}
+      return { segmentsByParagraph, url: fullUrl };
+    }
+
+  if (parsed.success && parsed.data.label) {
+    const data = await genFor(parsed.data.label as any);
+    if (!data) return res.status(404).json({ error: 'Story not found' });
+    return res.json({ label: parsed.data.label, ...data, used: oa ? 'openai' : 'mock' });
+  } else {
+    const [h, n] = await Promise.all([genFor('H'), genFor('N')]);
+    return res.json({ H: h, N: n, used: oa ? 'openai' : 'mock' });
+  }
 });
 
 // Get a single story (teacher preview)
@@ -232,6 +379,33 @@ router.get('/:id/story/:label', requireAuth, requireRole('teacher'), async (req,
   return res.json({ id: story._id, label, paragraphs: story.paragraphs, ttsAudioUrl: story.ttsAudioUrl || ttsUrl });
 });
 
+// Delete an experiment and related data
+router.delete('/:id', requireAuth, requireRole('teacher'), async (req: AuthedRequest, res) => {
+  try {
+    const exp = await Experiment.findOne({ _id: req.params.id, owner: req.user?.sub });
+    if (!exp) return res.status(404).json({ error: 'Not found' });
+    const { default: fs } = await import('fs');
+    const { default: path } = await import('path');
+
+    // Delete stories
+    await Story.deleteMany({ experiment: exp._id });
+    // Optionally delete related assignments/conditions if installed
+    try {
+      const { Condition } = await import('../models/Condition');
+      const { Assignment } = await import('../models/Assignment');
+      await Condition.deleteMany({ experiment: exp._id } as any);
+      await Assignment.deleteMany({ experiment: exp._id } as any);
+    } catch {}
+    // Remove audio dir
+    try { fs.rmSync(path.join(process.cwd(), 'static', 'audio', String(exp._id)), { recursive: true, force: true }); } catch {}
+    // Delete experiment
+    await exp.deleteOne();
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ error: 'Delete failed' });
+  }
+});
+
 router.post('/:id/status', requireAuth, requireRole('teacher'), async (req, res) => {
   const schema = z.object({ status: z.enum(['live','closed']) });
   const parsed = schema.safeParse(req.body);
@@ -243,7 +417,16 @@ router.post('/:id/status', requireAuth, requireRole('teacher'), async (req, res)
 
 router.get('/', requireAuth, requireRole('teacher'), async (req: AuthedRequest, res) => {
   const list = await Experiment.find({ owner: req.user?.sub }).sort({ updatedAt: -1 }).limit(50);
-  res.json(list.map(x => ({ id: x._id, title: x.title, cefr: x.cefr || x.level, status: x.status, code: x.classCode })));
+  res.json(list.map(x => ({
+    id: x._id,
+    title: x.title,
+    cefr: x.cefr || x.level,
+    status: x.status,
+    code: x.classCode,
+    targetWords: (x.targetWords || []).slice(0, 10),
+    hasH: !!(x as any).stories?.H,
+    hasN: !!(x as any).stories?.N,
+  })));
 });
 
 // Aliases for spec URLs
@@ -275,3 +458,4 @@ router.post('/:id/demo-start', async (req, res) => {
 });
 
 export default router;
+

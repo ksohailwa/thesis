@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import api from '../../lib/api';
 import { useNavigate } from 'react-router-dom';
 
@@ -20,10 +20,11 @@ export default function StudentJoin() {
         sessionStorage.setItem('sessionId', data.experiment.id); // use experiment id as session context
         sessionStorage.setItem('exp.experimentId', data.experiment.id);
         sessionStorage.setItem('exp.condition', data.condition);
+        if (data.experiment.level) sessionStorage.setItem('exp.level', data.experiment.level);
         sessionStorage.setItem('exp.stories', JSON.stringify(data.stories));
         sessionStorage.setItem('exp.schedule', JSON.stringify(data.schedule));
         sessionStorage.setItem('targetWords', JSON.stringify(data.experiment.targetWords || []));
-        nav('/student/exp');
+        nav('/student/run');
         return;
       }
       // legacy session flow
@@ -42,7 +43,7 @@ export default function StudentJoin() {
       sessionStorage.setItem('storyText', data.template.storyText || '');
       sessionStorage.setItem('ttsSegments', JSON.stringify(data.template.ttsSegments || []));
       sessionStorage.setItem('targetWords', JSON.stringify(data.template.targetWords));
-      nav('/student/consent');
+      nav('/student/run');
     } catch (e: any) { setError(e?.response?.data?.error || 'Join failed'); } finally { setBusy(false); }
   }
 
@@ -58,10 +59,11 @@ export default function StudentJoin() {
           <input className="input text-center text-2xl tracking-widest" placeholder="CODE" value={code} onChange={e=>setCode(e.target.value.toUpperCase())} inputMode="text" autoCapitalize="characters" autoFocus />
         </label>
         {error && <div className="text-red-600 text-sm">{error}</div>}
-        <button disabled={busy || !code} className="w-full bg-blue-600 text-white p-3 rounded disabled:opacity-60">{busy ? 'Joining…' : 'Enter'}</button>
+        <button disabled={busy || !code} className="w-full bg-blue-600 text-white p-3 rounded disabled:opacity-60">{busy ? 'Joiningâ€¦' : 'Enter'}</button>
       </form>
     </div>
   );
 }
+
 
 

@@ -15,7 +15,8 @@ const SignupSchema = z.object({
 router.post('/signup', async (req, res) => {
   const parsed = SignupSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { email, password, role } = parsed.data;
+  const { password, role } = parsed.data as any;
+  const email = String((parsed.data as any).email || '').trim().toLowerCase();
   const existing = await User.findOne({ email });
   if (existing) return res.status(409).json({ error: 'Email already registered' });
   const passwordHash = await bcrypt.hash(password, 10);
@@ -27,8 +28,9 @@ const LoginSchema = z.object({ email: z.string().email(), password: z.string().m
 
 router.post('/login', async (req, res) => {
   const parsed = LoginSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { email, password } = parsed.data;
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid email or password format' });
+  const email = String((parsed.data as any).email || '').trim().toLowerCase();
+  const password = String((parsed.data as any).password || '');
   const user = await User.findOne({ email });
   if (!user) return res.status(401).json({ error: 'Invalid credentials' });
   const ok = await bcrypt.compare(password, user.passwordHash);

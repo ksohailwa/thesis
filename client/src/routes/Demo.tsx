@@ -38,7 +38,7 @@ export default function Demo() {
                   sessionStorage.setItem('exp.stories', JSON.stringify(exp.stories));
                   sessionStorage.setItem('exp.schedule', JSON.stringify(exp.schedule));
                   sessionStorage.setItem('targetWords', JSON.stringify(exp.experiment.targetWords || []));
-                  nav('/student/exp');
+                  nav('/student/run');
                 } catch {}
               }}
             >
