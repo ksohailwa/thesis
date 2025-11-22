@@ -3,7 +3,7 @@ Param(
 )
 
 $ErrorActionPreference = 'Stop'
-Write-Host "Spell Wise • First Run" -ForegroundColor Cyan
+Write-Host "SpellWise • First Run" -ForegroundColor Cyan
 
 Set-Location (Split-Path $PSScriptRoot -Parent)
 
@@ -40,4 +40,3 @@ CORS_ORIGIN=http://localhost:5173
 
 Write-Host "All set!" -ForegroundColor Green
 Write-Host "Run scripts/dev.ps1 to start both server and client." -ForegroundColor Green
-

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve Spell Wise. This doc covers local setup, style, and PRs.
+Thanks for helping improve SpellWise. This doc covers local setup, style, and PRs.
 
 ## Local Setup
 - Node.js 18+ and npm
@@ -35,4 +35,3 @@ Quick start:
 
 ## Questions
 - Open a GitHub issue with a concise description and reproduction steps
-

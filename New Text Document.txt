@@ -13,3 +13,13 @@ intergrate feedback within the blank
   english speaker
 
    codex resume 019a4b8a-41dc-7741-9b02-6540dd4d4f4f
+
+
+   JWT_ACCESS_SECRET=ae990236d319820cb61bd3c5a2d499fae585756580c19a8a50ca226bb82fb1789109f
+    54848f06a8635bebf0a776be607046feb2de4806cdea174644e6ffb1fa4
+  - JWT_REFRESH_SECRET=f783532464312c056aba3e919d8c08b839a5d414aca2fcd8d42b3f083ecc848aa250
+    21b3e1e273f9239d5e77b905b327d1b7066fbe8b36257d2d4bbe2fb5a884
+  - INTERNAL_JOB_SECRET=4f5b511c6a46edb5d2598141a870f3c4d7868afd85599983626578e330c6d908   
+
+ go through the entire project and analyze
+  wait for my command for changes to be made

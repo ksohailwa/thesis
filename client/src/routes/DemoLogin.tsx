@@ -14,8 +14,8 @@ export default function DemoLogin() {
 
   return (
     <div className="focus-card text-center">
-            <h1 className="text-xl font-semibold mb-2">Spell Wise Demo</h1>
-      <p className="text-sm text-gray-700 mb-4">Try Spell Wise without an account. Your progress will not be saved.</p>
+            <h1 className="text-xl font-semibold mb-2">SpellWise Demo</h1>
+      <p className="text-sm text-gray-700 mb-4">Try SpellWise without an account. Your progress will not be saved.</p>
       <button className="w-full bg-blue-600 text-white p-2 rounded" onClick={enter}>Enter Demo</button>
     </div>
   );

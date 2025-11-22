@@ -23,4 +23,3 @@ export function positionCorrectness(guess: string, target: string): boolean[] {
   for (let i = 0; i < len; i++) out.push(guess[i] === target[i]);
   return out;
 }
-

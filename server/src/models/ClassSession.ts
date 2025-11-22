@@ -8,7 +8,12 @@ export interface IClassSession extends Document {
   createdBy: Types.ObjectId;
   allowDelayedAfterHours: number;
   sentences?: string[];
-  gapPlan?: Array<{ key: string; kind: 'target'|'distractor'; word?: string; sentenceIndex: number }>;
+  gapPlan?: Array<{
+    key: string;
+    kind: 'target' | 'distractor';
+    word?: string;
+    sentenceIndex: number;
+  }>;
   createdAt: Date;
 }
 
@@ -21,7 +26,10 @@ const ClassSessionSchema = new Schema<IClassSession>({
   allowDelayedAfterHours: { type: Number, default: 24 },
   createdAt: { type: Date, default: () => new Date() },
   sentences: { type: [String], default: [] },
-  gapPlan: { type: [{ key: String, kind: String, word: String, sentenceIndex: Number }], default: [] }
+  gapPlan: {
+    type: [{ key: String, kind: String, word: String, sentenceIndex: Number }],
+    default: [],
+  },
 });
 
 export const ClassSession = mongoose.model<IClassSession>('ClassSession', ClassSessionSchema);

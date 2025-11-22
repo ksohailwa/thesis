@@ -9,28 +9,32 @@ import OpenAI from 'openai';
 
 const router = Router();
 
-const GapPolicySchema = z.object({
-  occurrencesPerWord: z.number().int().min(1).max(8).optional(),
-  randomize: z.boolean().optional(),
-  distractors: z.object({ count: z.number().int().min(0), strategy: z.enum(['frequency','pos','random']) }).optional()
-}).partial();
+const GapPolicySchema = z
+  .object({
+    occurrencesPerWord: z.number().int().min(1).max(8).optional(),
+    randomize: z.boolean().optional(),
+    distractors: z
+      .object({ count: z.number().int().min(0), strategy: z.enum(['frequency', 'pos', 'random']) })
+      .optional(),
+  })
+  .partial();
 
 const StorySchema = z.object({
   title: z.string().min(1),
   language: z.string().min(2),
-  difficulty: z.enum(['A1','A2','B1','B2','C1','C2']),
+  difficulty: z.enum(['A1', 'A2', 'B1', 'B2', 'C1', 'C2']),
   targetWords: z.array(z.string()).max(10),
   prompt: z.string().min(5),
-  condition: z.enum(['self-generate','system-provided']),
+  condition: z.enum(['self-generate', 'system-provided']),
   storyText: z.string().optional(),
   ttsAudioUrl: z.string().optional(),
-  gapPolicy: GapPolicySchema.optional()
+  gapPolicy: GapPolicySchema.optional(),
 });
 
 function mockStory(targetWords: string[], language: string) {
   const paras = [] as string[];
   const wordsOnce = targetWords.join(', ');
-  const wordsTwice = targetWords.map(w => `${w}... ${w}`).join(' | ');
+  const wordsTwice = targetWords.map((w) => `${w}... ${w}`).join(' | ');
   paras.push(`This is a mock ${language} story including: ${wordsOnce}.`);
   paras.push(`Each target appears twice somewhere: ${wordsTwice}.`);
   paras.push('Add more details and context to feel realistic.');
@@ -38,7 +42,12 @@ function mockStory(targetWords: string[], language: string) {
 }
 
 router.post('/generate', requireAuth, requireRole('teacher'), async (req: AuthedRequest, res) => {
-  const schema = z.object({ prompt: z.string(), difficulty: z.enum(['A1','A2','B1','B2','C1','C2']), language: z.string(), targetWords: z.array(z.string()).max(10) });
+  const schema = z.object({
+    prompt: z.string(),
+    difficulty: z.enum(['A1', 'A2', 'B1', 'B2', 'C1', 'C2']),
+    language: z.string(),
+    targetWords: z.array(z.string()).max(10),
+  });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { language, targetWords, prompt, difficulty } = parsed.data;
@@ -66,12 +75,13 @@ Difficulty: ${difficulty}`;
       model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: sys },
-        { role: 'user', content: user }
+        { role: 'user', content: user },
       ],
       temperature: 0.8,
-      max_tokens: 800
+      max_tokens: 800,
     });
-    const text = completion.choices?.[0]?.message?.content?.trim() || mockStory(targetWords, language);
+    const text =
+      completion.choices?.[0]?.message?.content?.trim() || mockStory(targetWords, language);
     return res.json({ text, used: 'openai' });
   } catch (err) {
     const text = mockStory(targetWords, language);
@@ -114,7 +124,8 @@ router.post('/tts', requireAuth, requireRole('teacher'), async (req: AuthedReque
   const { storyTemplateId } = parsed.data;
   const tpl = await StoryTemplate.findById(storyTemplateId);
   if (!tpl) return res.status(404).json({ error: 'Template not found' });
-  const ensureDir = () => fs.mkdirSync(path.join(process.cwd(), 'static', 'audio', 'template'), { recursive: true });
+  const ensureDir = () =>
+    fs.mkdirSync(path.join(process.cwd(), 'static', 'audio', 'template'), { recursive: true });
   ensureDir();
   const relBase = `/static/audio/template/${tpl._id}`;
   if (!tpl.storyText) {
@@ -123,51 +134,73 @@ router.post('/tts', requireAuth, requireRole('teacher'), async (req: AuthedReque
     writeBeepWav(outPath);
     tpl.ttsAudioUrl = rel;
     await tpl.save();
-    return res.json({ ttsAudioUrl: tpl.ttsAudioUrl, used: 'mock', note: 'No story text available' });
+    return res.json({
+      ttsAudioUrl: tpl.ttsAudioUrl,
+      used: 'mock',
+      note: 'No story text available',
+    });
   }
 
   // Primary: OpenAI TTS (default)
-    if (config.ttsProvider === 'openai' && config.openaiApiKey) {
-      try {
-        const openai = new OpenAI({ apiKey: config.openaiApiKey });
-        const sentences = splitSentences(tpl.storyText);
-        const segmentPaths: string[] = [];
-        const segmentUrls: string[] = [];
-        for (let i = 0; i < sentences.length; i++) {
-          const seg = await openai.audio.speech.create({ model: config.openaiTtsModel, voice: config.openaiTtsVoice, input: sentences[i], format: 'mp3' } as any);
-          const buf = Buffer.from(await seg.arrayBuffer());
-          const relSeg = `${relBase}_s${i}.mp3`;
-          const outSeg = path.join(process.cwd(), 'static', 'audio', 'template', `${tpl._id}_s${i}.mp3`);
-          fs.writeFileSync(outSeg, buf);
-          segmentPaths.push(outSeg);
-          segmentUrls.push(relSeg);
-        }
-        // Concatenate segments into a single MP3 (simple byte concat; acceptable for most players)
-        const fullBuf = Buffer.concat(segmentPaths.map(p => fs.readFileSync(p)));
-        const rel = `${relBase}.mp3`;
-        const outPath = path.join(process.cwd(), 'static', 'audio', 'template', `${tpl._id}.mp3`);
-        fs.writeFileSync(outPath, fullBuf);
-        tpl.ttsAudioUrl = rel;
-        tpl.ttsSegments = segmentUrls;
-        await tpl.save();
-        return res.json({ ttsAudioUrl: tpl.ttsAudioUrl, segments: tpl.ttsSegments, used: 'openai' });
-      } catch (err) {
-        // Fall through to other providers if configured
+  if (config.ttsProvider === 'openai' && config.openaiApiKey) {
+    try {
+      const openai = new OpenAI({ apiKey: config.openaiApiKey });
+      const sentences = splitSentences(tpl.storyText);
+      const segmentPaths: string[] = [];
+      const segmentUrls: string[] = [];
+      for (let i = 0; i < sentences.length; i++) {
+        const seg = await openai.audio.speech.create({
+          model: config.openaiTtsModel,
+          voice: config.openaiTtsVoice,
+          input: sentences[i],
+          format: 'mp3',
+        } as any);
+        const buf = Buffer.from(await seg.arrayBuffer());
+        const relSeg = `${relBase}_s${i}.mp3`;
+        const outSeg = path.join(
+          process.cwd(),
+          'static',
+          'audio',
+          'template',
+          `${tpl._id}_s${i}.mp3`
+        );
+        fs.writeFileSync(outSeg, buf);
+        segmentPaths.push(outSeg);
+        segmentUrls.push(relSeg);
       }
+      // Concatenate segments into a single MP3 (simple byte concat; acceptable for most players)
+      const fullBuf = Buffer.concat(segmentPaths.map((p) => fs.readFileSync(p)));
+      const rel = `${relBase}.mp3`;
+      const outPath = path.join(process.cwd(), 'static', 'audio', 'template', `${tpl._id}.mp3`);
+      fs.writeFileSync(outPath, fullBuf);
+      tpl.ttsAudioUrl = rel;
+      tpl.ttsSegments = segmentUrls;
+      await tpl.save();
+      return res.json({ ttsAudioUrl: tpl.ttsAudioUrl, segments: tpl.ttsSegments, used: 'openai' });
+    } catch (err) {
+      // Fall through to other providers if configured
     }
+  }
 
   // Optional: ElevenLabs fallback if configured
   if (config.ttsProvider === 'elevenlabs' && config.elevenApiKey && config.elevenVoiceId) {
     try {
-      const resp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${config.elevenVoiceId}`, {
-        method: 'POST',
-        headers: {
-          'xi-api-key': config.elevenApiKey,
-          'Content-Type': 'application/json',
-          'accept': 'audio/mpeg'
-        },
-        body: JSON.stringify({ text: tpl.storyText, model_id: config.elevenModelId, output_format: 'mp3_44100_128' })
-      });
+      const resp = await fetch(
+        `https://api.elevenlabs.io/v1/text-to-speech/${config.elevenVoiceId}`,
+        {
+          method: 'POST',
+          headers: {
+            'xi-api-key': config.elevenApiKey,
+            'Content-Type': 'application/json',
+            accept: 'audio/mpeg',
+          },
+          body: JSON.stringify({
+            text: tpl.storyText,
+            model_id: config.elevenModelId,
+            output_format: 'mp3_44100_128',
+          }),
+        }
+      );
       if (!resp.ok) throw new Error(`ElevenLabs HTTP ${resp.status}`);
       const buf = Buffer.from(await (resp as any).arrayBuffer());
       const rel = `${relBase}.mp3`;
@@ -218,7 +251,11 @@ router.post('/', requireAuth, requireRole('teacher'), async (req: AuthedRequest,
 router.put('/:id', requireAuth, requireRole('teacher'), async (req: AuthedRequest, res) => {
   const parsed = StorySchema.partial().safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const updated = await StoryTemplate.findOneAndUpdate({ _id: req.params.id, owner: req.user!.sub }, { ...parsed.data, updatedAt: new Date() }, { new: true });
+  const updated = await StoryTemplate.findOneAndUpdate(
+    { _id: req.params.id, owner: req.user!.sub },
+    { ...parsed.data, updatedAt: new Date() },
+    { new: true }
+  );
   if (!updated) return res.status(404).json({ error: 'Not found' });
   return res.json(updated);
 });
@@ -247,21 +284,32 @@ router.delete('/:id', requireAuth, requireRole('teacher'), async (req: AuthedReq
     const { Event } = await import('../models/Event');
 
     const sessions = await ClassSession.find({ template: tpl._id }).select('_id');
-    const sessionIds = sessions.map(s => s._id);
+    const sessionIds = sessions.map((s) => s._id);
 
     const audioDir = path.join(process.cwd(), 'static', 'audio', 'template');
     try {
       if (fs.existsSync(audioDir)) {
         const files = fs.readdirSync(audioDir);
         const prefix = String(tpl._id);
-        for (const f of files) if (f.startsWith(prefix)) { try { fs.unlinkSync(path.join(audioDir, f)); } catch {} }
+        for (const f of files)
+          if (f.startsWith(prefix)) {
+            try {
+              fs.unlinkSync(path.join(audioDir, f));
+            } catch {}
+          }
       }
     } catch {}
 
     const delAttemptsByTpl = await Attempt.deleteMany({ storyTemplate: tpl._id });
-    const delAttemptsBySess = sessionIds.length ? await Attempt.deleteMany({ session: { $in: sessionIds } }) : { deletedCount: 0 } as any;
-    const delEffort = sessionIds.length ? await EffortResponse.deleteMany({ session: { $in: sessionIds } }) : { deletedCount: 0 } as any;
-    const delEvents = sessionIds.length ? await Event.deleteMany({ session: { $in: sessionIds } }) : { deletedCount: 0 } as any;
+    const delAttemptsBySess = sessionIds.length
+      ? await Attempt.deleteMany({ session: { $in: sessionIds } })
+      : ({ deletedCount: 0 } as any);
+    const delEffort = sessionIds.length
+      ? await EffortResponse.deleteMany({ session: { $in: sessionIds } })
+      : ({ deletedCount: 0 } as any);
+    const delEvents = sessionIds.length
+      ? await Event.deleteMany({ session: { $in: sessionIds } })
+      : ({ deletedCount: 0 } as any);
     const delSessions = await ClassSession.deleteMany({ template: tpl._id });
     const delTpl = await StoryTemplate.deleteOne({ _id: tpl._id });
 
@@ -273,7 +321,7 @@ router.delete('/:id', requireAuth, requireRole('teacher'), async (req: AuthedReq
         attempts: (delAttemptsByTpl.deletedCount || 0) + (delAttemptsBySess.deletedCount || 0),
         effort: delEffort.deletedCount || 0,
         events: delEvents.deletedCount || 0,
-      }
+      },
     });
   } catch (e) {
     console.error('Delete cascade failed', e);
@@ -281,16 +329,21 @@ router.delete('/:id', requireAuth, requireRole('teacher'), async (req: AuthedReq
   }
 });
 
-router.post('/preview/demo', requireAuth, requireRole('teacher'), async (req: AuthedRequest, res) => {
-  const schema = z.object({ storyTemplateId: z.string() });
-  const parsed = schema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const tpl = await StoryTemplate.findById(parsed.data.storyTemplateId);
-  if (!tpl) return res.status(404).json({ error: 'Not found' });
-  const words = tpl.targetWords.slice(0, 2);
-  const text = (tpl.storyText || '').split('\n').slice(0, 2).join('\n');
-  return res.json({ text, targetWords: words, audioUrl: tpl.ttsAudioUrl });
-});
+router.post(
+  '/preview/demo',
+  requireAuth,
+  requireRole('teacher'),
+  async (req: AuthedRequest, res) => {
+    const schema = z.object({ storyTemplateId: z.string() });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const tpl = await StoryTemplate.findById(parsed.data.storyTemplateId);
+    if (!tpl) return res.status(404).json({ error: 'Not found' });
+    const words = tpl.targetWords.slice(0, 2);
+    const text = (tpl.storyText || '').split('\n').slice(0, 2).join('\n');
+    return res.json({ text, targetWords: words, audioUrl: tpl.ttsAudioUrl });
+  }
+);
 
 router.post('/preview/try', requireAuth, requireRole('teacher'), async (req, res) => {
   const schema = z.object({ storyTemplateId: z.string() });

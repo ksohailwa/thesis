@@ -20,10 +20,18 @@ server/static/audio/
 npm-debug.log*
 yarn-error.log*
 *.log
+logs/
 .DS_Store
 .eslintcache
+
+# Test coverage
+coverage/
+*.lcov
+.nyc_output/
 
 # IDE/editor
 .vscode/
 .idea/
 
+# Root-level env file (critical - never commit)
+/.env

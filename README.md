@@ -1,6 +1,15 @@
-# Spell Wise (Local)
+# SpellWise (Local)
 
 A minimal Teacher/Student web app for spelling experiments.
+
+## Project Structure
+
+The repository root should be named `SPELLWISE_app` and contain:
+
+- `SPELLWISE_app/server`
+- `SPELLWISE_app/client`
+
+If your current folder is named differently (e.g., `SpellWise`), rename the root folder to `SPELLWISE_app` to keep paths consistent.
 
 - Stack: Node + Express + TypeScript, MongoDB (optional), React + Vite + Tailwind, OpenAI
 - Stories and TTS can run with OpenAI; mock fallbacks are provided when keys are missing.
@@ -46,10 +55,11 @@ cd server
 npm run dev
 
 # Terminal 2
-cd client
-npm run dev
-```
-App: http://localhost:5173  API: http://localhost:4000
+ cd client
+ npm run dev
+ ```
+ App: http://localhost:5173  API: http://localhost:4000
+  > Tip: the dev server defaults `NODE_ENV` to `development`, which keeps the global API rate limiter disabled for local testing. Heavy actions (story/TTS jobs) still have their own per-teacher throttling, so stagger repeated clicks if you see a warning toast.
 
 ## Teacher Flow (UI)
 - Login (/login) → “Teacher Login” (same login page)
@@ -114,4 +124,3 @@ Demo
 
 ## License
 Internal prototype for research/education. Add a license before publishing.
-

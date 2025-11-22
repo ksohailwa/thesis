@@ -1,265 +1,216 @@
-﻿import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import api from '../../lib/api'
+import LoadingScreen from '../../components/LoadingScreen'
 
-type Exp = { id: string; title: string; cefr?: string; status?: string; code?: string; hasH?: boolean; hasN?: boolean }
-
-export default function TeacherEmpty() {
-  const [list, setList] = useState<Exp[]>([])
+export default function TeacherHome() {
+  const [experiments, setExperiments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [newTitle, setNewTitle] = useState('')
-  const [newLevel, setNewLevel] = useState<'A1'|'A2'|'B1'|'B2'|'C1'|'C2'>('B1')
   const [creating, setCreating] = useState(false)
+  const [filter, setFilter] = useState<'all' | 'draft' | 'live' | 'closed'>('all')
+  const nav = useNavigate()
 
-  async function load() {
-    try { const { data } = await api.get('/api/experiments'); setList(data || []) }
-    catch { setList([]) }
-    finally { setLoading(false) }
+  useEffect(() => {
+    loadExperiments()
+
+    const interval = setInterval(() => {
+      loadExperiments()
+    }, 15000)
+
+    return () => clearInterval(interval)
+  }, [])
+
+  async function loadExperiments() {
+    try {
+      const { data } = await api.get('/api/experiments')
+      setExperiments(Array.isArray(data) ? data : [])
+    } catch (e) {
+      console.error('Failed to load experiments', e)
+    } finally {
+      setLoading(false)
+    }
   }
-  useEffect(() => { void load() }, [])
 
-  async function createExp() {
-    if (!newTitle.trim()) return
+  async function createNew() {
+    const title = prompt('Experiment title:')
+    if (!title?.trim()) return
+    const level = prompt('CEFR Level (A1, A2, B1, B2, C1, C2):', 'B1')
+    if (!level) return
     setCreating(true)
     try {
-      await api.post('/api/experiments', { title: newTitle.trim(), level: newLevel })
-      setNewTitle('')
-      await load()
-    } finally { setCreating(false) }
+      const { data } = await api.post('/api/experiments', { title: title.trim(), level: level.toUpperCase() })
+      const expId = data?.id || data?._id
+      if (expId) nav(`/teacher/experiments/${expId}/words`)
+    } catch (e: any) {
+      alert(e?.response?.data?.error || 'Failed to create')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  if (loading) return <LoadingScreen message="Loading experiments..." />
+
+  const filtered = filter === 'all' ? experiments : experiments.filter((e) => e.status === filter)
+  const stats = {
+    total: experiments.length,
+    draft: experiments.filter((e) => e.status === 'draft').length,
+    live: experiments.filter((e) => e.status === 'live').length,
+    closed: experiments.filter((e) => e.status === 'closed').length,
   }
 
   return (
-    <div className="container py-10">
-      <div className="mb-4"><h1 className="text-2xl font-semibold">My Experiments</h1></div>
-      {loading && <div className="text-sm text-gray-600">Loading…</div>}
-      {!loading && list.length === 0 && (
-        <div className="text-sm text-gray-600">No experiments yet. Create one to get started.</div>
-      )}
-      <div className="grid md:grid-cols-2 gap-3">
-        <CreateTile
-          title={newTitle}
-          onTitle={setNewTitle}
-          level={newLevel}
-          onLevel={setNewLevel}
-          creating={creating}
-          onCreate={createExp}
-        />
-        {list.map(e => (
-          <div key={e.id} className={`section p-4 ${e.hasH && e.hasN ? 'md:col-span-2' : ''}`}>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="font-medium">{e.title} <span className="text-xs text-gray-500">({e.cefr||'B1'})</span></div>
-                <div className="text-xs text-gray-500">
-                  Status: {e.status || 'draft'} {e.code && <><span> • Code: </span><span className="font-mono">{e.code}</span></>}
-                </div>
-                <div className="text-xs mt-1">
-                  <span className={e.hasH ? 'text-emerald-700' : 'text-gray-400'}>H {e.hasH ? 'available' : 'pending'}</span>
-                  <span className="mx-2">•</span>
-                  <span className={e.hasN ? 'text-emerald-700' : 'text-gray-400'}>N {e.hasN ? 'available' : 'pending'}</span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button className="btn danger" onClick={async ()=>{
-                  if (!confirm('Delete this experiment? This cannot be undone.')) return
-                  try { await api.delete(`/api/experiments/${e.id}`); setList(list.filter(x => x.id !== e.id)) } catch {}
-                }}>Delete</button>
-              </div>
-            </div>
-            <ManagePanel expId={e.id} />
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+      <div className="container py-8 space-y-8">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              Teacher Dashboard
+            </h1>
+            <p className="text-gray-600 text-sm mt-1">Manage your spelling experiments</p>
           </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function CreateTile({ title, onTitle, level, onLevel, creating, onCreate }: { title: string; onTitle: (v:string)=>void; level: 'A1'|'A2'|'B1'|'B2'|'C1'|'C2'; onLevel: (v:any)=>void; creating: boolean; onCreate: ()=>void }) {
-  return (
-    <div className="section p-4 flex flex-col gap-2">
-      <div className="text-lg font-semibold">Create New Experiment</div>
-      <input className="input" placeholder="Title" value={title} onChange={e=>onTitle(e.target.value)} />
-      <div className="flex items-center gap-2">
-        <label className="text-sm">Level</label>
-        <select className="input" value={level} onChange={e=>onLevel(e.target.value as any)}>
-          <option value="A1">A1</option><option value="A2">A2</option><option value="B1">B1</option><option value="B2">B2</option><option value="C1">C1</option><option value="C2">C2</option>
-        </select>
-        <button className="btn primary" disabled={creating || !title.trim()} onClick={onCreate}>{creating ? 'Creatingâ€¦' : 'Create'}</button>
-      </div>
-    </div>
-  )
-}
-
-function useWordsState(initial: string) {
-  const [words, setWords] = useState(initial)
-  const arr = useMemo(() => words.split(',').map(s => s.trim()).filter(Boolean).slice(0,10), [words])
-  function toggle(w: string) {
-    if (arr.includes(w)) setWords(arr.filter(x=>x!==w).join(', '))
-    else setWords([...arr, w].slice(0,10).join(', '))
-  }
-  return { words, setWords, arr, toggle }
-}
-
-function ManagePanel({ expId }: { expId: string }) {
-  const [show, setShow] = useState(false)
-  const [meta, setMeta] = useState<{ title?: string; level?: string } | null>(null)
-  const [suggestions, setSuggestions] = useState<string[]>([])
-  const { words, setWords, arr, toggle } = useWordsState('')
-  const wordsH = arr.slice(0,5)
-  const wordsN = arr.slice(5,10).length ? arr.slice(5,10) : arr.slice(0,5)
-  const [busy, setBusy] = useState<{ save?: boolean; gen?: boolean; launch?: boolean }>({})
-  const [status, setStatus] = useState('')
-  const [storyH, setStoryH] = useState<string[] | null>(null)
-  const [storyN, setStoryN] = useState<string[] | null>(null)
-  const [audioH, setAudioH] = useState<string>('')
-  const [audioN, setAudioN] = useState<string>('')
-  const [joinCode, setJoinCode] = useState<string | null>(null)
-
-  useEffect(() => { if (show) void loadMeta(); }, [show])
-  async function loadMeta() {
-    try {
-      const { data } = await api.get(`/api/experiments/${expId}`)
-      setMeta({ title: data?.title, level: data?.level })
-      setWords((data?.targetWords||[]).join(', '))
-      await refreshStories()
-    } catch {}
-  }
-
-  async function fetchSuggestions() { try { const { data } = await api.post(`/api/experiments/${expId}/suggestions`); setSuggestions(data?.suggestions || []) } catch {} }
-  async function saveWords() { setBusy(b=>({ ...b, save: true })); setStatus(''); try { await api.post(`/api/experiments/${expId}/target-words`, { targetWords: arr }); setStatus('Words saved') } catch(e:any){ setStatus(e?.response?.data?.error || 'Save failed') } finally { setBusy(b=>({ ...b, save: false })) } }
-  async function refreshStories(){ try { const [h,n] = await Promise.all([ api.get(`/api/experiments/${expId}/story/H`).catch(()=>({ data:null } as any)), api.get(`/api/experiments/${expId}/story/N`).catch(()=>({ data:null } as any)) ]); setStoryH(h?.data?.paragraphs || null); setStoryN(n?.data?.paragraphs || null); const base = import.meta.env.VITE_API_BASE_URL || ''; const hu = (h?.data?.ttsAudioUrl || `/static/audio/${expId}/H.mp3`); const nu = (n?.data?.ttsAudioUrl || `/static/audio/${expId}/N.mp3`); setAudioH(hu ? (hu.startsWith('/static')? `${base}${hu}` : hu) : ''); setAudioN(nu ? (nu.startsWith('/static')? `${base}${nu}` : nu) : ''); } catch {} }
-
-  async function generateH(){ setBusy(b=>({ ...b, gen: true })); setStatus(''); try { await api.post(`/api/experiments/${expId}/generate-story`, { label: 'H', targetWords: wordsH }); setStatus('Story H ready'); await refreshStories() } catch(e:any){ const msg = e?.response?.data?.error || 'Generation failed'; setStatus(e?.response?.status===403? msg+' (Teacher role required)':msg) } finally { setBusy(b=>({ ...b, gen: false })) } }
-  async function generateN(){ setBusy(b=>({ ...b, gen: true })); setStatus(''); try { await api.post(`/api/experiments/${expId}/generate-story`, { label: 'N', targetWords: wordsN }); setStatus('Story N ready'); await refreshStories() } catch(e:any){ const msg = e?.response?.data?.error || 'Generation failed'; setStatus(e?.response?.status===403? msg+' (Teacher role required)':msg) } finally { setBusy(b=>({ ...b, gen: false })) } }
-  async function generateAll(){
-    setBusy(b=>({ ...b, gen: true })); setStatus('')
-    try {
-      await api.post(`/api/experiments/${expId}/generate-story`, { label: 'H', targetWords: wordsH })
-      await api.post(`/api/experiments/${expId}/generate-story`, { label: 'N', targetWords: wordsN })
-      const t = await api.post(`/api/experiments/${expId}/tts`, {})
-      const base = import.meta.env.VITE_API_BASE_URL || ''
-      const hu = t.data?.H?.url || `/static/audio/${expId}/H.mp3`
-      const nu = t.data?.N?.url || `/static/audio/${expId}/N.mp3`
-      setAudioH(hu.startsWith('/static')? `${base}${hu}` : hu)
-      setAudioN(nu.startsWith('/static')? `${base}${nu}` : nu)
-      setStatus('Stories and audio are ready')
-      await refreshStories()
-    } catch(e:any){
-      const msg = e?.response?.data?.error || 'Generation failed'
-      setStatus(e?.response?.status===403? msg+' (Are you logged in as a Teacher?)':msg)
-    } finally { setBusy(b=>({ ...b, gen: false })) }
-  }
-  async function ttsOne(label: 'H'|'N') {
-    setBusy(b=>({ ...b, gen: true })); setStatus('')
-    try {
-      const r = await api.post(`/api/experiments/${expId}/tts`, { label })
-      const base = import.meta.env.VITE_API_BASE_URL || ''
-      const url: string = r.data?.url || `/static/audio/${expId}/${label}.mp3`
-      const full = url.startsWith('/static') ? `${base}${url}` : url
-      if (label==='H') setAudioH(full); else setAudioN(full)
-      setStatus('TTS ready')
-    } catch(e:any){ const msg = e?.response?.data?.error || 'TTS failed'; setStatus(e?.response?.status===403? msg+' (Teacher role required)':msg) }
-    finally { setBusy(b=>({ ...b, gen: false })) }
-  }
-  async function launch(condition: 'with-hints'|'without-hints'){
-    setBusy(b=>({ ...b, launch: true })); setStatus('')
-    try {
-      const { data } = await api.post(`/api/experiments/${expId}/launch`, { condition })
-      setJoinCode(data?.code||null)
-      setStatus(`Launched (${condition}). Code: ${data?.code}`)
-    } catch(e:any){ setStatus(e?.response?.data?.error || 'Launch failed') }
-    finally { setBusy(b=>({ ...b, launch: false })) }
-  }
-
-  return (
-    <div className="mt-3 text-sm">
-      <button className="btn" onClick={()=> setShow(s=>!s)}>{show ? 'Hide' : 'Manage'}</button>
-      {!show ? null : (
-        <div className="mt-3 space-y-3 border rounded p-3">
-           <div className="text-xs text-gray-500">{meta?.title} • Level {meta?.level || 'B1'}</div>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-medium">Select up to 10 target words</div>
-              <button className="btn" onClick={fetchSuggestions}>Fetch Suggestions</button>
-            </div>
-            {!!suggestions.length && (
-              <div className="flex flex-wrap gap-2">
-                {suggestions.map(w => {
-                  const active = arr.includes(w)
-                  return <button key={w} onClick={()=>toggle(w)} className={`px-2 py-1 border rounded ${active? 'bg-emerald-600 text-white border-emerald-600':''}`}>{w}</button>
-                })}
-              </div>
+          <button className="btn primary px-6 py-3" onClick={createNew} disabled={creating}>
+            {creating ? (
+              <span className="flex items-center gap-2">
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                </svg>
+                Creating...
+              </span>
+            ) : (
+              <span className="flex items-center gap-2">
+                <span className="text-xl">+</span>
+                New Experiment
+              </span>
             )}
-            <label className="text-xs">Words (comma separated)</label>
-            <input className="input w-full" value={words} onChange={e=>setWords(e.target.value)} placeholder="e.g. apple, river, music" />
-            <div className="text-xs text-gray-600">Story H uses: <span className="font-medium">{wordsH.join(', ') || 'â€”'}</span></div>
-            <div className="text-xs text-gray-600">Story N uses: <span className="font-medium">{wordsN.join(', ') || 'â€”'}</span></div>
-            <div className="flex gap-2 flex-wrap">
-              <button className="btn" disabled={busy.save} onClick={saveWords}>{busy.save ? 'Savingâ€¦' : 'Save Words'}</button>
-              <button className="btn" disabled={busy.gen || wordsH.length===0} onClick={generateH}>{busy.gen ? 'Generatingâ€¦' : 'Generate H'}</button>
-              <button className="btn" disabled={busy.gen || wordsN.length===0} onClick={generateN}>{busy.gen ? 'Generatingâ€¦' : 'Generate N'}</button>
-              <button className="btn primary" disabled={busy.gen || arr.length===0} onClick={generateAll}>{busy.gen ? 'Generatingâ€¦' : 'Generate Both + TTS'}</button>
-            </div>
-            {status && <div className="text-xs text-gray-700">{status}</div>}
-          </div>
-
-          <div className="space-y-2">
-            <div className="text-sm font-medium">Preview</div>
-            <div className="grid md:grid-cols-2 gap-3">
-              <div>
-                <div className="text-xs text-gray-700">Story H (with hints)</div>
-                {storyH ? storyH.map((p,i)=>(<p key={i} className="mb-2 leading-7">{p}</p>)) : <div className="text-xs text-gray-500">No story yet.</div>}
-                {audioH && <audio id={`audio-H-${expId}`} controls src={audioH} className="mt-1 w-full" />}
-                {audioH && (
-                  <div className="mt-2 flex items-center gap-2">
-                    <button className="btn" onClick={()=> (document.getElementById(`audio-H-${expId}`) as HTMLAudioElement)?.play()}>Play</button>
-                    <button className="btn" onClick={()=> (document.getElementById(`audio-H-${expId}`) as HTMLAudioElement)?.pause()}>Pause</button>
-                    <button className="btn" onClick={()=> { const a = document.getElementById(`audio-H-${expId}`) as HTMLAudioElement | null; if (a) a.currentTime = Math.max(0, a.currentTime - 3); }}>-3s</button>
-                    <button className="btn" onClick={()=> { const a = document.getElementById(`audio-H-${expId}`) as HTMLAudioElement | null; if (a) a.currentTime = a.currentTime + 3; }}>+3s</button>
-                  </div>
-                )}
-                <div className="mt-2"><button className="btn" onClick={()=>ttsOne('H')}>TTS H</button></div>
-              </div>
-              <div>
-                <div className="text-xs text-gray-700">Story N (no hints)</div>
-                {storyN ? storyN.map((p,i)=>(<p key={i} className="mb-2 leading-7">{p}</p>)) : <div className="text-xs text-gray-500">No story yet.</div>}
-                {audioN && <audio id={`audio-N-${expId}`} controls src={audioN} className="mt-1 w-full" />}
-                {audioN && (
-                  <div className="mt-2 flex items-center gap-2">
-                    <button className="btn" onClick={()=> (document.getElementById(`audio-N-${expId}`) as HTMLAudioElement)?.play()}>Play</button>
-                    <button className="btn" onClick={()=> (document.getElementById(`audio-N-${expId}`) as HTMLAudioElement)?.pause()}>Pause</button>
-                    <button className="btn" onClick={()=> { const a = document.getElementById(`audio-N-${expId}`) as HTMLAudioElement | null; if (a) a.currentTime = Math.max(0, a.currentTime - 3); }}>-3s</button>
-                    <button className="btn" onClick={()=> { const a = document.getElementById(`audio-N-${expId}`) as HTMLAudioElement | null; if (a) a.currentTime = a.currentTime + 3; }}>+3s</button>
-                  </div>
-                )}
-                <div className="mt-2"><button className="btn" onClick={()=>ttsOne('N')}>TTS N</button></div>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            <div className="text-sm font-medium">Launch</div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <button className="btn" disabled={busy.launch} onClick={()=>launch('with-hints')}>Launch H (with hints)</button>
-              <button className="btn" disabled={busy.launch} onClick={()=>launch('without-hints')}>Launch N (no hints)</button>
-              {joinCode && <div className="text-xs">Join Code: <span className="font-mono">{joinCode}</span></div>}
-            </div>
-          </div>
+          </button>
         </div>
-      )}
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {[
+            { key: 'all', label: 'Total', value: stats.total, color: 'blue' },
+            { key: 'draft', label: 'Drafts', value: stats.draft, color: 'orange' },
+            { key: 'live', label: 'Live', value: stats.live, color: 'green' },
+            { key: 'closed', label: 'Completed', value: stats.closed, color: 'gray' },
+          ].map((card) => (
+            <button
+              key={card.key}
+              onClick={() => setFilter(card.key as any)}
+              className={`p-6 rounded-2xl border-2 transition-all text-left ${
+                filter === card.key ? `border-${card.color}-500 bg-${card.color}-50 shadow-lg` : 'border-gray-200 bg-white hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-start justify-between mb-2">
+                <div className="text-3xl">{card.key === 'live' ? '✅' : card.key === 'draft' ? '✍️' : '📚'}</div>
+                <div className={`text-2xl font-bold text-${card.color}-600`}>{card.value}</div>
+              </div>
+              <div className="text-sm font-medium text-gray-600">{card.label} Experiments</div>
+            </button>
+          ))}
+        </div>
+
+        {filtered.length === 0 ? (
+          <div className="text-center py-16">
+            <div className="text-6xl mb-4">🗂️</div>
+            <h3 className="text-xl font-semibold mb-2">
+              {filter === 'all' ? 'No experiments yet' : `No ${filter} experiments`}
+            </h3>
+            <p className="text-gray-600 mb-6">
+              {filter === 'all' ? 'Create your first experiment to get started' : 'Try changing the filter or create a new experiment'}
+            </p>
+            {filter === 'all' && (
+              <button className="btn primary px-8 py-3" onClick={createNew}>
+                Create Your First Experiment
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filtered.map((exp) => {
+              const expId = exp._id || exp.id;
+              const level = exp.level || exp.cefr || 'N/A';
+              const status = exp.status || 'draft';
+              const classCode = exp.classCode || exp.code || 'N/A';
+              return (
+                <div
+                  key={expId}
+                className="group bg-white rounded-2xl border-2 border-gray-200 hover:border-blue-400 hover:shadow-xl transition overflow-hidden"
+              >
+                <div
+                  className={`h-2 ${
+                    status === 'live'
+                      ? 'bg-green-500'
+                      : status === 'draft'
+                      ? 'bg-orange-500'
+                      : 'bg-gray-400'
+                  }`}
+                />
+
+                <div className="p-6 space-y-4">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 pr-4">
+                      <h3 className="font-bold text-lg mb-1 line-clamp-2 group-hover:text-blue-600 transition">
+                        {exp.title}
+                      </h3>
+                      <div className="flex items-center gap-2 text-sm text-gray-500">
+                        <span className="px-2 py-0.5 bg-gray-100 rounded font-medium">{level}</span>
+                        <div className="flex items-center gap-1 bg-gray-50 px-2 py-0.5 rounded">
+                          <span className="font-mono text-xs font-semibold">{classCode}</span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              navigator.clipboard.writeText(classCode)
+                              toast.success('Code copied!')
+                            }}
+                            className="text-xs text-gray-500 hover:text-gray-700 cursor-pointer ml-1"
+                            title="Copy to clipboard"
+                          >
+                            Copy
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <span
+                      className={`px-3 py-1 text-xs font-medium rounded-full ${
+                        status === 'live'
+                          ? 'bg-green-100 text-green-700'
+                          : status === 'draft'
+                          ? 'bg-orange-100 text-orange-700'
+                          : 'bg-gray-100 text-gray-700'
+                      }`}
+                    >
+                      {status}
+                    </span>
+                  </div>
+
+                  <div className="flex gap-2 items-center justify-between">
+                    <div className="text-xs text-gray-500">
+                      Code: <span className="font-mono">{classCode}</span>
+                    </div>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(classCode);
+                        toast.success('Code copied!');
+                      }}
+                      className="text-xs px-2 py-1 border rounded hover:bg-gray-100"
+                      title="Copy code"
+                    >
+                      Copy
+                    </button>
+                  </div>
+
+                  <button
+                    className="btn primary w-full text-sm font-semibold"
+                    onClick={() => nav(`/teacher/experiments/${expId}`)}
+                  >
+                    Manage →
+                  </button>
+                </div>
+              </div>
+            )})}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

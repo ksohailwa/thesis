@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { Attempt } from '../models/Attempt';
 import { Event } from '../models/Event';
+import { getPhaseForOccurrence } from '../utils/phaseMapper';
+import logger from '../utils/logger';
 import { requireAuth, requireRole, AuthedRequest } from '../middleware/auth';
 import { getOpenAI } from '../utils/openai';
 import { hintSystem, hintUser } from '../prompts';
@@ -11,15 +13,16 @@ const router = Router();
 router.post('/attempt', requireAuth, requireRole('student'), async (req: AuthedRequest, res) => {
   const schema = z.object({
     experimentId: z.string(),
-    story: z.enum(['H','N']),
+    story: z.enum(['H', 'N']),
     targetWord: z.string(),
     occurrenceIndex: z.number().int().min(1).max(4),
-    text: z.string()
+    text: z.string(),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { experimentId, story, targetWord, occurrenceIndex, text } = parsed.data;
   // Minimal: store attempt entry
+  const phase = getPhaseForOccurrence(occurrenceIndex);
   const attempt = await Attempt.create({
     session: req.user?.sub as any,
     experiment: experimentId as any,
@@ -29,11 +32,12 @@ router.post('/attempt', requireAuth, requireRole('student'), async (req: AuthedR
     targetWord,
     condition: story === 'H' ? 'with-hints' : 'without-hints',
     abCondition: story === 'H' ? 'with-hints' : 'without-hints',
-    attempts: [ { text, timestamp: new Date() } ],
+    phase,
+    attempts: [{ text, timestamp: new Date() }],
     revealed: false,
     hintCount: 0,
     finalText: text,
-    score: 0
+    score: 0,
   } as any);
   // For H, return positional feedback hints (simple prefix match)
   const allowHints = story === 'H' && occurrenceIndex <= 3;
@@ -47,7 +51,11 @@ router.post('/attempt', requireAuth, requireRole('student'), async (req: AuthedR
 });
 
 router.post('/hint', requireAuth, requireRole('student'), async (req: AuthedRequest, res) => {
-  const schema = z.object({ story: z.enum(['H','N']), targetWord: z.string(), occurrenceIndex: z.number().int().min(1).max(3) });
+  const schema = z.object({
+    story: z.enum(['H', 'N']),
+    targetWord: z.string(),
+    occurrenceIndex: z.number().int().min(1).max(3),
+  });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { story, targetWord } = parsed.data;
@@ -60,7 +68,10 @@ router.post('/hint', requireAuth, requireRole('student'), async (req: AuthedRequ
         model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
         response_format: { type: 'json_object' },
         temperature: 0.2,
-        messages: [ { role:'system', content: hintSystem() }, { role:'user', content: hintUser(targetWord, '', 'English') } ]
+        messages: [
+          { role: 'system', content: hintSystem() },
+          { role: 'user', content: hintUser(targetWord, '', 'English') },
+        ],
       });
       const text = r.choices?.[0]?.message?.content || '{}';
       const data = JSON.parse(text);
@@ -68,15 +79,87 @@ router.post('/hint', requireAuth, requireRole('student'), async (req: AuthedRequ
     } catch {}
   }
   // Fallback simple initial-letter hint
-  return res.json({ hint: `${targetWord[0] || ''}${'_'.repeat(Math.max(0, targetWord.length - 1))}` });
+  return res.json({
+    hint: `${targetWord[0] || ''}${'_'.repeat(Math.max(0, targetWord.length - 1))}`,
+  });
+});
+
+router.post('/define', requireAuth, requireRole('student'), async (req: AuthedRequest, res) => {
+  const schema = z.object({ word: z.string().min(1).max(64) });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid word' });
+  const word = parsed.data.word.toLowerCase();
+  const definitions: Record<string, string> = {
+    example: 'A thing characteristic of its kind or illustrating a general rule.',
+    story: 'An account of imaginary or real people and events told for entertainment.',
+  };
+  const def = definitions[word] || `The word "${word}" - practice spelling it!`;
+  return res.json({ word, definition: def });
 });
 
 router.post('/events', requireAuth, requireRole('student'), async (req: AuthedRequest, res) => {
-  const schema = z.object({ events: z.array(z.object({ type: z.string(), payload: z.any().optional(), ts: z.number().optional() })) });
+  const schema = z.object({
+    events: z.array(
+      z.object({ type: z.string(), payload: z.any().optional(), ts: z.number().optional() })
+    ),
+  });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const docs = await Event.insertMany((parsed.data.events || []).map(e => ({ session: req.user?.sub as any, student: req.user?.sub as any, taskType: 'gap-fill', type: e.type as any, payload: e.payload, ts: e.ts ? new Date(e.ts) : new Date() })));
+  const docs = await Event.insertMany(
+    (parsed.data.events || []).map((e) => ({
+      session: req.user?.sub as any,
+      student: req.user?.sub as any,
+      taskType: 'gap-fill',
+      type: e.type as any,
+      payload: e.payload,
+      ts: e.ts ? new Date(e.ts) : new Date(),
+    }))
+  );
   res.json({ ok: true, saved: docs.length });
+});
+
+/**
+ * Submit student feedback after completing story
+ * POST /api/student/feedback
+ */
+router.post('/feedback', requireAuth, requireRole('student'), async (req: AuthedRequest, res) => {
+  const schema = z.object({
+    experimentId: z.string(),
+    storyKey: z.enum(['A', 'B']),
+    condition: z.enum(['with-hints', 'without-hints']),
+    difficulty: z.number().int().min(1).max(5),
+    enjoyment: z.number().int().min(1).max(5),
+    comment: z.string().optional(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { experimentId, storyKey, condition, difficulty, enjoyment, comment } = parsed.data;
+
+  await Event.create({
+    session: req.user?.sub as any,
+    student: req.user?.sub as any,
+    experiment: experimentId as any,
+    taskType: 'gap-fill',
+    type: 'feedback' as any,
+    payload: {
+      storyKey,
+      condition,
+      difficulty,
+      enjoyment,
+      comment: comment || '',
+      timestamp: new Date(),
+    },
+  });
+
+  logger.info('Student feedback received', {
+    studentId: req.user?.sub,
+    experimentId,
+    storyKey,
+    difficulty,
+    enjoyment,
+  });
+
+  res.json({ ok: true, message: 'Feedback received' });
 });
 
 export default router;

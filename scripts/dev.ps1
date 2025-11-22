@@ -1,5 +1,5 @@
 $ErrorActionPreference = 'Stop'
-Write-Host "Spell Wise • Dev" -ForegroundColor Cyan
+Write-Host "SpellWise • Dev" -ForegroundColor Cyan
 
 Set-Location (Split-Path $PSScriptRoot -Parent)
 
@@ -12,4 +12,3 @@ $client = Start-Process -FilePath npm -ArgumentList 'run','dev' -WorkingDirector
 
 Write-Host "Press Ctrl+C to stop. (Server PID=$($server.Id), Client PID=$($client.Id))" -ForegroundColor Green
 Wait-Process -Id @($server.Id, $client.Id) -ErrorAction SilentlyContinue
-

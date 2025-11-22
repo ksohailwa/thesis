@@ -1,36 +1,58 @@
-import mongoose, { Schema, Types } from 'mongoose';
+﻿import mongoose, { Schema, Types } from 'mongoose';
 
 export interface IExperiment {
   _id: Types.ObjectId;
-  owner?: Types.ObjectId;
+  owner?: string;
   classCode: string; // join code
   code?: string; // alias for classCode
   title: string;
   description?: string;
-  level?: 'A1'|'A2'|'B1'|'B2'|'C1'|'C2'; // alias
-  cefr?: 'A2'|'B1'|'B2'|'C1'|'C2';
+  level?: 'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2'; // alias
+  cefr?: 'A2' | 'B1' | 'B2' | 'C1' | 'C2';
   targetWords: string[];
   randomSeed?: string;
   seed?: string;
-  assignedCondition?: 'with-hints'|'without-hints';
-  status?: 'draft'|'live'|'closed';
-  stories?: { H?: Types.ObjectId; N?: Types.ObjectId };
+  assignedCondition?: 'with-hints' | 'without-hints';
+  status?: 'draft' | 'live' | 'closed' | 'archived';
+  stories?: {
+    story1?: { level?: string; targetWords: string[] };
+    story2?: { level?: string; targetWords: string[] };
+  };
+  storyRefs?: { story1?: Types.ObjectId; story2?: Types.ObjectId };
 }
 
-const ExperimentSchema = new Schema<IExperiment>({
-  owner: { type: Schema.Types.ObjectId, ref: 'User' },
-  classCode: { type: String, required: true, index: true, unique: true },
-  code: { type: String, index: true, unique: true },
-  title: { type: String, required: true },
-  description: { type: String },
-  level: { type: String },
-  cefr: { type: String },
-  targetWords: { type: [String], default: [] },
-  randomSeed: { type: String },
-  seed: { type: String },
-  assignedCondition: { type: String, enum: ['with-hints','without-hints'], required: false }
-  , status: { type: String, enum: ['draft','live','closed'], default: 'draft' },
-  stories: { H: { type: Schema.Types.ObjectId, ref: 'Story' }, N: { type: Schema.Types.ObjectId, ref: 'Story' } }
-}, { timestamps: true });
+const ExperimentSchema = new Schema<IExperiment>(
+  {
+    owner: { type: String, index: true },
+    classCode: { type: String, required: true, index: true, unique: true },
+    code: { type: String, index: true, unique: true },
+    title: { type: String, required: true },
+    description: { type: String },
+    level: { type: String },
+    cefr: { type: String },
+    targetWords: {
+      type: [String],
+      default: [],
+      validate: {
+        validator: (v: string[]) => v.length <= 10,
+        message: 'Target words must be between 0 and 10',
+      },
+    },
+    randomSeed: { type: String },
+    seed: { type: String },
+    assignedCondition: { type: String, enum: ['with-hints', 'without-hints'], required: false },
+    status: { type: String, enum: ['draft', 'live', 'closed', 'archived'], default: 'draft' },
+    stories: {
+      story1: { level: { type: String }, targetWords: { type: [String], default: [] } },
+      story2: { level: { type: String }, targetWords: { type: [String], default: [] } },
+    },
+    storyRefs: {
+      story1: { type: Schema.Types.ObjectId, ref: 'Story' },
+      story2: { type: Schema.Types.ObjectId, ref: 'Story' },
+    },
+  },
+  { timestamps: true }
+);
 
-export const Experiment = mongoose.models.Experiment || mongoose.model<IExperiment>('Experiment', ExperimentSchema);
+export const Experiment =
+  mongoose.models.Experiment || mongoose.model<IExperiment>('Experiment', ExperimentSchema);

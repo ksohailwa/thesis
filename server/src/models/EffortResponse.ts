@@ -15,8 +15,7 @@ const EffortSchema = new Schema<IEffortResponse>({
   taskType: { type: String, required: true },
   position: { type: String, enum: ['mid', 'end'], required: true },
   score: { type: Number, min: 1, max: 9, required: true },
-  ts: { type: Date, default: () => new Date() }
+  ts: { type: Date, default: () => new Date() },
 });
 
 export const EffortResponse = mongoose.model<IEffortResponse>('EffortResponse', EffortSchema);
-

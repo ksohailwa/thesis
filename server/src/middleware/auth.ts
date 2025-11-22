@@ -3,12 +3,17 @@ import { verifyAccess } from '../utils/jwt';
 import { config } from '../config';
 
 export interface AuthedRequest extends Request {
-  user?: { sub: string; role: 'teacher'|'student'; email: string } & Record<string, any>;
+  user?: { sub: string; role: 'teacher' | 'student'; email: string } & Record<string, any>;
 }
 
 export function requireAuth(req: AuthedRequest, res: Response, next: NextFunction) {
+  const internalSecret = req.headers['x-internal-job'];
+  if (internalSecret && internalSecret === config.internalJobSecret) {
+    req.user = { sub: 'internal-job', role: 'teacher', email: 'job@internal' } as any;
+    return next();
+  }
+
   if (config.devNoAuth) {
-    // In dev mode, bypass auth and allow setting role via header (default teacher)
     const role = (req.headers['x-dev-role'] as any) === 'student' ? 'student' : 'teacher';
     req.user = { sub: 'dev-user', role, email: `${role}@dev.local` } as any;
     return next();
@@ -25,7 +30,7 @@ export function requireAuth(req: AuthedRequest, res: Response, next: NextFunctio
   }
 }
 
-export function requireRole(role: 'teacher'|'student') {
+export function requireRole(role: 'teacher' | 'student') {
   return (req: AuthedRequest, res: Response, next: NextFunction) => {
     if (config.devNoAuth) return next();
     if (!req.user) return res.status(401).json({ error: 'Unauthenticated' });
@@ -33,4 +38,3 @@ export function requireRole(role: 'teacher'|'student') {
     next();
   };
 }
-

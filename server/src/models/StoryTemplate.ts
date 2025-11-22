@@ -31,7 +31,7 @@ const StoryTemplateSchema = new Schema<IStoryTemplate>({
   owner: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   title: { type: String, required: true },
   language: { type: String, required: true },
-  difficulty: { type: String, enum: ['A1','A2','B1','B2','C1','C2'], required: true },
+  difficulty: { type: String, enum: ['A1', 'A2', 'B1', 'B2', 'C1', 'C2'], required: true },
   targetWords: { type: [String], validate: (arr: string[]) => arr.length <= 10, required: true },
   prompt: { type: String, required: true },
   storyText: { type: String },
@@ -43,8 +43,8 @@ const StoryTemplateSchema = new Schema<IStoryTemplate>({
     randomize: { type: Boolean, default: false },
     distractors: {
       count: { type: Number, default: 0 },
-      strategy: { type: String, enum: ['frequency', 'pos', 'random'], default: 'random' }
-    }
+      strategy: { type: String, enum: ['frequency', 'pos', 'random'], default: 'random' },
+    },
   },
   hintPolicy: {
     cooldownMs: { type: Number, default: 15000 },
@@ -54,8 +54,8 @@ const StoryTemplateSchema = new Schema<IStoryTemplate>({
       orthographicAt: { type: Number, default: 0 },
       phonemeAt: { type: Number, default: 3 },
       semanticAt: { type: Number, default: 6 },
-      morphologyAt: { type: Number, default: 9 }
-    }
+      morphologyAt: { type: Number, default: 9 },
+    },
   },
   createdAt: { type: Date, default: () => new Date() },
   updatedAt: { type: Date, default: () => new Date() },
