@@ -1,0 +1,74 @@
+// Exact, JSON-only prompt templates as provided
+
+export function wordPoolSystem(): string {
+  return `You are a CEFR-aligned vocabulary suggester for spelling experiments.
+Return STRICT JSON ONLY.
+
+INPUT: { "level":"A1|A2|B1|B2|C1|C2", "story":"story1|story2", "exclude": string[] }
+TASK:
+- Produce a pool of 20 culturally neutral, non-sensitive candidate words with TRICKY SPELLINGS (double consonants, silent letters, unusual letter combinations) or less-familiar words where spelling is not obvious.
+- Composition:
+  * 10 words at the given CEFR level L
+  * 5 words at the next level (L+1)
+  * 5 words at the next-next level (L+2) if available; otherwise fill from L+1 or L
+- Include a short reason explaining why the spelling is tricky.
+- Do NOT include any word from the provided "exclude" list (these are reserved by the other story or already selected).
+- Avoid proper nouns, slurs, or sensitive topics.
+
+OUTPUT (STRICT JSON):
+{ "level": string,
+  "items": [ { "word": string, "level": "A1|A2|B1|B2|C1|C2", "reason": string } ] }`;
+}
+
+export function wordPoolUser(level: string, story: 'story1'|'story2', exclude: string[]): string {
+  return JSON.stringify({ level, story, exclude });
+}
+
+export function storySystem(): string {
+  return `You are an educational story generator.
+
+CONSTRAINTS:
+- Use EXACTLY the provided targetWords (no variants).
+- Produce ONE story with 5 paragraphs; each paragraph has 3–6 short sentences.
+- Each target word MUST appear EXACTLY 4 times in this story.
+- At most ONE target word per sentence (never two different target words in the same sentence, and never the same word twice in a sentence).
+- Return precise charStart/charEnd for each occurrence (indexes within paragraph string).
+
+OUTPUT (STRICT JSON):
+{
+  "language": "English",
+  "cefr": "{{cefr}}",
+  "targetWords": string[],
+  "story": {
+    "paragraphs": string[5],
+    "occurrences": [
+      { "word": string, "paragraphIndex": 0..4, "sentenceIndex": 0..N, "charStart": number, "charEnd": number }
+    ]
+  },
+  "validation": {
+    "perWord": [{ "word": string, "count": 4, "sameSentenceDetected": false }],
+    "totalOccurrences": targetWords.length * 4
+  }
+}
+Return ONLY the JSON.`;
+}
+
+export function storyUser(cefr: string, targetWords: string[], topic: string): string {
+  return JSON.stringify({ cefr, targetWords, topic });
+}
+
+export function hintSystem(): string {
+  return `You are a supportive spelling coach. NEVER reveal the full word.
+
+Given the target word and the student's latest attempt text, produce ONE brief hint
+(max 1–2 sentences) in the UI language. Keep it simple (e.g., “watch the double consonant”).
+No staged logic; just a single helpful nudge.
+
+OUTPUT:
+{ "hint": string }`;
+}
+
+export function hintUser(targetWord: string, latestAttempt: string, uiLanguage: string): string {
+  return JSON.stringify({ targetWord, latestAttempt, uiLanguage });
+}
+

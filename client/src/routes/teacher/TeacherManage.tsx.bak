@@ -1,0 +1,689 @@
+﻿import { useEffect, useState } from 'react'
+     import { useNavigate, useParams, Link } from 'react-router-dom'
+     import api from '../../lib/api'
+     import LoadingScreen from '../../components/LoadingScreen'
+     
+     export default function TeacherManage() {
+       const { id: expId } = useParams()
+       const nav = useNavigate()
+       
+       // Basic experiment data
+       const [meta, setMeta] = useState<{ title: string; level: string; status?: string 
+   }>({ title: '', level: '' })
+       const [words, setWords] = useState('')
+       const [status, setStatus] = useState('')
+       const [loading, setLoading] = useState(true)
+       
+       // Experiment status
+       const [experimentStatus, setExperimentStatus] = useState<'draft' | 'live' | 
+   'closed'>('draft')
+       
+       // Participation data
+       const [participation, setParticipation] = useState<any>(null)
+       
+       // Student detail modal
+       const [selectedStudent, setSelectedStudent] = useState<string | null>(null)
+       const [studentProgress, setStudentProgress] = useState<any>(null)
+       const [loadingStudent, setLoadingStudent] = useState(false)
+       
+       // Delete confirmation
+       const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+
+       // Story generation states (existing)
+       const [jobIds, setJobIds] = useState<{ s1?: string; s2?: string; tts1?: string;     
+   tts2?: string }>({})
+       const [jobStatus, setJobStatus] = useState<{ s1?: string; s2?: string; tts1?:       
+   string; tts2?: string }>({
+         s1: 'Not started',
+         s2: 'Not started',
+         tts1: 'Not started',
+         tts2: 'Not started'
+       })
+       const [gen, setGen] = useState<{ s1: boolean; s2: boolean; tts1: boolean; tts2:     
+   boolean }>({
+         s1: false,
+         s2: false,
+         tts1: false,
+         tts2: false
+       })
+
+       const getStep = (k: string) => jobStatus[k as keyof typeof jobStatus]
+
+       async function fetchParticipation() {
+         if (!expId) return
+         try {
+           const { data } = await api.get(`/api/experiments/${expId}/participation`)       
+           setParticipation(data)
+         } catch (e: any) {
+           console.error('Failed to fetch participation:', e)
+         }
+       }
+
+       async function updateStatus(newStatus: 'draft' | 'live' | 'closed') {
+         if (!expId) return
+         try {
+           setStatus('Updating status...')
+           await api.patch(`/api/experiments/${expId}/status`, { status: newStatus })      
+           setExperimentStatus(newStatus)
+           setStatus(`Experiment ${newStatus === 'live' ? 'launched' : newStatus}!`)       
+
+           if (newStatus === 'live') {
+             await fetchParticipation()
+           }
+         } catch (e: any) {
+           setStatus(e?.response?.data?.error || 'Failed to update status')
+         }
+       }
+
+       async function deleteExperiment() {
+         if (!expId) return
+         try {
+           setStatus('Deleting...')
+           const { data } = await api.delete(`/api/experiments/${expId}`)
+           setStatus(data.message)
+
+           if (data.action === 'deleted') {
+             setTimeout(() => nav('/teacher'), 2000)
+           } else {
+             setExperimentStatus('closed')
+             setShowDeleteConfirm(false)
+           }
+         } catch (e: any) {
+           setStatus(e?.response?.data?.error || 'Failed to delete')
+           setShowDeleteConfirm(false)
+         }
+       }
+
+       async function viewStudentProgress(studentId: string) {
+         if (!expId) return
+         setLoadingStudent(true)
+         setSelectedStudent(studentId)
+         try {
+           const { data } = await
+   api.get(`/api/experiments/${expId}/student/${studentId}/progress`)
+           setStudentProgress(data)
+         } catch (e: any) {
+           console.error('Failed to fetch student progress:', e)
+           setStatus('Failed to load student progress')
+         } finally {
+           setLoadingStudent(false)
+         }
+       }
+
+       // Story generation functions (existing)
+       async function generateH() {
+         try {
+           setJobStatus(s => ({ ...s, s1: 'pending' }))
+           setGen(g => ({ ...g, s1: true }))
+           await api.post('/api/jobs', { type: 'generate_story', experimentId: expId,      
+   storyLabel: 'story1' })
+         } catch (e: any) {
+           setStatus(e?.response?.data?.error || 'Error - try again to enqueue Story 1')   
+         }
+       }
+
+       async function generateN() {
+         try {
+           setJobStatus(s => ({ ...s, s2: 'pending' }))
+           setGen(g => ({ ...g, s2: true }))
+           await api.post('/api/jobs', { type: 'generate_story', experimentId: expId,      
+   storyLabel: 'story2' })
+         } catch (e: any) {
+           setStatus(e?.response?.data?.error || 'Error - try again to enqueue Story 2')   
+         }
+       }
+
+       async function ttsOne(label: '1' | '2') {
+         try {
+           const storyLabel = label === '1' ? 'story1' : 'story2'
+           if (label === '1') {
+             setJobStatus(s => ({ ...s, tts1: 'pending' }))
+             setGen(g => ({ ...g, tts1: true }))
+           } else {
+             setJobStatus(s => ({ ...s, tts2: 'pending' }))
+             setGen(g => ({ ...g, tts2: true }))
+           }
+           await api.post('/api/jobs', { type: 'generate_tts', experimentId: expId,        
+   storyLabel })
+         } catch (e: any) {
+           setStatus(e?.response?.data?.error || 'Error - try again to enqueue TTS')       
+         }
+       }
+
+       // Load experiment data
+       useEffect(() => {
+         (async () => {
+           if (!expId) return
+           setLoading(true)
+           try {
+             const { data } = await api.get(`/api/experiments/${expId}`)
+             setMeta({
+               title: data?.title || '',
+               level: data?.level || data?.cefr || '',
+               status: data?.status || 'draft'
+             })
+             setExperimentStatus(data?.status || 'draft')
+
+             const existing = (data?.targetWords || []) as string[]
+             setWords(existing.join(', '))
+
+             // Fetch participation if live
+             if (data?.status === 'live') {
+               await fetchParticipation()
+             }
+           } catch (e) {
+             console.error('Failed to load experiment:', e)
+           } finally {
+             setLoading(false)
+           }
+         })()
+       }, [expId])
+
+       // Poll job status
+       useEffect(() => {
+         if (!gen.s1 && !gen.s2 && !gen.tts1 && !gen.tts2) return
+         const t = setInterval(async () => {
+           try {
+             const { data } = await
+   api.get(`/api/jobs/experiment/${expId}/status`).catch(() => ({ data: null } as any))    
+             if (!data) return
+             const updates: any = {}
+             if (data.s1) updates.s1 = data.s1
+             if (data.s2) updates.s2 = data.s2
+             if (data.tts1) updates.tts1 = data.tts1
+             if (data.tts2) updates.tts2 = data.tts2
+             if (Object.keys(updates).length) setJobStatus(s => ({ ...s, ...updates }))    
+           } catch {}
+         }, 2000)
+         return () => clearInterval(t)
+       }, [gen, expId])
+
+       if (loading) {
+         return <LoadingScreen message="Loading experiment..." />
+       }
+
+       return (
+         <div className="max-w-4xl mx-auto py-6 space-y-6">
+           <div className="flex justify-between items-start">
+             <div>
+               <Link to="/teacher" className="text-sm text-blue-600 hover:underline">←     
+   Back to Experiments</Link>
+               <h1 className="text-2xl font-semibold mt-2">{meta.title}</h1>
+               <p className="text-sm text-gray-600">Level: {meta.level}</p>
+             </div>
+
+             {/* Status Badge */}
+             <div className="flex items-center gap-3">
+               <span className={`px-3 py-1 rounded-full text-sm font-semibold ${
+                 experimentStatus === 'live' ? 'bg-green-100 text-green-800' :
+                 experimentStatus === 'closed' ? 'bg-gray-100 text-gray-800' :
+                 'bg-yellow-100 text-yellow-800'
+               }`}>
+                 {experimentStatus === 'live' ? '🟢 Live' :
+                  experimentStatus === 'closed' ? '⚫ Closed' :
+                  '🟡 Draft'}
+               </span>
+             </div>
+           </div>
+
+           {/* Status message */}
+           {status && (
+             <div className="p-3 bg-blue-50 border border-blue-200 rounded text-sm">       
+               {status}
+             </div>
+           )}
+
+           {/* Participation Stats (only show if live) */}
+           {experimentStatus === 'live' && participation && (
+             <div className="bg-blue-50 p-4 rounded-lg">
+               <h3 className="font-semibold mb-3">📊 Participation Overview</h3>
+               <div className="grid grid-cols-3 gap-4 text-center">
+                 <div>
+                   <div className="text-2xl font-bold
+   text-blue-600">{participation.totalStudents}</div>
+                   <div className="text-sm text-gray-600">Total Students</div>
+                 </div>
+                 <div>
+                   <div className="text-2xl font-bold
+   text-green-600">{participation.activeStudents}</div>
+                   <div className="text-sm text-gray-600">Active Students</div>
+                 </div>
+                 <div>
+                   <div className="text-2xl font-bold text-purple-600">
+                     {participation.students.length > 0
+                       ? Math.round(participation.students.reduce((sum: number, s: any) => 
+    sum + s.averageScore, 0) / participation.students.length)
+                       : 0}%
+                   </div>
+                   <div className="text-sm text-gray-600">Avg Score</div>
+                 </div>
+               </div>
+             </div>
+           )}
+
+           {/* Action Buttons */}
+           <div className="flex flex-wrap gap-3">
+             {experimentStatus === 'draft' && (
+               <>
+                 <button
+                   className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 
+    disabled:opacity-50"
+                   onClick={() => updateStatus('live')}
+                   disabled={!words.trim()}
+                 >
+                   🚀 Launch Experiment
+                 </button>
+                 <button
+                   className="px-4 py-2 border border-red-600 text-red-600 rounded
+   hover:bg-red-50"
+                   onClick={() => setShowDeleteConfirm(true)}
+                 >
+                   🗑️ Delet
+                 </button>
+               </>
+             )}
+
+             {experimentStatus === 'live' && (
+               <button
+                 className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"    
+                 onClick={() => updateStatus('closed')}
+               >
+                 ⏸️ Close Experiment
+               </button>
+             )}
+
+             {experimentStatus === 'closed' && (
+               <button
+                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"    
+                 onClick={() => updateStatus('live')}
+               >
+                 ▶️ Reopen Experiment
+               </button>
+             )}
+
+             {experimentStatus === 'live' && (
+               <button
+                 className="px-4 py-2 border rounded hover:bg-gray-50"
+                 onClick={fetchParticipation}
+               >
+                 🔄 Refresh Stats
+               </button>
+             )}
+           </div>
+
+           {/* Word Selection */}
+           <div className="bg-white border rounded-lg p-4">
+             <h3 className="font-semibold mb-3">Target Words</h3>
+             <div className="text-sm text-gray-600 mb-2">
+               Current words: {words || 'None selected'}
+             </div>
+             <Link
+               to={`/teacher/words/${expId}`}
+               className="text-blue-600 hover:underline text-sm"
+             >
+               Edit Words →
+             </Link>
+           </div>
+
+           {/* Story Generation */}
+           <div className="bg-white border rounded-lg p-4 space-y-3">
+             <h3 className="font-semibold">Story Generation</h3>
+
+             <div className="flex items-center gap-3">
+               <button
+                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700     
+   disabled:opacity-50"
+                 onClick={generateH}
+                 disabled={jobStatus.s1 === 'pending' || jobStatus.s1 === 'running'}       
+               >
+                 Generate Story 1
+               </button>
+               <span className="text-xs text-gray-600">
+                 {jobStatus.s1 === 'success' ? '✓ Complete' :
+                  jobStatus.s1 === 'pending' || jobStatus.s1 === 'running' ? '⏳   Generating...' :
+                  jobStatus.s1 === 'error' ? '❌ Failed' : 'Not started'}
+               </span>
+             </div>
+
+             <div className="flex items-center gap-3">
+               <button
+                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700     
+   disabled:opacity-50"
+                 onClick={generateN}
+                 disabled={jobStatus.s2 === 'pending' || jobStatus.s2 === 'running'}       
+               >
+                 Generate Story 2
+               </button>
+               <span className="text-xs text-gray-600">
+                 {jobStatus.s2 === 'success' ? '✓ Complete' :
+                  jobStatus.s2 === 'pending' || jobStatus.s2 === 'running' ? '⏳Generating...' :
+                  jobStatus.s2 === 'error' ? '❌ Failed' : 'Not started'}
+               </span>
+             </div>
+
+             <div className="border-t pt-3 mt-3">
+               <div className="flex items-center gap-3">
+                 <button
+                   className="px-4 py-2 border rounded hover:bg-gray-50
+   disabled:opacity-50"
+                   onClick={() => ttsOne('1')}
+                   disabled={jobStatus.tts1 === 'pending' || jobStatus.tts1 === 'running'  
+   || jobStatus.s1 !== 'success'}
+                 >
+                   Generate TTS 1
+                 </button>
+                 <span className="text-xs text-gray-600">
+                   {jobStatus.tts1 === 'success' ? '✓ Complete' :
+                    jobStatus.tts1 === 'pending' || jobStatus.tts1 === 'running' ? '⏳ Generating...' :
+                    jobStatus.tts1 === 'error' ? '❌ Failed' : 'Not started'}
+                 </span>
+               </div>
+
+               <div className="flex items-center gap-3 mt-2">
+                 <button
+                   className="px-4 py-2 border rounded hover:bg-gray-50
+   disabled:opacity-50"
+                   onClick={() => ttsOne('2')}
+                   disabled={jobStatus.tts2 === 'pending' || jobStatus.tts2 === 'running'  
+   || jobStatus.s2 !== 'success'}
+                 >
+                   Generate TTS 2
+                 </button>
+                 <span className="text-xs text-gray-600">
+                   {jobStatus.tts2 === 'success' ? '✓ Complete' :
+                    jobStatus.tts2 === 'pending' || jobStatus.tts2 === 'running' ? '⏳ Generating...' :
+                    jobStatus.tts2 === 'error' ? '❌ Failed' : 'Not started'}
+                 </span>
+               </div>
+             </div>
+           </div>
+
+           {/* Student Progress Table */}
+           {experimentStatus === 'live' && participation && participation.students.length  
+   > 0 && (
+             <div className="bg-white border rounded-lg overflow-hidden">
+               <div className="bg-gray-50 px-4 py-3 border-b">
+                 <h3 className="font-semibold">👥 Student Progress</h3>
+               </div>
+               <div className="overflow-x-auto">
+                 <table className="w-full">
+                   <thead className="bg-gray-50 border-b">
+                     <tr>
+                       <th className="px-4 py-3 text-left text-xs font-semibold
+   text-gray-600">Student</th>
+                       <th className="px-4 py-3 text-left text-xs font-semibold
+   text-gray-600">Condition</th>
+                       <th className="px-4 py-3 text-center text-xs font-semibold
+   text-gray-600">Attempts</th>
+                       <th className="px-4 py-3 text-center text-xs font-semibold
+   text-gray-600">Completed</th>
+                       <th className="px-4 py-3 text-center text-xs font-semibold
+   text-gray-600">Avg Score</th>
+                       <th className="px-4 py-3 text-center text-xs font-semibold
+   text-gray-600">Last Active</th>
+                       <th className="px-4 py-3 text-center text-xs font-semibold
+   text-gray-600">Actions</th>
+                     </tr>
+                   </thead>
+                   <tbody className="divide-y">
+                     {participation.students.map((student: any) => (
+                       <tr key={student.studentId} className="hover:bg-gray-50">
+                         <td className="px-4 py-3 text-sm
+   font-medium">{student.username}</td>
+                         <td className="px-4 py-3 text-sm">
+                           <span className={`px-2 py-1 rounded text-xs ${
+                             student.condition.includes('with-hints')
+                               ? 'bg-green-100 text-green-800'
+                               : 'bg-blue-100 text-blue-800'
+                           }`}>
+                             {student.condition.includes('with-hints') ? 'With Hints' :    
+   'No Hints'}
+                           </span>
+                         </td>
+                         <td className="px-4 py-3 text-sm
+   text-center">{student.totalAttempts}</td>
+                         <td className="px-4 py-3 text-sm text-center">
+                           <span className="font-semibold">{student.completedWords}</span> 
+                           <span
+   className="text-gray-500">/{words.split(',').filter(Boolean).length}</span>
+                         </td>
+                         <td className="px-4 py-3 text-sm text-center">
+                           <span className={`font-semibold ${
+                             student.averageScore >= 80 ? 'text-green-600' :
+                             student.averageScore >= 60 ? 'text-yellow-600' :
+                             'text-red-600'
+                           }`}>
+                             {student.averageScore}%
+                           </span>
+                         </td>
+                         <td className="px-4 py-3 text-sm text-center text-gray-600">      
+                           {student.lastActivity
+                             ? new Date(student.lastActivity).toLocaleDateString()
+                             : 'Never'}
+                         </td>
+                         <td className="px-4 py-3 text-sm text-center">
+                           <button
+                             className="text-blue-600 hover:underline text-xs"
+                             onClick={() => viewStudentProgress(student.studentId)}        
+                           >
+                             View Details
+                           </button>
+                         </td>
+                       </tr>
+                     ))}
+                   </tbody>
+                 </table>
+               </div>
+             </div>
+           )}
+
+           {/* Student Detail Modal */}
+           {selectedStudent && (
+             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center        
+   justify-center z-50 p-4">
+               <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh]
+   overflow-y-auto">
+                 <div className="sticky top-0 bg-white border-b px-6 py-4 flex
+   justify-between items-center">
+                   <h3 className="text-xl font-semibold">
+                     {loadingStudent ? 'Loading...' : studentProgress?.student.username}   
+                   </h3>
+                   <button
+                     className="text-gray-500 hover:text-gray-700 text-2xl leading-none"   
+                     onClick={() => {
+                       setSelectedStudent(null)
+                       setStudentProgress(null)
+                     }}
+                   >
+                     ✕
+                   </button>
+                 </div>
+
+                 {loadingStudent && (
+                   <div className="p-8 text-center">
+                     <div className="animate-spin rounded-full h-12 w-12 border-b-2        
+   border-blue-600 mx-auto"></div>
+                     <p className="mt-4 text-gray-600">Loading student progress...</p>     
+                   </div>
+                 )}
+
+                 {!loadingStudent && studentProgress && (
+                   <div className="p-6 space-y-6">
+                     {/* Summary Cards */}
+                     <div className="grid grid-cols-4 gap-4">
+                       <div className="bg-blue-50 p-4 rounded-lg">
+                         <div className="text-2xl font-bold text-blue-600">
+
+   {studentProgress.summary.completedWords}/{studentProgress.summary.totalWords}
+                         </div>
+                         <div className="text-sm text-gray-600">Words Completed</div>      
+                       </div>
+                       <div className="bg-green-50 p-4 rounded-lg">
+                         <div className="text-2xl font-bold text-green-600">
+                           {studentProgress.summary.averageScore}%
+                         </div>
+                         <div className="text-sm text-gray-600">Average Score</div>        
+                       </div>
+                       <div className="bg-purple-50 p-4 rounded-lg">
+                         <div className="text-2xl font-bold text-purple-600">
+                           {studentProgress.summary.totalAttempts}
+                         </div>
+                         <div className="text-sm text-gray-600">Total Attempts</div>       
+                       </div>
+                       <div className="bg-yellow-50 p-4 rounded-lg">
+                         <div className="text-2xl font-bold text-yellow-600">
+                           {Math.round((studentProgress.summary.completedWords /
+   studentProgress.summary.totalWords) * 100)}%
+                         </div>
+                         <div className="text-sm text-gray-600">Completion Rate</div>      
+                       </div>
+                     </div>
+
+                     {/* Word-by-Word Progress */}
+                     <div>
+                       <h4 className="font-semibold mb-3">Word-by-Word Progress</h4>       
+                       <div className="space-y-3">
+                         {studentProgress.wordProgress.map((wp: any) => (
+                           <div key={wp.word} className="border rounded-lg p-4">
+                             <div className="flex justify-between items-start mb-3">       
+                               <div>
+                                 <span className="text-lg font-semibold">{wp.word}</span>  
+                                 {wp.completed && (
+                                   <span className="ml-2 text-green-600 text-sm">✓
+   Completed</span>
+                                 )}
+                               </div>
+                               <div className="text-right">
+                                 <div className="text-sm text-gray-600">Avg Score</div>    
+                                 <div className={`text-xl font-bold ${
+                                   wp.averageScore >= 80 ? 'text-green-600' :
+                                   wp.averageScore >= 60 ? 'text-yellow-600' :
+                                   'text-red-600'
+                                 }`}>
+                                   {wp.averageScore}%
+                                 </div>
+                               </div>
+                             </div>
+
+                             {/* Phase Progress */}
+                             <div className="grid grid-cols-4 gap-2 text-xs">
+                               <div className={`p-2 rounded ${wp.phases.baseline ?
+   'bg-blue-100' : 'bg-gray-100'}`}>
+                                 <div className="font-semibold
+   text-blue-700">Baseline</div>
+                                 {wp.phases.baseline ? (
+                                   <>
+                                     <div>Score: {Math.round(wp.phases.baseline.score *    
+   100)}%</div>
+                                     <div>Attempts: {wp.phases.baseline.attempts?.length   
+   || 0}</div>
+                                   </>
+                                 ) : (
+                                   <div className="text-gray-500">Not started</div>        
+                                 )}
+                               </div>
+
+                               <div className={`p-2 rounded ${wp.phases.learning ?
+   'bg-green-100' : 'bg-gray-100'}`}>
+                                 <div className="font-semibold
+   text-green-700">Learning</div>
+                                 {wp.phases.learning ? (
+                                   <>
+                                     <div>Score: {Math.round(wp.phases.learning.score *    
+   100)}%</div>
+                                     <div>Attempts: {wp.phases.learning.attempts?.length   
+   || 0}</div>
+                                   </>
+                                 ) : (
+                                   <div className="text-gray-500">Not started</div>        
+                                 )}
+                               </div>
+
+                               <div className={`p-2 rounded ${wp.phases.reinforcement ?    
+   'bg-yellow-100' : 'bg-gray-100'}`}>
+                                 <div className="font-semibold
+   text-yellow-700">Reinforcement</div>
+                                 {wp.phases.reinforcement ? (
+                                   <>
+                                     <div>Score: {Math.round(wp.phases.reinforcement.score 
+    * 100)}%</div>
+                                     <div>Attempts:
+   {wp.phases.reinforcement.attempts?.length || 0}</div>
+                                   </>
+                                 ) : (
+                                   <div className="text-gray-500">Not started</div>        
+                                 )}
+                               </div>
+
+                               <div className={`p-2 rounded ${wp.phases.recall ?
+   'bg-purple-100' : 'bg-gray-100'}`}>
+                                 <div className="font-semibold
+   text-purple-700">Recall</div>
+                                 {wp.phases.recall ? (
+                                   <>
+                                     <div>Score: {Math.round(wp.phases.recall.score *      
+   100)}%</div>
+                                     <div>Attempts: {wp.phases.recall.attempts?.length ||  
+   0}</div>
+                                   </>
+                                 ) : (
+                                   <div className="text-gray-500">Not started</div>        
+                                 )}
+                               </div>
+                             </div>
+
+                             {/* Additional Info */}
+                             <div className="mt-2 flex gap-4 text-xs text-gray-600">       
+                               <span>Total Attempts: {wp.totalAttempts}</span>
+                               {wp.hintsUsed > 0 && <span>Hints Used:
+   {wp.hintsUsed}</span>}
+                               {wp.revealed && <span className="text-orange-600">⚠️ Word   
+   Revealed</span>}
+                             </div>
+                           </div>
+                         ))}
+                       </div>
+                     </div>
+                   </div>
+                 )}
+               </div>
+             </div>
+           )}
+
+           {/* Delete Confirmation Modal */}
+           {showDeleteConfirm && (
+             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center        
+   justify-center z-50">
+               <div className="bg-white p-6 rounded-lg max-w-md">
+                 <h3 className="text-xl font-semibold mb-3">⚠️ Delete Experiment?</h3>     
+                 <p className="text-gray-700 mb-4">
+                   Are you sure you want to delete this experiment? This action cannot be  
+   undone.
+                 </p>
+                 <p className="text-sm text-gray-600 mb-4">
+                   Note: If students have already participated, the experiment will be     
+   closed instead of deleted.
+                 </p>
+                 <div className="flex gap-3">
+                   <button
+                     className="flex-1 px-4 py-2 bg-red-600 text-white rounded
+   hover:bg-red-700"
+                     onClick={deleteExperiment}
+                   >
+                     Yes, Delete
+                   </button>
+                   <button
+                     className="flex-1 px-4 py-2 border rounded hover:bg-gray-50"
+                     onClick={() => setShowDeleteConfirm(false)}
+                   >
+                     Cancel
+                   </button>
+                 </div>
+               </div>
+             </div>
+           )}
+         </div>
+       )
+     }
+
+

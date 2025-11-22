@@ -1,0 +1,16 @@
+# Build output
+
+dist/
+build/
+coverage/
+
+# Dependencies
+node_modules/
+
+# Logs
+*.log
+logs/
+
+# Config files
+package-lock.json
+tsconfig.tsbuildinfo
