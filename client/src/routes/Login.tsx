@@ -43,8 +43,8 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex">
-      <aside className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-blue-600 to-purple-600 p-12 flex-col justify-between relative overflow-hidden text-white">
+    <div className="flex flex-col lg:flex-row gap-8 h-full">
+      <aside className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-blue-600 to-purple-600 p-12 flex-col justify-between relative overflow-hidden text-white rounded-2xl shadow-lg">
         <div className="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full -mr-48 -mt-48" />
         <div className="absolute bottom-0 left-0 w-72 h-72 bg-white/10 rounded-full -ml-36 -mb-36" />
         <Link to="/" className="inline-flex items-center gap-3 text-white relative z-10">
@@ -83,9 +83,9 @@ export default function Login() {
             </Link>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
+          <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8 transition-colors">
             <div className="mb-8">
-              <h1 className="text-3xl font-bold mb-2">Sign In</h1>
+              <h1 className="text-3xl font-bold mb-2 text-gray-900">Sign In</h1>
               <p className="text-gray-600">Welcome back! Please enter your details.</p>
             </div>
 
@@ -156,7 +156,7 @@ export default function Login() {
                   <div className="w-full border-t border-gray-200"></div>
                 </div>
                 <div className="relative flex justify-center text-sm">
-                  <span className="px-4 bg-white text-gray-500">Or continue with</span>
+                  <span className="px-4 bg-white text-gray-500 transition-colors">Or continue with</span>
                 </div>
               </div>
 

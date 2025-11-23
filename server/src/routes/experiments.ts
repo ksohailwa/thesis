@@ -107,36 +107,50 @@ router.post(
 async function handleWordSuggestions(req: AuthedRequest, res: Response) {
   const exp = await Experiment.findById(req.params.id);
   if (!exp) return res.status(404).json({ error: 'Not found' });
+  const storyKey = (req.body as any)?.story === 'story2' ? 'story2' : 'story1';
+  const otherKey = storyKey === 'story1' ? 'story2' : 'story1';
+  const otherWords: string[] = (exp.stories as any)?.[otherKey]?.targetWords || [];
+  const used = new Set(otherWords.map((w: string) => w.toLowerCase()));
+
   const oa = getOpenAI();
-  if (!oa) {
-    // Fallback: return words with level info
-    const items = [
-      { word: 'harbor', level: 'A1', gloss: 'place where ships stop', reason: 'Common' },
-      { word: 'bridge', level: 'A2', gloss: 'structure crossing river', reason: 'Basic' },
-      { word: 'meadow', level: 'B1', gloss: 'grassy field', reason: 'Intermediate' },
-      { word: 'canvas', level: 'B1', gloss: 'cloth for painting', reason: 'Intermediate' },
-      { word: 'lantern', level: 'B1', gloss: 'portable light', reason: 'Intermediate' },
-    ].slice(0, 50);
-    return res.json({ suggestions: items.map(i=>i.word), items });
+  if (oa) {
+    try {
+      const r = await oa.chat.completions.create({
+        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        response_format: { type: 'json_object' },
+        messages: [
+          { role:'system', content: wordPoolSystem() },
+          { role:'user', content: wordPoolUser(exp.cefr || exp.level || 'B1', storyKey, Array.from(used)) }
+        ],
+        temperature: 0.6
+      });
+      const text = r.choices?.[0]?.message?.content || '{}';
+      const data = JSON.parse(text);
+      const itemsRaw = Array.isArray(data?.items) ? data.items.slice(0,50) : [];
+      const items = itemsRaw.filter((i: any) => !used.has((i?.word || '').toLowerCase()));
+      return res.json({ suggestions: items.map((i:any)=>i.word), items });
+    } catch (e) {
+      logger.error('Word pool generation failed', { experimentId: req.params.id, error: (e as any).message });
+    }
   }
-  try {
-    const r = await oa.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-      response_format: { type: 'json_object' },
-      messages: [
-        { role:'system', content: wordPoolSystem() },
-        { role:'user', content: wordPoolUser(exp.cefr || exp.level || 'B1') }
-      ],
-      temperature: 0.6
-    });
-    const text = r.choices?.[0]?.message?.content || '{}';
-    const data = JSON.parse(text);
-    const items = Array.isArray(data?.items) ? data.items.slice(0,50) : [];
-    return res.json({ suggestions: items.map((i:any)=>i.word), items });
-  } catch (e) {
-    logger.error('Word pool generation failed', { experimentId: req.params.id, error: (e as any).message });
-  }
-  return res.json({ suggestions: [], items: [] });
+
+  // Fallback: return words with level info (still filtered to remain disjoint)
+  const fallbackPool = [
+    { word: 'rhythm', level: 'B2', gloss: 'pattern of beats', reason: 'Tricky spelling' },
+    { word: 'queue', level: 'B2', gloss: 'line of people', reason: 'Tricky spelling' },
+    { word: 'pneumonia', level: 'C1', gloss: 'lung infection', reason: 'Tricky spelling' },
+    { word: 'occurrence', level: 'B2', gloss: 'event', reason: 'Double letters' },
+    { word: 'embarrass', level: 'B2', gloss: 'cause shame', reason: 'Double letters' },
+    { word: 'accommodate', level: 'B2', gloss: 'provide lodging', reason: 'Double letters' },
+    { word: 'boulevard', level: 'B2', gloss: 'wide street', reason: 'Foreign origin' },
+    { word: 'cinnamon', level: 'B1', gloss: 'spice', reason: 'Common misspelling' },
+    { word: 'lantern', level: 'B1', gloss: 'portable light', reason: 'Contextual' },
+    { word: 'orchard', level: 'B1', gloss: 'fruit trees', reason: 'Contextual' },
+    { word: 'meadow', level: 'B1', gloss: 'grassy field', reason: 'Contextual' },
+    { word: 'canvas', level: 'B1', gloss: 'cloth for painting', reason: 'Contextual' },
+  ];
+  const items = fallbackPool.filter((i) => !used.has(i.word.toLowerCase()));
+  return res.json({ suggestions: items.map(i=>i.word), items });
 }
 
 router.post('/:id/suggestions', requireAuth, requireRole('teacher'), handleWordSuggestions);
@@ -144,20 +158,80 @@ router.post('/:id/word-suggestions', requireAuth, requireRole('teacher'), handle
 
 // Generate 2 stories (A/B) with each selected word appearing exactly 4x, never twice in the same sentence.
 router.post('/:id/generate-stories', requireAuth, requireRole('teacher'), async (req: AuthedRequest, res) => {
-  const schema = z.object({ cefr: z.string().optional(), targetWords: z.array(z.string()).min(1).max(10), topic: z.string().optional() });
+  const schema = z.object({ cefr: z.string().optional(), targetWords: z.array(z.string()).min(1).max(10).optional(), topic: z.string().optional() });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const exp = await Experiment.findById(req.params.id);
   if (!exp) return res.status(404).json({ error: 'Not found' });
-  const words = parsed.data.targetWords.slice(0, 5);
-  if (!words || words.length === 0) {
-    return res.status(400).json({ error: 'No target words provided. Please select words before generating.' });
+
+  // Prefer saved per-story target words; fall back to payload
+  const story1Saved: string[] = (exp.stories as any)?.story1?.targetWords || [];
+  const story2Saved: string[] = (exp.stories as any)?.story2?.targetWords || [];
+  const payloadWords = parsed.data.targetWords || [];
+
+  let wordsH = story1Saved.slice(0, 10);
+  let wordsN = story2Saved.slice(0, 10);
+
+  if (!wordsH.length || !wordsN.length) {
+    const uniquePayload = Array.from(new Set(payloadWords.map((w) => w.trim()))).filter(Boolean);
+    if (!uniquePayload.length) return res.status(400).json({ error: 'No target words provided.' });
+    if (!wordsH.length) wordsH = uniquePayload.slice(0, Math.ceil(uniquePayload.length / 2));
+    if (!wordsN.length) {
+      const remaining = uniquePayload.filter((w) => !wordsH.some((h) => h.toLowerCase() === w.toLowerCase()));
+      wordsN = remaining.slice(0, 10);
+    }
   }
+
+  // Ensure disjoint sets
+  wordsN = wordsN.filter((w) => !wordsH.some((h) => h.toLowerCase() === w.toLowerCase()));
+
   const oa = getOpenAI();
 
-  async function genOne(label: 'H'|'N') {
+  const buildFallback = (storyWords: string[]) => {
+    const paragraphCount = Math.max(1, storyWords.length);
+    const sentencesPerParagraph = 4;
+    const baseSentences: string[][] = Array.from({ length: paragraphCount }, (_, p) =>
+      Array.from({ length: sentencesPerParagraph }, (_, s) => `Paragraph ${p + 1}, sentence ${s + 1}.`)
+    );
+    const occLocal: any[] = [];
+    const totalSlots = paragraphCount * sentencesPerParagraph;
+    const slots = Array.from({ length: totalSlots }, (_, i) => i);
+    for (const w of storyWords) {
+      for (let k = 0; k < 4; k++) {
+        const idx = slots.length ? slots.shift()! : Math.floor(Math.random() * totalSlots);
+        const paragraphIndex = Math.floor(idx / sentencesPerParagraph);
+        const sentenceIndex = idx % sentencesPerParagraph;
+        const current = baseSentences[paragraphIndex][sentenceIndex];
+        const insertion = ` ${w}`;
+        const charStart = current.length;
+        const charEnd = charStart + insertion.length;
+        baseSentences[paragraphIndex][sentenceIndex] = current.replace(/[.!?]+$/, '') + insertion + '.';
+        occLocal.push({ word: w, paragraphIndex, sentenceIndex, charStart, charEnd });
+      }
+    }
+    const paragraphs = baseSentences.map((sentences) => sentences.join(' '));
+    return { paragraphs, occ: occLocal };
+  };
+
+  const validateStoryCounts = (storyWords: string[], paragraphCount: number, occ: any[]) => {
+    if (paragraphCount !== Math.max(1, storyWords.length)) return false;
+    for (const w of storyWords) {
+      const count = occ.filter((o: any) => o.word === w).length;
+      if (count < 4) return false;
+    }
+    return true;
+  };
+
+  async function genOne(label: 'H'|'N', storyWords: string[]) {
+    if (storyWords.length === 0) {
+       // Create an empty placeholder story if no words
+       const map = label === 'H' ? 'A' : 'B';
+       return await Story.findOneAndUpdate({ experiment: exp._id, label: map }, { experiment: exp._id, label: map, paragraphs: [], targetOccurrences: [] }, { upsert: true, new: true });
+    }
+
     let paragraphs: string[] = [];
     let occ: any[] = [];
+    const paragraphCount = Math.max(1, storyWords.length);
     if (oa) {
       try {
         const r = await oa.chat.completions.create({
@@ -165,30 +239,30 @@ router.post('/:id/generate-stories', requireAuth, requireRole('teacher'), async 
           response_format: { type: 'json_object' },
           temperature: 0.8,
           messages: [
-            { role: 'system', content: storySystem() },
-            { role: 'user', content: storyUser((parsed.data?.cefr as any) || (exp.cefr as any) || (exp.level as any) || 'B1', words, (parsed.data as any)?.topic || '')}
+            { role: 'system', content: storySystem(storyWords.length) },
+            { role: 'user', content: storyUser((parsed.data?.cefr as any) || (exp.cefr as any) || (exp.level as any) || 'B1', storyWords, (parsed.data as any)?.topic || '')}
           ]
         });
         const text = r.choices?.[0]?.message?.content || '{}';
         const data = JSON.parse(text);
-        paragraphs = Array.isArray(data?.story?.paragraphs) ? data.story.paragraphs.slice(0,5) : [];
+        paragraphs = Array.isArray(data?.story?.paragraphs) ? data.story.paragraphs.slice(0, paragraphCount) : [];
         occ = Array.isArray(data?.story?.occurrences) ? data.story.occurrences : [];
       } catch {}
     }
-    // minimal fallback if LLM fails
-    if (!paragraphs.length) {
-      const paras = Array.from({ length: 5 }, (_, p) => `Paragraph ${p+1}.`);
-      paragraphs = paras;
-      occ = words.flatMap(w => [0,1,2,3].map(k => ({ word: w, paragraphIndex: k%5, sentenceIndex: 0, charStart: paras[k%5].length, charEnd: paras[k%5].length + w.length })));
+    const valid = paragraphs.length === paragraphCount && validateStoryCounts(storyWords, paragraphCount, occ);
+    if (!valid) {
+      const fallback = buildFallback(storyWords);
+      paragraphs = fallback.paragraphs;
+      occ = fallback.occ;
     }
     const map = label === 'H' ? 'A' : 'B';
     const s = await Story.findOneAndUpdate({ experiment: exp._id, label: map }, { experiment: exp._id, label: map, paragraphs, targetOccurrences: occ }, { upsert: true, new: true });
     return s;
   }
 
-  const [sH, sN] = await Promise.all([genOne('H'), genOne('N')]);
+  const [sH, sN] = await Promise.all([genOne('H', wordsH), genOne('N', wordsN)]);
   await Experiment.findByIdAndUpdate(exp._id, { stories: { H: sH._id, N: sN._id } });
-  return res.json({ ok: true, used: 'openai', wordsCount: words.length, stories: { H: sH._id, N: sN._id } });
+  return res.json({ ok: true, used: 'openai', wordsCount: allWords.length, stories: { H: sH._id, N: sN._id } });
 });
 
 // Per-spec: generate a single story by label 'H'|'N' (alias to our 'A'|'B')
@@ -292,9 +366,9 @@ router.post('/:id/generate-story', requireAuth, requireRole('teacher'), async (r
     if (occ.length > 0) {
       for (const w of words) {
         const c = occ.filter((o: any) => o.word === w).length;
-        if (c !== 4) {
+        if (c < 4) {
           singleStoryValidation.ok = false;
-          singleStoryValidation.violations.push(`Word "${w}" must appear exactly 4 times (got ${c}).`);
+          singleStoryValidation.violations.push(`Word "${w}" must appear at least 4 times (got ${c}).`);
         }
       }
       
@@ -339,9 +413,13 @@ router.post('/:id/launch', requireAuth, requireRole('teacher'), async (req, res)
   const schema = z.object({ condition: z.enum(['with-hints','without-hints']) });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const exp = await Experiment.findByIdAndUpdate(req.params.id, { assignedCondition: parsed.data.condition }, { new: true });
+  const exp = await Experiment.findByIdAndUpdate(
+    req.params.id,
+    { assignedCondition: parsed.data.condition, status: 'live' },
+    { new: true }
+  );
   if (!exp) return res.status(404).json({ error: 'Not found' });
-  return res.json({ code: exp.classCode, condition: exp.assignedCondition });
+  return res.json({ code: exp.classCode, condition: exp.assignedCondition, status: exp.status });
 });
 
 router.post('/:id/tts', requireAuth, requireRole('teacher'), requireExperimentOwnership(), async (req, res) => {

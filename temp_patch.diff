@@ -1,0 +1,73 @@
+*** Begin Patch
+*** Update File: client/src/routes/App.tsx
+@@
+-export default function App() {
+-  const loc2 = useLocation();
+-  const isFocus = loc2.pathname.startsWith('/student/run');
+-  const [showHelp, setShowHelp] = useState(false);
+-  const [scale, setScale] = useState<number>(parseInt(localStorage.getItem('textScale') || '100', 10));
+-  useEffect(() => { document.documentElement.style.fontSize = ${scale}%; localStorage.setItem('textScale', String(scale)); }, [scale]);
+-  useEffect(() => {
+-    const saved = localStorage.getItem('theme') || 'light';
+-    if (saved === 'dark') document.documentElement.classList.add('dark');
+-    else document.documentElement.classList.remove('dark');
+-  }, []);
++type ThemeMode = 'light' | 'dark';
++
++const getInitialTheme = (): ThemeMode => {
++  try {
++    const saved = localStorage.getItem('theme');
++    if (saved === 'dark' || saved === 'light') return saved;
++    return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
++  } catch {
++    return 'light';
++  }
++};
++
++export default function App() {
++  const loc2 = useLocation();
++  const isFocus = loc2.pathname.startsWith('/student/run');
++  const [showHelp, setShowHelp] = useState(false);
++  const [scale, setScale] = useState<number>(parseInt(localStorage.getItem('textScale') || '100', 10));
++  const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
++
++  useEffect(() => { document.documentElement.style.fontSize = ${scale}%; localStorage.setItem('textScale', String(scale)); }, [scale]);
++  useEffect(() => {
++    const root = document.documentElement;
++    if (theme === 'dark') root.classList.add('dark'); else root.classList.remove('dark');
++    localStorage.setItem('theme', theme);
++  }, [theme]);
+@@
+-        if (e.key.toLowerCase() === 't') {
+-          const isDark = document.documentElement.classList.contains('dark');
+-          const next = isDark ? 'light' : 'dark';
+-          localStorage.setItem('theme', next);
+-          if (next === 'dark') document.documentElement.classList.add('dark');
+-          else document.documentElement.classList.remove('dark');
+-          return;
+-        }
++        if (e.key.toLowerCase() === 't') { setTheme(t => t === 'dark' ? 'light' : 'dark'); return; }
+         if ((e.ctrlKey || e.metaKey) && e.key === '+') { setScale(s => Math.min(130, s + 10)); return; }
+         if ((e.ctrlKey || e.metaKey) && (e.key === '-' || e.key === '_')) { setScale(s => Math.max(90, s - 10)); return; }
+       }
+@@
+-  const handleTheme = (mode: 'light' | 'dark') => {
+-    localStorage.setItem('theme', mode);
+-    if (mode === 'dark') document.documentElement.classList.add('dark');
+-    else document.documentElement.classList.remove('dark');
+-  };
++  const handleTheme = (mode: ThemeMode) => { setTheme(mode); };
+@@
+-        <AppHeader
+-          onHelp={()=>setShowHelp(true)}
+-          onTheme={handleTheme}
+-          onScale={handleScale}
+-        />
++        <AppHeader
++          theme={theme}
++          onHelp={()=>setShowHelp(true)}
++          onTheme={handleTheme}
++          onScale={handleScale}
++        />
+       )}
+*** End Patch

@@ -89,12 +89,12 @@ router.post('/join', requireAuth, requireRole('student'), async (req: AuthedRequ
     const uniq = Array.from(new Map((byWord.get(w) || []).map(x => [`${x.story}:${x.paragraphIndex}:${x.sentenceIndex}`, x])).values());
     uniq.sort((a,b)=> (a.paragraphIndex - b.paragraphIndex) || (a.sentenceIndex - b.sentenceIndex));
     const picks: Occ[] = [];
-    for (const u of uniq) { if (!picks.some(p=>p.paragraphIndex===u.paragraphIndex && p.sentenceIndex===u.sentenceIndex)) { picks.push(u); if (picks.length>=3) break; } }
+    for (const u of uniq) { if (!picks.some(p=>p.paragraphIndex===u.paragraphIndex && p.sentenceIndex===u.sentenceIndex)) { picks.push(u); if (picks.length>=4) break; } }
     schedule[w] = {
       baseline: { story: picks[0]?.story, paragraphIndex: picks[0]?.paragraphIndex, sentenceIndex: picks[0]?.sentenceIndex },
       learning: { story: picks[1]?.story, paragraphIndex: picks[1]?.paragraphIndex, sentenceIndex: picks[1]?.sentenceIndex },
       reinforcement: { story: picks[2]?.story, paragraphIndex: picks[2]?.paragraphIndex, sentenceIndex: picks[2]?.sentenceIndex },
-      recall: {}
+      recall: { story: picks[3]?.story, paragraphIndex: picks[3]?.paragraphIndex, sentenceIndex: picks[3]?.sentenceIndex }
     };
   }
   return res.json({

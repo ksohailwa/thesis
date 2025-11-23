@@ -19,7 +19,7 @@ export default function TeacherCreate() {
       const { data } = await api.post('/api/experiments', payload);
       toast.success('Experiment created');
       const newId = data?.id || data?._id;
-      if (newId) nav(`/teacher/experiments/${newId}/words`);
+      if (newId) nav(`/teacher/experiments/${newId}`);
       else nav('/teacher');
       } catch (e: any) {
       toast.error(e?.response?.data?.error || 'Create failed');

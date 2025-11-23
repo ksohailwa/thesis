@@ -1,4 +1,4 @@
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../store/auth'
 
 export default function Landing() {
@@ -16,14 +16,14 @@ export default function Landing() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 transition-colors">
       <main className="container py-16 md:py-24">
         <div className="text-center mb-16">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-100 text-blue-700 rounded-full text-sm font-medium mb-6">
             <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
             AI-Powered Spelling Research Platform
           </div>
-          <h1 className="text-5xl md:text-6xl font-bold mb-6 leading-tight">
+          <h1 className="text-5xl md:text-6xl font-bold mb-6 leading-tight text-gray-900">
             Transform Spelling
             <br />
             <span className="bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 bg-clip-text text-transparent">
@@ -64,16 +64,16 @@ export default function Landing() {
               className="p-6 bg-white rounded-2xl shadow-lg border border-gray-100 hover:shadow-xl transition"
             >
               <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center text-white text-2xl mb-4">
-                {idx === 0 ? '�o?�,?' : idx === 1 ? 'dY\"S' : 'dY\"S'}
+                {idx === 0 ? 'AI' : idx === 1 ? 'TTS' : 'FX'}
               </div>
-              <h3 className="text-xl font-bold mb-2">{feature.title}</h3>
+              <h3 className="text-xl font-bold mb-2 text-gray-900">{feature.title}</h3>
               <p className="text-gray-600">{feature.body}</p>
             </div>
           ))}
         </div>
 
         <div className="max-w-4xl mx-auto">
-          <h2 className="text-3xl font-bold text-center mb-8">Choose Your Role</h2>
+          <h2 className="text-3xl font-bold text-center mb-8 text-gray-900">Choose Your Role</h2>
           <div className="grid md:grid-cols-3 gap-6">
             <button
               onClick={goTeacher}
@@ -96,7 +96,7 @@ export default function Landing() {
                   )}
                 </div>
                 <div className="inline-flex items-center gap-2 text-blue-900 font-semibold group-hover:gap-4 transition-all">
-                  {role === 'teacher' ? 'Go to Dashboard' : 'Sign In as Teacher'} <span className="text-xl">�+'</span>
+                  {role === 'teacher' ? 'Go to Dashboard' : 'Sign In as Teacher'} <span className="text-xl">-&gt;</span>
                 </div>
               </div>
             </button>
@@ -122,7 +122,7 @@ export default function Landing() {
                   )}
                 </div>
                 <div className="inline-flex items-center gap-2 text-purple-900 font-semibold group-hover:gap-4 transition-all">
-                  {role === 'student' ? 'Go to Dashboard' : 'Sign In as Student'} <span className="text-xl">�+'</span>
+                  {role === 'student' ? 'Go to Dashboard' : 'Sign In as Student'} <span className="text-xl">-&gt;</span>
                 </div>
               </div>
             </button>
@@ -146,7 +146,7 @@ export default function Landing() {
                   ))}
                 </div>
                 <div className="inline-flex items-center gap-2 text-amber-900 font-semibold group-hover:gap-4 transition-all">
-                  Start Demo <span className="text-xl">→</span>
+                  Start Demo <span className="text-xl">-&gt;</span>
                 </div>
               </div>
             </button>
@@ -154,7 +154,7 @@ export default function Landing() {
         </div>
       </main>
 
-      <footer className="border-t bg-white py-8 mt-16">
+      <footer className="border-t bg-white py-8 mt-16 transition-colors">
         <div className="container text-center text-sm text-gray-600">
           <p>SpellWise - AI-Powered Spelling Research Platform</p>
           <p className="mt-2">Built for educators and researchers</p>

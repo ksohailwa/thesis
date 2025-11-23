@@ -2,12 +2,15 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../lib/api'
 import LoadingScreen from '../../components/LoadingScreen'
+import { toast } from '../../store/toasts'
 
 export default function TeacherHome() {
   const [experiments, setExperiments] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
   const [filter, setFilter] = useState<'all' | 'draft' | 'live' | 'closed'>('all')
+  const [title, setTitle] = useState('')
+  const [level, setLevel] = useState<'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2'>('B1')
   const nav = useNavigate()
 
   useEffect(() => {
@@ -32,17 +35,19 @@ export default function TeacherHome() {
   }
 
   async function createNew() {
-    const title = prompt('Experiment title:')
-    if (!title?.trim()) return
-    const level = prompt('CEFR Level (A1, A2, B1, B2, C1, C2):', 'B1')
-    if (!level) return
+    if (!title.trim()) {
+      toast.error('Please enter a title')
+      return
+    }
     setCreating(true)
     try {
-      const { data } = await api.post('/api/experiments', { title: title.trim(), level: level.toUpperCase() })
+      const { data } = await api.post('/api/experiments', { title: title.trim(), level })
       const expId = data?.id || data?._id
-      if (expId) nav(`/teacher/experiments/${expId}/words`)
+      if (expId) nav(`/teacher/experiments/${expId}`)
+      setTitle('')
+      setLevel('B1')
     } catch (e: any) {
-      alert(e?.response?.data?.error || 'Failed to create')
+      toast.error(e?.response?.data?.error || 'Failed to create')
     } finally {
       setCreating(false)
     }
@@ -59,8 +64,7 @@ export default function TeacherHome() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
-      <div className="container py-8 space-y-8">
+    <div className="space-y-8 text-gray-900 transition-colors duration-300">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
@@ -68,21 +72,35 @@ export default function TeacherHome() {
             </h1>
             <p className="text-gray-600 text-sm mt-1">Manage your spelling experiments</p>
           </div>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-2xl p-4 flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[220px]">
+            <label className="block text-sm text-gray-600 mb-1">Title</label>
+            <input
+              className="input"
+              placeholder="e.g., Week 1 Spelling"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="block text-sm text-gray-600 mb-1">Level</label>
+            <select
+              className="input"
+              value={level}
+              onChange={(e) => setLevel(e.target.value as any)}
+            >
+              <option value="A1">A1</option>
+              <option value="A2">A2</option>
+              <option value="B1">B1</option>
+              <option value="B2">B2</option>
+              <option value="C1">C1</option>
+              <option value="C2">C2</option>
+            </select>
+          </div>
           <button className="btn primary px-6 py-3" onClick={createNew} disabled={creating}>
-            {creating ? (
-              <span className="flex items-center gap-2">
-                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-                </svg>
-                Creating...
-              </span>
-            ) : (
-              <span className="flex items-center gap-2">
-                <span className="text-xl">+</span>
-                New Experiment
-              </span>
-            )}
+            {creating ? 'Creating...' : 'Create Experiment'}
           </button>
         </div>
 
@@ -97,7 +115,9 @@ export default function TeacherHome() {
               key={card.key}
               onClick={() => setFilter(card.key as any)}
               className={`p-6 rounded-2xl border-2 transition-all text-left ${
-                filter === card.key ? `border-${card.color}-500 bg-${card.color}-50 shadow-lg` : 'border-gray-200 bg-white hover:border-gray-300'
+                filter === card.key 
+                  ? `border-${card.color}-500 bg-${card.color}-50 shadow-lg` 
+                  : 'border-gray-200 bg-white hover:border-gray-300'
               }`}
             >
               <div className="flex items-start justify-between mb-2">
@@ -211,6 +231,5 @@ export default function TeacherHome() {
           </div>
         )}
       </div>
-    </div>
   )
 }

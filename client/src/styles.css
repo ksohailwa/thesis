@@ -12,6 +12,14 @@
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
   --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
   --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1);
+
+  --bg: #f8fafc;
+  --panel: #ffffff;
+  --panel-border: #e2e8f0;
+  --text: #0f172a;
+  --muted: #475569;
+  --input-bg: #ffffff;
+  --input-border: #d1d5db;
 }
 
 html,
@@ -26,6 +34,8 @@ body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
   font-size: 16px;
   line-height: 1.6;
+  background-color: var(--bg);
+  color: var(--text);
 }
 
 .btn {
@@ -50,24 +60,33 @@ body {
 }
 
 .input {
-  @apply w-full px-4 py-3 border border-gray-300 rounded-xl;
+  @apply w-full px-4 py-3 rounded-xl;
+  border: 1px solid var(--input-border);
+  background-color: var(--input-bg);
   @apply focus:ring-2 focus:ring-blue-500 focus:border-transparent;
   @apply transition-all duration-200 placeholder:text-gray-400;
+  color: var(--text);
 }
 .input:focus {
   @apply outline-none;
 }
 
 .input-blank {
-  @apply bg-white text-gray-900 placeholder:text-gray-400;
+  @apply placeholder:text-gray-400;
+  background-color: var(--panel);
+  color: var(--text);
   @apply shadow-inner;
 }
 
 .card {
-  @apply bg-white rounded-2xl shadow-lg border border-gray-100;
+  @apply rounded-2xl shadow-lg border;
+  background-color: var(--panel);
+  border-color: var(--panel-border);
 }
 .focus-card {
-  @apply max-w-xl mx-auto p-8 bg-white shadow-xl rounded-2xl border border-gray-100;
+  @apply max-w-xl mx-auto p-8 shadow-xl rounded-2xl border;
+  background-color: var(--panel);
+  border-color: var(--panel-border);
 }
 
 .container {
@@ -294,13 +313,6 @@ body {
   }
 }
 
-/* Dark mode support */
-@media (prefers-color-scheme: dark) {
-  body.auto-theme {
-    @apply bg-slate-900 text-slate-100;
-  }
-}
-
 /* Reduce motion for accessibility */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -313,24 +325,7 @@ body {
   }
 }
 
-.theme-dark {
-  --bg: #0f172a;
-  --panel: #1e293b;
-  --fg: #f1f5f9;
-}
-body.theme-dark {
-  @apply bg-slate-900 text-slate-100;
-}
-body.theme-dark .card,
-body.theme-dark .focus-card {
-  @apply bg-slate-800 border-slate-700;
-}
-body.theme-dark .btn {
-  @apply border-slate-600 hover:bg-slate-700;
-}
-body.theme-dark .input {
-  @apply bg-slate-800 border-slate-600 text-slate-100;
-}
+
 
 .sr-only {
   position: absolute;
@@ -476,13 +471,6 @@ body {
 @media print {
   .no-print {
     display: none !important;
-  }
-}
-
-/* Dark mode support */
-@media (prefers-color-scheme: dark) {
-  body.auto-theme {
-    @apply bg-slate-900 text-slate-100;
   }
 }
 

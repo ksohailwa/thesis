@@ -27,8 +27,16 @@ export default function App() {
   const isFocus = loc2.pathname.startsWith('/student/run');
   const [showHelp, setShowHelp] = useState(false);
   const [scale, setScale] = useState<number>(parseInt(localStorage.getItem('textScale') || '100', 10));
+
   useEffect(() => { document.documentElement.style.fontSize = `${scale}%`; localStorage.setItem('textScale', String(scale)); }, [scale]);
-  useEffect(() => { const saved = localStorage.getItem('theme') || 'light'; document.body.classList.remove('theme-dark','theme-light'); document.body.classList.add(saved==='dark'?'theme-dark':'theme-light'); }, []);
+  
+  useEffect(() => {
+    // Force light mode
+    localStorage.removeItem('theme');
+    document.documentElement.classList.remove('dark');
+    document.body.classList.remove('theme-dark');
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -36,13 +44,6 @@ export default function App() {
       const isTyping = tag === 'input' || tag === 'textarea' || (target?.getAttribute('contenteditable') === 'true');
       if (!isTyping) {
         if (e.key.toLowerCase() === 'h') { setShowHelp(v => !v); return; }
-        if (e.key.toLowerCase() === 't') {
-          const next = document.body.classList.contains('theme-dark') ? 'light' : 'dark';
-          localStorage.setItem('theme', next);
-          document.body.classList.remove('theme-dark','theme-light');
-          document.body.classList.add(next==='dark'?'theme-dark':'theme-light');
-          return;
-        }
         if ((e.ctrlKey || e.metaKey) && e.key === '+') { setScale(s => Math.min(130, s + 10)); return; }
         if ((e.ctrlKey || e.metaKey) && (e.key === '-' || e.key === '_')) { setScale(s => Math.max(90, s - 10)); return; }
       }
@@ -50,12 +51,6 @@ export default function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
-
-  const handleTheme = (mode: 'light' | 'dark') => {
-    localStorage.setItem('theme', mode);
-    document.body.classList.remove('theme-dark','theme-light');
-    document.body.classList.add(mode==='dark'?'theme-dark':'theme-light');
-  };
 
   const handleScale = (delta: number) => {
     setScale((s) => Math.min(130, Math.max(90, s + delta)));
@@ -66,7 +61,6 @@ export default function App() {
       {!isFocus && (
         <AppHeader
           onHelp={()=>setShowHelp(true)}
-          onTheme={handleTheme}
           onScale={handleScale}
         />
       )}
@@ -102,9 +96,9 @@ export default function App() {
       )}
       {showHelp && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={()=>setShowHelp(false)}>
-          <div className="bg-white p-4 rounded shadow max-w-lg w-full" onClick={e=>e.stopPropagation()}>
+          <div className="bg-[var(--panel)] text-[var(--text)] p-4 rounded shadow max-w-lg w-full border border-[var(--panel-border)]" onClick={e=>e.stopPropagation()}>
             <h3 className="font-semibold mb-2">How it works</h3>
-            <ul className="list-disc pl-5 text-sm text-gray-700 space-y-1">
+            <ul className="list-disc pl-5 text-sm text-[var(--muted)] space-y-1">
               <li>Play the story audio at the top (pause/seek as needed).</li>
               <li>Type answers directly into the blanks; press Enter to check.</li>
               <li>Green input = correct; red = try again. Incorrect checks pause audio.</li>
