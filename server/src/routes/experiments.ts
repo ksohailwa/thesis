@@ -486,6 +486,39 @@ router.get('/', requireAuth, requireRole('teacher'), async (req: AuthedRequest, 
   res.json(list.map(x => ({ id: x._id, title: x.title, cefr: x.cefr || x.level, status: x.status, code: x.classCode })));
 });
 
+// Delete an experiment and related data
+router.delete('/:id', requireAuth, requireRole('teacher'), requireExperimentOwnership(), async (req: AuthedRequest, res) => {
+  try {
+    const exp = await Experiment.findById(req.params.id);
+    if (!exp) return res.status(404).json({ error: 'Not found' });
+
+    // Delete stories and audio
+    await Story.deleteMany({ experiment: exp._id });
+    try {
+      const { default: fs } = await import('fs');
+      const { default: path } = await import('path');
+      fs.rmSync(path.join(process.cwd(), 'static', 'audio', String(exp._id)), { recursive: true, force: true });
+    } catch {}
+
+    // Delete assignments and conditions for this experiment
+    try {
+      await Assignment.deleteMany({ experiment: exp._id } as any);
+      await Condition.deleteMany({ experiment: exp._id } as any);
+    } catch {}
+
+    // Optionally remove events/attempts tied to this experiment if present
+    try {
+      await Event.deleteMany({ experiment: exp._id } as any);
+      await Attempt.deleteMany({ experiment: exp._id } as any);
+    } catch {}
+
+    await exp.deleteOne();
+    return res.json({ ok: true });
+  } catch (e) {
+    return res.status(500).json({ error: 'Delete failed' });
+  }
+});
+
 // Simple demo endpoints used by client Demo pages
 router.get('/demo', async (_req, res) => {
   // Return a synthetic list for now

@@ -9,6 +9,7 @@ import StudentJoin from "./student/StudentJoin";
 import TeacherEmpty from "./teacher/TeacherEmpty";
 import TeacherManage from "./teacher/TeacherManage";
 import RunFull from "./student/RunFull";
+import StudentTest from "./student/StudentTest";
 import StudentLogin from "./StudentLogin";
 import Toaster from "../components/Toaster";
 import Demo from "./Demo";
@@ -88,6 +89,7 @@ export default function App() {
           <Route path="/student/recall-immediate" element={<Navigate to="/student/run" replace />} />
           <Route path="/student/recall-delayed" element={<Navigate to="/student/run" replace />} />
           <Route path="/student/run" element={<RequireRole role="student"><RunFull /></RequireRole>} />
+          <Route path="/student/test" element={<RequireRole role="student"><StudentTest /></RequireRole>} />
         </Routes>
         </div>
       </main>

@@ -33,6 +33,15 @@ function computeHighlightIndices(guess: string, target: string): number[] {
 
 const router = Router();
 
+function splitParagraphSentences(paragraph: string): string[] {
+  const parts: string[] = [];
+  const re = /([^.!?]*[.!?])/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(paragraph))) parts.push(m[1].trim());
+  if (parts.length === 0 && paragraph.trim()) parts.push(paragraph.trim());
+  return parts;
+}
+
 router.post('/join', requireAuth, requireRole('student'), async (req: AuthedRequest, res) => {
   const schema = z.object({ code: z.string().min(4).optional(), classCode: z.string().min(4).optional() });
   const parsed = schema.safeParse(req.body);
@@ -97,10 +106,48 @@ router.post('/join', requireAuth, requireRole('student'), async (req: AuthedRequ
       recall: { story: picks[3]?.story, paragraphIndex: picks[3]?.paragraphIndex, sentenceIndex: picks[3]?.sentenceIndex }
     };
   }
+  const cuesFromStory = (story?: any) => {
+    if (!story?.paragraphs) return [];
+    const cues: any[] = [];
+    story.paragraphs.forEach((p: string, pIdx: number) => {
+      const parts = splitParagraphSentences(p);
+      parts.forEach((_, sIdx) => {
+        const startSec = (pIdx * 12) + sIdx * 3;
+        cues.push({ paragraphIndex: pIdx, sentenceIndex: sIdx, startSec, endSec: startSec + 2.5 });
+      });
+    });
+    return cues;
+  };
+
+  if ((req as any).user?.demo) {
+    const demoParas = [
+      'The **castle** stands tall. The **castle** walls are strong. A **castle** has many rooms. In the **castle** lives a family.',
+      'The **forest** is quiet. The **forest** has paths. The **forest** trees sway. Animals roam the **forest**.'
+    ];
+    const demoStory = { paragraphs: demoParas, occurrences: [] as any[] };
+    return res.json({
+      assignmentId: 'demo-assignment',
+      condition: condType.replace('-', '_'),
+      story1: demoStory,
+      story2: demoStory,
+      tts1Url: '/static/audio/demo/H.mp3',
+      tts2Url: '/static/audio/demo/N.mp3',
+      cues1: cuesFromStory(demoStory),
+      cues2: cuesFromStory(demoStory),
+      schedule
+    });
+  }
+
   return res.json({
-    experiment: { id: String(exp._id), title: exp.title, description: exp.description, level: exp.level, targetWords: exp.targetWords || [] },
-    condition: condType,
-    stories: { A: { paragraphs: storyA?.paragraphs || [] }, B: { paragraphs: storyB?.paragraphs || [] } },
+    assignmentId: String((existing || chosen)._id),
+    experimentId: String(exp._id),
+    condition: condType.replace('-', '_'),
+    story1: { paragraphs: storyA?.paragraphs || [], occurrences: storyA?.targetOccurrences || [] },
+    story2: { paragraphs: storyB?.paragraphs || [], occurrences: storyB?.targetOccurrences || [] },
+    tts1Url: storyA?.ttsAudioUrl || `/static/audio/${exp._id}/H.mp3`,
+    tts2Url: storyB?.ttsAudioUrl || `/static/audio/${exp._id}/N.mp3`,
+    cues1: cuesFromStory(storyA),
+    cues2: cuesFromStory(storyB),
     schedule
   });
 });
@@ -268,6 +315,50 @@ router.post('/recall/delayed', requireAuth, requireRole('student'), async (req: 
     { upsert: true }
   )));
   res.json({ scores, average: avg });
+});
+
+// Lightweight attempt check for new student test flow
+router.post('/test-attempt', requireAuth, requireRole('student'), async (req: AuthedRequest, res) => {
+  const schema = z.object({
+    assignmentId: z.string(),
+    storyLabel: z.string(),
+    word: z.string(),
+    occurrenceIndex: z.number().int().min(1),
+    text: z.string(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { assignmentId, word, occurrenceIndex, text } = parsed.data;
+  const assignment = await Assignment.findById(assignmentId).populate('condition');
+  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+  const isCorrect = text.trim().toLowerCase() === word.trim().toLowerCase();
+  const correctnessByPosition = positionCorrectness(text, word);
+  const cond = ((assignment as any).condition?.type as string) || 'with-hints';
+  const canHint = cond === 'with-hints' && occurrenceIndex <= 3;
+  return res.json({ isCorrect, correctnessByPosition, canHint });
+});
+
+router.post('/test-hint', requireAuth, requireRole('student'), async (req: AuthedRequest, res) => {
+  const schema = z.object({
+    targetWord: z.string(),
+    latestAttempt: z.string().optional(),
+    occurrenceIndex: z.number().int().optional(),
+    uiLanguage: z.string().default('en')
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { targetWord, latestAttempt, uiLanguage } = parsed.data;
+  const base = `Focus on the tricky part of "${targetWord}". Check vowels/consonants and length.`;
+  if (!config.openaiApiKey) return res.json({ hint: base, used: 'mock' });
+  try {
+    const openai = new OpenAI({ apiKey: config.openaiApiKey });
+    const prompt = `Provide a brief, non-revealing hint for spelling "${targetWord}". Attempt: "${(latestAttempt||'').slice(0,80)}". Language: ${uiLanguage}. Keep under 20 words.`;
+    const r = await openai.chat.completions.create({ model: 'gpt-4o-mini', messages: [{ role: 'user', content: prompt }], temperature: 0.2, max_tokens: 60 });
+    const hint = r.choices?.[0]?.message?.content?.trim() || base;
+    return res.json({ hint, used: 'openai' });
+  } catch {
+    return res.json({ hint: base, used: 'mock' });
+  }
 });
 
 export default router;

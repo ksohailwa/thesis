@@ -21,21 +21,17 @@ export default function StudentJoin() {
     try {
       const { data } = await api.post('/api/student/join', { code: trimmedCode })
       sessionStorage.clear()
-      if (data?.experiment) {
-        sessionStorage.setItem('sessionId', data.experiment.id)
-        sessionStorage.setItem('exp.experimentId', data.experiment.id)
-        sessionStorage.setItem('exp.condition', data.condition || 'with-hints')
-        if (data.experiment.level) sessionStorage.setItem('exp.level', data.experiment.level)
-        sessionStorage.setItem('exp.stories', JSON.stringify(data.stories || {}))
-        sessionStorage.setItem('exp.schedule', JSON.stringify(data.schedule || {}))
-        sessionStorage.setItem('targetWords', JSON.stringify(data.experiment.targetWords || []))
-        nav('/student/run')
-        return
-      }
-      sessionStorage.setItem('sessionId', data.sessionId)
-      sessionStorage.setItem('exp.condition', data.condition || 'with-hints')
-      sessionStorage.setItem('targetWords', JSON.stringify(data.targetWords || []))
-      nav('/student/run')
+      sessionStorage.setItem('assignmentId', data.assignmentId || '')
+      if (data.experimentId) sessionStorage.setItem('exp.experimentId', data.experimentId)
+      sessionStorage.setItem('exp.condition', data.condition || 'with_hints')
+      sessionStorage.setItem('exp.story1', JSON.stringify(data.story1 || {}))
+      sessionStorage.setItem('exp.story2', JSON.stringify(data.story2 || {}))
+      sessionStorage.setItem('exp.tts1', data.tts1Url || '')
+      sessionStorage.setItem('exp.tts2', data.tts2Url || '')
+      sessionStorage.setItem('exp.cues1', JSON.stringify(data.cues1 || []))
+      sessionStorage.setItem('exp.cues2', JSON.stringify(data.cues2 || []))
+      sessionStorage.setItem('exp.schedule', JSON.stringify(data.schedule || {}))
+      nav('/student/test')
     } catch (e: any) {
       const msg = e?.response?.data?.error
       if (!e?.response || e?.code === 'ERR_NETWORK') setError('Cannot connect to server. Please check your internet connection.')
