@@ -9,6 +9,7 @@ export interface Job {
   type: JobType;
   experimentId: string;
   storyLabel?: 'story1' | 'story2';
+  set?: 'set1' | 'set2';
   targetWords?: string[];
   regenerate?: boolean;
   status: JobStatus;
@@ -106,7 +107,7 @@ async function runJob(j: Job) {
             'Content-Type': 'application/json',
             'x-internal-job': config.internalJobSecret,
           },
-          body: JSON.stringify({}),
+          body: JSON.stringify({ set: j.set || 'set1' }),
         } as any)
       );
     } else if (j.type === 'generate_story') {
@@ -119,7 +120,7 @@ async function runJob(j: Job) {
             'Content-Type': 'application/json',
             'x-internal-job': config.internalJobSecret,
           },
-          body: JSON.stringify({ label, targetWords }),
+          body: JSON.stringify({ label, targetWords, set: j.set || 'set1' }),
         } as any)
       );
     } else if (j.type === 'generate_tts') {
@@ -131,7 +132,7 @@ async function runJob(j: Job) {
             'Content-Type': 'application/json',
             'x-internal-job': config.internalJobSecret,
           },
-          body: JSON.stringify({ label }),
+          body: JSON.stringify({ label, set: j.set || 'set1' }),
         } as any)
       );
     }

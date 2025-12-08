@@ -15,6 +15,7 @@ router.post('/', requireAuth, requireRole('teacher'), jobLimiter, async (req: Au
     type: z.enum(['fetch_words', 'generate_story', 'generate_tts']),
     experimentId: z.string(),
     storyLabel: z.enum(['story1', 'story2']).optional(),
+    set: z.enum(['set1', 'set2']).optional(),
     targetWords: z.array(z.string()).min(1).max(10).optional(),
     regenerate: z.boolean().optional(),
   });
@@ -24,6 +25,7 @@ router.post('/', requireAuth, requireRole('teacher'), jobLimiter, async (req: Au
     type: parsed.data.type as JobType,
     experimentId: parsed.data.experimentId,
     storyLabel: parsed.data.storyLabel,
+    set: parsed.data.set || 'set1',
     targetWords: parsed.data.targetWords,
     regenerate: parsed.data.regenerate,
   });
@@ -51,12 +53,23 @@ router.get('/experiment/:id/status', requireAuth, requireRole('teacher'), async 
     if (j.status === 'error') return 'error';
     return 'generating';
   }
-  const words = latestStatus((j) => j.type === 'fetch_words');
-  const s1 = latestStatus((j) => j.type === 'generate_story' && j.storyLabel === 'story1');
-  const s2 = latestStatus((j) => j.type === 'generate_story' && j.storyLabel === 'story2');
-  const tts1 = latestStatus((j) => j.type === 'generate_tts' && j.storyLabel === 'story1');
-  const tts2 = latestStatus((j) => j.type === 'generate_tts' && j.storyLabel === 'story2');
-  res.json({ words, s1, s2, tts1, tts2 });
+
+  const buildSetStatus = (set: 'set1' | 'set2') => ({
+    words: latestStatus((j) => j.type === 'fetch_words' && (j.set || 'set1') === set),
+    s1: latestStatus((j) => j.type === 'generate_story' && j.storyLabel === 'story1' && (j.set || 'set1') === set),
+    s2: latestStatus((j) => j.type === 'generate_story' && j.storyLabel === 'story2' && (j.set || 'set1') === set),
+    tts1: latestStatus((j) => j.type === 'generate_tts' && j.storyLabel === 'story1' && (j.set || 'set1') === set),
+    tts2: latestStatus((j) => j.type === 'generate_tts' && j.storyLabel === 'story2' && (j.set || 'set1') === set),
+  });
+
+  const set1 = buildSetStatus('set1');
+  const set2 = buildSetStatus('set2');
+
+  res.json({
+    ...set1,
+    set1,
+    set2,
+  });
 });
 
 export default router;

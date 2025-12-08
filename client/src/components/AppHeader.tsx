@@ -102,7 +102,7 @@ export default function AppHeader({ onHelp, onScale }: AppHeaderProps) {
       {/* Demo Banner */}
       {demo && (
         <div className="w-full text-center text-xs py-1 bg-amber-100 text-amber-800 border-t border-amber-200">
-          Demo Mode — progress not saved
+          Demo Mode - progress not saved
         </div>
       )}
     </header>

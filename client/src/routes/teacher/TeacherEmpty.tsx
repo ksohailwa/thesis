@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { Archive, ArrowRight, ClipboardList, Layers, PenSquare, PlayCircle } from 'lucide-react'
 import api from '../../lib/api'
 import LoadingScreen from '../../components/LoadingScreen'
 import { toast } from '../../store/toasts'
@@ -63,6 +64,20 @@ export default function TeacherHome() {
     closed: experiments.filter((e) => e.status === 'closed').length,
   }
 
+  const cardStyles: Record<string, { active: string; value: string }> = {
+    blue: { active: 'border-blue-500 bg-blue-50 shadow-lg', value: 'text-blue-600' },
+    orange: { active: 'border-orange-500 bg-orange-50 shadow-lg', value: 'text-orange-600' },
+    green: { active: 'border-green-500 bg-green-50 shadow-lg', value: 'text-green-600' },
+    gray: { active: 'border-gray-500 bg-gray-50 shadow-lg', value: 'text-gray-600' },
+  }
+
+  const summaryCards = [
+    { key: 'all', label: 'Total', value: stats.total, color: 'blue', Icon: Layers },
+    { key: 'draft', label: 'Drafts', value: stats.draft, color: 'orange', Icon: PenSquare },
+    { key: 'live', label: 'Live', value: stats.live, color: 'green', Icon: PlayCircle },
+    { key: 'closed', label: 'Completed', value: stats.closed, color: 'gray', Icon: Archive },
+  ] as const
+
   return (
     <div className="space-y-8 text-gray-900 transition-colors duration-300">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -105,33 +120,32 @@ export default function TeacherHome() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[
-            { key: 'all', label: 'Total', value: stats.total, color: 'blue' },
-            { key: 'draft', label: 'Drafts', value: stats.draft, color: 'orange' },
-            { key: 'live', label: 'Live', value: stats.live, color: 'green' },
-            { key: 'closed', label: 'Completed', value: stats.closed, color: 'gray' },
-          ].map((card) => (
-            <button
-              key={card.key}
-              onClick={() => setFilter(card.key as any)}
-              className={`p-6 rounded-2xl border-2 transition-all text-left ${
-                filter === card.key 
-                  ? `border-${card.color}-500 bg-${card.color}-50 shadow-lg` 
-                  : 'border-gray-200 bg-white hover:border-gray-300'
-              }`}
-            >
-              <div className="flex items-start justify-between mb-2">
-                <div className="text-3xl">{card.key === 'live' ? '✅' : card.key === 'draft' ? '✍️' : '📚'}</div>
-                <div className={`text-2xl font-bold text-${card.color}-600`}>{card.value}</div>
-              </div>
-              <div className="text-sm font-medium text-gray-600">{card.label} Experiments</div>
-            </button>
-          ))}
+          {summaryCards.map((card) => {
+            const style = cardStyles[card.color]
+            const Icon = card.Icon
+            return (
+              <button
+                key={card.key}
+                onClick={() => setFilter(card.key as any)}
+                className={`p-6 rounded-2xl border-2 transition-all text-left ${
+                  filter === card.key ? style.active : 'border-gray-200 bg-white hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-start justify-between mb-2">
+                  <Icon className={style.value} size={28} />
+                  <div className={`text-2xl font-bold ${style.value}`}>{card.value}</div>
+                </div>
+                <div className="text-sm font-medium text-gray-600">{card.label} Experiments</div>
+              </button>
+            )
+          })}
         </div>
 
         {filtered.length === 0 ? (
           <div className="text-center py-16">
-            <div className="text-6xl mb-4">🗂️</div>
+            <div className="flex justify-center mb-4">
+              <ClipboardList className="h-12 w-12 text-gray-400" />
+            </div>
             <h3 className="text-xl font-semibold mb-2">
               {filter === 'all' ? 'No experiments yet' : `No ${filter} experiments`}
             </h3>
@@ -167,27 +181,13 @@ export default function TeacherHome() {
                 />
 
                 <div className="p-6 space-y-4">
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-center justify-between">
                     <div className="flex-1 pr-4">
                       <h3 className="font-bold text-lg mb-1 line-clamp-2 group-hover:text-blue-600 transition">
                         {exp.title}
                       </h3>
                       <div className="flex items-center gap-2 text-sm text-gray-500">
                         <span className="px-2 py-0.5 bg-gray-100 rounded font-medium">{level}</span>
-                        <div className="flex items-center gap-1 bg-gray-50 px-2 py-0.5 rounded">
-                          <span className="font-mono text-xs font-semibold">{classCode}</span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              navigator.clipboard.writeText(classCode)
-                              toast.success('Code copied!')
-                            }}
-                            className="text-xs text-gray-500 hover:text-gray-700 cursor-pointer ml-1"
-                            title="Copy to clipboard"
-                          >
-                            Copy
-                          </button>
-                        </div>
                       </div>
                     </div>
                     <span
@@ -223,7 +223,10 @@ export default function TeacherHome() {
                     className="btn primary w-full text-sm font-semibold"
                     onClick={() => nav(`/teacher/experiments/${expId}`)}
                   >
-                    Manage →
+                    <span className="inline-flex items-center gap-2 justify-center w-full">
+                      <span>Manage</span>
+                      <ArrowRight size={16} />
+                    </span>
                   </button>
                 </div>
               </div>

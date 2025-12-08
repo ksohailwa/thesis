@@ -44,7 +44,13 @@ export default function Demo() {
                     try {
                       if (!accessToken || !demo) {
                         const { data } = await api.post('/api/auth/demo');
-                        setAuth({ accessToken: data.accessToken, role: data.role, email: data.email, demo: true });
+                        setAuth({
+                          accessToken: data.accessToken,
+                          refreshToken: data.refreshToken || null,
+                          role: data.role,
+                          email: data.email,
+                          demo: true,
+                        });
                       }
                       const start = await api.post(`/api/experiments/${e.id}/demo-start`, {});
                       const exp = start.data;

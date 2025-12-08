@@ -132,6 +132,8 @@ router.post('/join', requireAuth, requireRole('student'), async (req: AuthedRequ
       story2: demoStory,
       tts1Url: '/static/audio/demo/H.mp3',
       tts2Url: '/static/audio/demo/N.mp3',
+      tts1Segments: [],
+      tts2Segments: [],
       cues1: cuesFromStory(demoStory),
       cues2: cuesFromStory(demoStory),
       schedule
@@ -146,6 +148,8 @@ router.post('/join', requireAuth, requireRole('student'), async (req: AuthedRequ
     story2: { paragraphs: storyB?.paragraphs || [], occurrences: storyB?.targetOccurrences || [] },
     tts1Url: storyA?.ttsAudioUrl || `/static/audio/${exp._id}/H.mp3`,
     tts2Url: storyB?.ttsAudioUrl || `/static/audio/${exp._id}/N.mp3`,
+    tts1Segments: storyA?.ttsSegments || [],
+    tts2Segments: storyB?.ttsSegments || [],
     cues1: cuesFromStory(storyA),
     cues2: cuesFromStory(storyB),
     schedule

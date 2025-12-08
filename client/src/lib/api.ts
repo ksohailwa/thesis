@@ -1,4 +1,21 @@
 import axios from 'axios'
+import { useAuth } from '../store/auth'
+
+const AUTH_KEY = 'spellwise-auth'
+
+function readStoredAuth() {
+  if (typeof window === 'undefined') return {}
+  const raw = sessionStorage.getItem(AUTH_KEY) || localStorage.getItem(AUTH_KEY)
+  if (!raw) return {}
+  try {
+    const parsed = JSON.parse(raw)
+    // Zustand persist stores { state, version }
+    const state = parsed?.state || parsed
+    return state || {}
+  } catch {
+    return {}
+  }
+}
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000',
@@ -11,9 +28,15 @@ const api = axios.create({
 
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('accessToken')
+    const state = useAuth.getState?.() || {}
+    const stored = readStoredAuth() as any
+    const token = state.accessToken || stored.accessToken || localStorage.getItem('accessToken')
     if (token && config.headers) {
       config.headers.Authorization = `Bearer ${token}`
+    }
+    const refresh = state.refreshToken || stored.refreshToken || localStorage.getItem('refreshToken')
+    if (refresh && config.url?.includes('/api/auth/refresh')) {
+      config.headers['x-refresh'] = refresh
     }
     return config
   },
@@ -33,9 +56,25 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
       try {
-        const { data } = await api.post('/api/auth/refresh')
+        const state = useAuth.getState?.()
+        const stored = readStoredAuth() as any
+        const refresh = state?.refreshToken || stored.refreshToken || localStorage.getItem('refreshToken')
+        const { data } = await api.post('/api/auth/refresh', undefined, {
+          headers: refresh ? { 'x-refresh': refresh } : undefined,
+        })
         if (data?.accessToken) {
-          localStorage.setItem('accessToken', data.accessToken)
+          if (state?.setAuth && state.role && state.email) {
+            state.setAuth({
+              accessToken: data.accessToken,
+              refreshToken: data.refreshToken || state.refreshToken || refresh || null,
+              role: state.role as any,
+              email: state.email,
+              demo: state.demo,
+            })
+          } else {
+            localStorage.setItem('accessToken', data.accessToken)
+            if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken)
+          }
           originalRequest.headers = originalRequest.headers || {}
           originalRequest.headers.Authorization = `Bearer ${data.accessToken}`
           return api(originalRequest)
@@ -45,6 +84,7 @@ api.interceptors.response.use(
         localStorage.removeItem('role')
         localStorage.removeItem('email')
         localStorage.removeItem('demo')
+        localStorage.removeItem('refreshToken')
         if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
           window.location.href = '/login'
         }

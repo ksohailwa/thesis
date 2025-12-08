@@ -6,6 +6,9 @@ export const config = {
   mongoUri: process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/spellwise',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   appBaseUrl: process.env.APP_BASE_URL || 'http://localhost:5173',
+  allowRefreshTokenInResponse:
+    (process.env.ALLOW_REFRESH_IN_RESPONSE || '').toLowerCase() === 'true' ||
+    process.env.NODE_ENV !== 'production',
 
   // Auth
   devNoAuth: process.env.DEV_NO_AUTH === 'true',

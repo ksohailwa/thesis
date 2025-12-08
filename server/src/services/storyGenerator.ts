@@ -20,7 +20,6 @@ export interface GeneratedStory {
 
 export async function generateStory(opts: StoryGenerationOptions): Promise<GeneratedStory> {
   const { words, cefr, paragraphCount, maxAttempts = 2 } = opts
-  const sentencesPerParagraph = Math.max(3, Math.ceil((4 * words.length) / paragraphCount))
 
   const oa = getOpenAI()
 
@@ -33,20 +32,20 @@ export async function generateStory(opts: StoryGenerationOptions): Promise<Gener
           temperature: 0.8,
           messages: [
             { role: 'system', content: storySystemBold(paragraphCount) },
-            { role: 'user', content: storyUserBold(cefr, words, paragraphCount, sentencesPerParagraph) },
+            { role: 'user', content: storyUserBold(cefr, words, paragraphCount) },
           ],
         })
 
         const text = r.choices?.[0]?.message?.content || '{}'
         const data = JSON.parse(text)
         const rawParagraphs = Array.isArray(data?.story?.paragraphs)
-          ? data.story.paragraphs.slice(0, paragraphCount)
+          ? data.story.paragraphs
           : []
 
         if (rawParagraphs.length > 0) {
           const { cleanParagraphs, occurrences } = parseBoldMarkers(rawParagraphs)
 
-          if (cleanParagraphs.length === paragraphCount && occurrences.length > 0) {
+          if (cleanParagraphs.length > 0 && occurrences.length > 0) {
             logger.info('Story generated via OpenAI', {
               attempt: attempt + 1,
               paragraphs: cleanParagraphs.length,

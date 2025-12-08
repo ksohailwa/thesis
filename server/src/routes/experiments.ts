@@ -4,7 +4,11 @@ import { requireAuth, requireRole, AuthedRequest } from '../middleware/auth';
 import { requireExperimentOwnership } from '../middleware/ownership';
 import { Experiment } from '../models/Experiment';
 import { Story } from '../models/Story';
-import { getOpenAI } from '../utils/openai';
+import { Assignment } from '../models/Assignment';
+import { Condition } from '../models/Condition';
+import { Attempt } from '../models/Attempt';
+import { Event } from '../models/Event';
+import { getOpenAI, generateSentenceTTS } from '../utils/openai';
 import { wordPoolSystem, wordPoolUser, storySystem, storyUser, storySystemBold, storyUserBold } from '../prompts';
 import { validateStories } from '../utils/storyValidator';
 import { toConditionLabel } from '../utils/labelMapper';
@@ -23,6 +27,28 @@ function mapToInternalLabel(label: string) {
   if (value === 'H' || value === 'A' || value === '1' || value === 'STORY1') return 'A';
   if (value === 'N' || value === 'B' || value === '2' || value === 'STORY2') return 'B';
   return value;
+}
+
+function normalizeSet(value?: string): 'set1' | 'set2' {
+  return value === 'set2' ? 'set2' : 'set1';
+}
+
+function normalizeWords(words: any[] = []) {
+  return words
+    .map((w) => (typeof w === 'string' ? w : String(w ?? '')))
+    .map((w) => w.trim())
+    .filter((w) => w.length > 0)
+    .map((w) => w.toLowerCase())
+}
+
+function collectSetWords(exp: any, set: 'set1' | 'set2') {
+  const setData = (exp.storySets as any)?.[set] || {}
+  const entries = ['story1', 'story2'].flatMap((key) => setData[key]?.targetWords || [])
+  if (set === 'set1') {
+    entries.push((exp.stories as any)?.story1?.targetWords || [])
+    entries.push((exp.stories as any)?.story2?.targetWords || [])
+  }
+  return Array.from(new Set(entries.map((w) => w || '').filter(Boolean)))
 }
 
 router.post('/', requireAuth, requireRole('teacher'), async (req: AuthedRequest, res) => {
@@ -58,6 +84,7 @@ router.post('/:id/words', requireAuth, requireRole('teacher'), handleTargetWords
 const storyWordsSchema = z.object({
   story: z.enum(['story1', 'story2']),
   targetWords: z.array(z.string()).min(1).max(10),
+  set: z.enum(['set1', 'set2']).optional(),
 });
 
 router.post(
@@ -69,6 +96,7 @@ router.post(
     const parsed = storyWordsSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const { story, targetWords } = parsed.data;
+    const set = normalizeSet((parsed.data as any)?.set);
     const unique = Array.from(
       new Set(
         targetWords
@@ -80,24 +108,34 @@ router.post(
       const exp = await Experiment.findById(req.params.id);
       if (!exp) return res.status(404).json({ error: 'Experiment not found' });
 
-      // Check for word overlap with the other story
-      const otherStory = story === 'story1' ? 'story2' : 'story1';
-      const otherWords = exp.stories?.[otherStory]?.targetWords || [];
-      const overlap = unique.filter((w) => otherWords.some((ow: string) => ow.toLowerCase() === w.toLowerCase()));
+      // Check for word overlap with the other set
+      const otherSet = set === 'set1' ? 'set2' : 'set1';
+      const otherSetWords = normalizeWords(collectSetWords(exp, otherSet));
+      const overlap = unique.filter((w) => otherSetWords.includes(w.toLowerCase()));
 
       if (overlap.length > 0) {
-        logger.warn('Word overlap detected', { experimentId: req.params.id, story, overlap });
+        logger.warn('Word overlap detected', { experimentId: req.params.id, story, set, overlap });
         return res.status(400).json({
-          error: `Word overlap with ${otherStory}. Words must be different for each story.`,
+          error: `Word overlap detected with ${otherSet.toUpperCase()}; sets must stay disjoint.`,
           overlap,
-          otherStory
+          otherSet
         });
       }
 
-      const update = { $set: { [`stories.${story}.targetWords`]: unique } };
-      const updated = await Experiment.findByIdAndUpdate(req.params.id, update, { new: true }).select('stories');
+      const update: Record<string, any> = {};
+      if (set === 'set1') {
+        update[`stories.${story}.targetWords`] = unique;
+        update[`storySets.set1.${story}.targetWords`] = unique;
+      } else {
+        update[`storySets.${set}.${story}.targetWords`] = unique;
+      }
+      const updated = await Experiment.findByIdAndUpdate(
+        req.params.id,
+        { $set: update },
+        { new: true }
+      ).select('stories storySets');
       if (!updated) return res.status(404).json({ error: 'Experiment not found' });
-      return res.json({ ok: true, story, targetWords: unique, stories: updated.stories });
+      return res.json({ ok: true, story, set, targetWords: unique, stories: updated.stories, storySets: (updated as any).storySets });
     } catch (err) {
       return res.status(500).json({ error: 'Failed to save story words' });
     }
@@ -107,10 +145,19 @@ router.post(
 async function handleWordSuggestions(req: AuthedRequest, res: Response) {
   const exp = await Experiment.findById(req.params.id);
   if (!exp) return res.status(404).json({ error: 'Not found' });
+  const set = normalizeSet((req.body as any)?.set);
   const storyKey = (req.body as any)?.story === 'story2' ? 'story2' : 'story1';
   const otherKey = storyKey === 'story1' ? 'story2' : 'story1';
-  const otherWords: string[] = (exp.stories as any)?.[otherKey]?.targetWords || [];
-  const used = new Set(otherWords.map((w: string) => w.toLowerCase()));
+  const otherWords: string[] =
+    (exp.storySets as any)?.[set]?.[otherKey]?.targetWords ||
+    (set === 'set1' ? (exp.stories as any)?.[otherKey]?.targetWords : []) ||
+    [];
+  const otherSet = set === 'set1' ? 'set2' : 'set1';
+  const otherSetWords = normalizeWords(collectSetWords(exp, otherSet));
+  const used = new Set<string>([
+    ...otherWords.map((w: string) => w.toLowerCase()),
+    ...otherSetWords,
+  ]);
 
   const oa = getOpenAI();
   if (oa) {
@@ -182,10 +229,11 @@ router.post('/:id/generate-stories', requireAuth, requireRole('teacher'), async 
     }
   }
 
-  // Ensure disjoint sets
-  wordsN = wordsN.filter((w) => !wordsH.some((h) => h.toLowerCase() === w.toLowerCase()));
+  // Per user request, wordsH and wordsN are now allowed to overlap.
+  // wordsN = wordsN.filter((w) => !wordsH.some((h) => h.toLowerCase() === w.toLowerCase()));
 
   const oa = getOpenAI();
+  const allWords = [...wordsH, ...wordsN];
 
   const buildFallback = (storyWords: string[]) => {
     const paragraphCount = Math.max(1, storyWords.length);
@@ -226,7 +274,12 @@ router.post('/:id/generate-stories', requireAuth, requireRole('teacher'), async 
     if (storyWords.length === 0) {
        // Create an empty placeholder story if no words
        const map = label === 'H' ? 'A' : 'B';
-       return await Story.findOneAndUpdate({ experiment: exp._id, label: map }, { experiment: exp._id, label: map, paragraphs: [], targetOccurrences: [] }, { upsert: true, new: true });
+       const filter = { experiment: exp._id, label: map, $or: [{ storySet: 'set1' }, { storySet: { $exists: false } }] };
+       return await Story.findOneAndUpdate(
+         filter,
+         { experiment: exp._id, storySet: 'set1', label: map, paragraphs: [], targetOccurrences: [] },
+         { upsert: true, new: true }
+       );
     }
 
     let paragraphs: string[] = [];
@@ -256,7 +309,12 @@ router.post('/:id/generate-stories', requireAuth, requireRole('teacher'), async 
       occ = fallback.occ;
     }
     const map = label === 'H' ? 'A' : 'B';
-    const s = await Story.findOneAndUpdate({ experiment: exp._id, label: map }, { experiment: exp._id, label: map, paragraphs, targetOccurrences: occ }, { upsert: true, new: true });
+    const filter = { experiment: exp._id, label: map, $or: [{ storySet: 'set1' }, { storySet: { $exists: false } }] };
+    const s = await Story.findOneAndUpdate(
+      filter,
+      { experiment: exp._id, storySet: 'set1', label: map, paragraphs, targetOccurrences: occ },
+      { upsert: true, new: true }
+    );
     return s;
   }
 
@@ -271,12 +329,25 @@ router.post('/:id/generate-story', requireAuth, requireRole('teacher'), async (r
     label: z.enum(['H','N','A','B','1','2','story1','story2']),
     targetWords: z.array(z.string()).min(1).max(10).optional(),
     topic: z.string().optional(),
+    set: z.enum(['set1','set2']).optional(),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const exp = await Experiment.findById(req.params.id);
   if (!exp) return res.status(404).json({ error: 'Not found' });
-  const words = (parsed.data.targetWords || exp.targetWords || []).slice(0, 10);
+  const set = normalizeSet((parsed.data as any).set);
+  const map = mapToInternalLabel(parsed.data.label);
+  const storyKey = map === 'A' ? 'story1' : 'story2';
+  const storySetWords = (exp.storySets as any)?.[set] || {};
+  const sharedSetWords =
+    storySetWords[storyKey]?.targetWords ||
+    storySetWords.story1?.targetWords ||
+    storySetWords.story2?.targetWords ||
+    [];
+  const fallbackLegacy =
+    (set === 'set1' ? (exp.stories as any)?.[storyKey]?.targetWords : []) || exp.targetWords || [];
+  const savedWords = sharedSetWords.length ? sharedSetWords : fallbackLegacy;
+  const words = (parsed.data.targetWords || savedWords || []).slice(0, 10);
   const paragraphCount = Math.max(1, words.length);
   const oa = getOpenAI();
   let paragraphs: string[] = [];
@@ -289,7 +360,7 @@ router.post('/:id/generate-story', requireAuth, requireRole('teacher'), async (r
         temperature: 0.8,
         messages: [
           { role: 'system', content: storySystemBold(paragraphCount) },
-          { role: 'user', content: storyUserBold(exp.cefr || exp.level || 'B1', words, paragraphCount, Math.max(3, Math.ceil((4 * words.length) / paragraphCount))) }
+          { role: 'user', content: storyUserBold(exp.cefr || exp.level || 'B1', words, paragraphCount) }
         ]
       });
       const text = r.choices?.[0]?.message?.content || '{}';
@@ -298,7 +369,7 @@ router.post('/:id/generate-story', requireAuth, requireRole('teacher'), async (r
       
       if (rawParas.length > 0) {
         const { cleanParagraphs, occurrences } = parseBoldMarkers(rawParas);
-        paragraphs = cleanParagraphs.slice(0, paragraphCount);
+        paragraphs = cleanParagraphs;
         occ = occurrences;
         
         // Log if no occurrences found
@@ -353,8 +424,6 @@ router.post('/:id/generate-story', requireAuth, requireRole('teacher'), async (r
     const resLoc = inject(base(exp.title), words);
     paragraphs = resLoc.paragraphs; occ = resLoc.occ;
   }
-  const map = mapToInternalLabel(parsed.data.label);
-
   // Validate only single story being generated (not cross-story check yet)
   if (paragraphs.length > 0) {
     const singleStoryValidation = {
@@ -403,9 +472,31 @@ router.post('/:id/generate-story', requireAuth, requireRole('teacher'), async (r
     }
   }
 
-  const s = await Story.findOneAndUpdate({ experiment: exp._id, label: map }, { experiment: exp._id, label: map, paragraphs, targetOccurrences: occ }, { upsert: true, new: true });
-  const patch: any = map === 'A' ? { 'stories.H': s._id } : { 'stories.N': s._id };
-  await Experiment.findByIdAndUpdate(exp._id, patch);
+  // Match both the current storySet field and legacy "set"/missing field to avoid duplicate-key errors
+  const filter = {
+    experiment: exp._id,
+    label: map,
+    $or: [
+      { storySet: set },
+      { storySet: { $exists: false } },
+      { set: set },
+      { set: { $exists: false } },
+    ],
+  } as any;
+  const s = await Story.findOneAndUpdate(
+    filter,
+    { experiment: exp._id, storySet: set, set, label: map, paragraphs, targetOccurrences: occ },
+    { upsert: true, new: true, setDefaultsOnInsert: true, strict: false }
+  );
+  const patch: any =
+    map === 'A'
+      ? set === 'set1'
+        ? { 'storyRefs.story1': s._id }
+        : { 'storyRefsSet2.story1': s._id }
+      : set === 'set1'
+      ? { 'storyRefs.story2': s._id }
+      : { 'storyRefsSet2.story2': s._id };
+  await Experiment.findByIdAndUpdate(exp._id, { $set: patch });
   return res.json({ ok: true, storyId: s._id });
 });
 
@@ -423,38 +514,118 @@ router.post('/:id/launch', requireAuth, requireRole('teacher'), async (req, res)
 });
 
 router.post('/:id/tts', requireAuth, requireRole('teacher'), requireExperimentOwnership(), async (req, res) => {
-  const schema = z.object({ label: z.enum(['A','B','H','N','1','2','story1','story2']) });
+  const schema = z.object({ label: z.enum(['A','B','H','N','1','2','story1','story2']), set: z.enum(['set1','set2']).optional() });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { label } = parsed.data;
+  const set = normalizeSet((parsed.data as any).set);
   const exp = await Experiment.findById(req.params.id);
   if (!exp) return res.status(404).json({ error: 'Not found' });
   const map = mapToInternalLabel(label);
   const normalizedLabel = toConditionLabel(label);
-  const story = await Story.findOne({ experiment: exp._id, label: map as any });
+  const story = await Story.findOne({
+    experiment: exp._id,
+    label: map as any,
+    $or: [{ storySet: set }, { storySet: { $exists: false } }],
+  });
   if (!story) return res.status(404).json({ error: 'Story not found' });
   const oa = getOpenAI();
   const fs = await import('fs');
   const path = await import('path');
   const outDir = path.join(process.cwd(), 'static', 'audio', String(exp._id));
   fs.mkdirSync(outDir, { recursive: true });
-  const outPath = path.join(outDir, `${normalizedLabel}.mp3`);
+  const fileLabel = set === 'set1' ? normalizedLabel : `${normalizedLabel}-${set}`;
+  const outPath = path.join(outDir, `${fileLabel}.mp3`);
+  
+  // Cleanup old files to prevent serving stale audio
+  try {
+    if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
+    const existingFiles = fs.readdirSync(outDir);
+    existingFiles.forEach(f => {
+      if (f.startsWith(`${fileLabel}_s`) && f.endsWith('.mp3')) {
+        fs.unlinkSync(path.join(outDir, f));
+      }
+    });
+  } catch (e) {
+    logger.warn('Failed to cleanup old audio files', { error: e });
+  }
+
   try {
     if (oa) {
-      const resp = await oa.audio.speech.create({ model: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts', voice: process.env.OPENAI_TTS_VOICE || 'nova', input: story.paragraphs.join('\n\n') } as any);
-      const buf = Buffer.from(await resp.arrayBuffer());
-      fs.writeFileSync(outPath, buf);
-      const rel = `/static/audio/${exp._id}/${normalizedLabel}.mp3`;
+      const timestamp = Date.now();
+      const tasks: Array<Promise<{ buf: Buffer; segName: string }>> = [];
+
+      for (let pIdx = 0; pIdx < story.paragraphs.length; pIdx++) {
+        const paragraph = story.paragraphs[pIdx] || '';
+        const sentences = paragraph.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean);
+        if (sentences.length === 0 && paragraph.trim()) sentences.push(paragraph.trim());
+
+        for (let sIdx = 0; sIdx < sentences.length; sIdx++) {
+          const segName = `${normalizedLabel}_${pIdx}_${sIdx}.mp3`;
+          tasks.push(
+            generateSentenceTTS({
+              client: oa,
+              text: sentences[sIdx],
+            }).then((buf) => ({ buf, segName }))
+          );
+        }
+      }
+
+      // If there are no sentences (empty story), fall back to full audio generation
+      if (tasks.length === 0) {
+        const resp = await oa.audio.speech.create({
+          model: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts',
+          voice: process.env.OPENAI_TTS_VOICE || 'nova',
+          input: story.paragraphs.join('\n\n'),
+        } as any);
+        const buf = Buffer.from(await resp.arrayBuffer());
+        fs.writeFileSync(outPath, buf);
+        story.ttsAudioUrl = `/static/audio/${exp._id}/${fileLabel}.mp3?t=${timestamp}`;
+        story.ttsSegments = [];
+        story.storySet = set;
+        await story.save();
+        return res.json({ url: story.ttsAudioUrl, segments: [], used: 'openai' });
+      }
+
+      const results = await Promise.all(tasks);
+      const segBuffers: Buffer[] = [];
+      const segUrls: string[] = [];
+      results.forEach(({ buf, segName }) => {
+        const segPath = path.join(outDir, segName);
+        fs.writeFileSync(segPath, buf);
+        segBuffers.push(buf);
+        segUrls.push(`/static/audio/${exp._id}/${segName}?t=${timestamp}`);
+      });
+
+      // Build full audio by concatenating segments (rough but acceptable for sequential playback)
+      if (segBuffers.length) {
+        const fullBuf = Buffer.concat(segBuffers);
+        fs.writeFileSync(outPath, fullBuf);
+      } else {
+        // fallback to one-shot generation if sentences missing
+        const resp = await oa.audio.speech.create({
+          model: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts',
+          voice: process.env.OPENAI_TTS_VOICE || 'nova',
+          input: story.paragraphs.join('\n\n'),
+        } as any);
+        const buf = Buffer.from(await resp.arrayBuffer());
+        fs.writeFileSync(outPath, buf);
+      }
+
+      const rel = `/static/audio/${exp._id}/${fileLabel}.mp3?t=${timestamp}`;
       story.ttsAudioUrl = rel;
+      story.ttsSegments = segUrls;
+      story.storySet = set;
       await story.save();
-      return res.json({ url: rel, used: 'openai' });
+      return res.json({ url: rel, segments: segUrls, used: 'openai' });
     }
   } catch {}
   // mock beep wav
   const wav = Buffer.alloc(44);
   fs.writeFileSync(outPath, wav);
-  const rel = `/static/audio/${exp._id}/${normalizedLabel}.mp3`;
+  const rel = `/static/audio/${exp._id}/${fileLabel}.mp3`;
   story.ttsAudioUrl = rel;
+  story.storySet = set;
   await story.save();
   return res.json({ url: rel, used: 'mock' });
 });
@@ -462,14 +633,33 @@ router.post('/:id/tts', requireAuth, requireRole('teacher'), requireExperimentOw
 // Get a single story (teacher preview)
 router.get('/:id/story/:label', requireAuth, requireRole('teacher'), async (req, res) => {
   const { id, label } = req.params as any;
+  const set = normalizeSet((req.query as any)?.set);
   const exp = await Experiment.findById(id);
   if (!exp) return res.status(404).json({ error: 'Not found' });
   const map = mapToInternalLabel(label);
-  const story = await Story.findOne({ experiment: exp._id, label: map });
+  const story = await Story.findOne({
+    experiment: exp._id,
+    label: map,
+    $or: [{ storySet: set }, { storySet: { $exists: false } }],
+  });
   if (!story) return res.status(404).json({ error: 'Story not found' });
   // Try to compute a default tts url path
-  const ttsUrl = `/static/audio/${exp._id}/${label}.mp3`;
-  return res.json({ id: story._id, label, paragraphs: story.paragraphs, ttsAudioUrl: story.ttsAudioUrl || ttsUrl });
+  const fileLabel = set === 'set1' ? label : `${label}-${set}`;
+  const ttsUrl = `/static/audio/${exp._id}/${fileLabel}.mp3`;
+  const sentences = story.paragraphs.map((p) =>
+    p
+      .split(/(?<=[.!?])\s+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+  );
+  return res.json({
+    id: story._id,
+    label,
+    set,
+    paragraphs: story.paragraphs,
+    sentences,
+    ttsAudioUrl: story.ttsAudioUrl || ttsUrl,
+  });
 });
 
 router.post('/:id/status', requireAuth, requireRole('teacher'), async (req, res) => {

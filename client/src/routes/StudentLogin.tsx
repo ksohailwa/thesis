@@ -3,6 +3,7 @@ import api from '../lib/api'
 import { toMessage } from '../lib/err'
 import { useAuth } from '../store/auth'
 import { Link, useNavigate } from 'react-router-dom'
+import { CheckCircle2, Sparkles, TrendingUp } from 'lucide-react'
 
 export default function StudentLogin() {
   const [username, setUsername] = useState('')
@@ -17,7 +18,7 @@ export default function StudentLogin() {
     try {
       setBusy(true)
       const un = (username || '').trim(); const pw = (password || '').trim(); if (!un) { setError('Enter a username'); setBusy(false); return } if (pw.length < 6) { setError('Password must be at least 6 characters'); setBusy(false); return } const { data } = await api.post('/api/auth/student/login', { username: un, password: pw })
-      setAuth({ accessToken: data.accessToken, role: data.role, email: data.username })
+      setAuth({ accessToken: data.accessToken, refreshToken: data.refreshToken || null, role: data.role, email: data.username })
       nav('/student')
     } catch (e: any) {
       const serverErr = e?.response?.data?.error
@@ -28,10 +29,16 @@ export default function StudentLogin() {
   async function tryDemo() {
     try {
       const { data } = await api.post('/api/auth/demo')
-      setAuth({ accessToken: data.accessToken, role: data.role, email: data.username || data.email, demo: true })
+      setAuth({ accessToken: data.accessToken, refreshToken: data.refreshToken || null, role: data.role, email: data.username || data.email, demo: true })
       nav('/demo')
     } catch {}
   }
+
+  const highlights = [
+    { title: 'Instant Feedback', text: 'Check your answers in real-time.', icon: <CheckCircle2 size={18} /> },
+    { title: 'Adaptive Stories', text: 'Stories tailored to your level.', icon: <Sparkles size={18} /> },
+    { title: 'Progress Tracking', text: 'See your improvement over time.', icon: <TrendingUp size={18} /> },
+  ]
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-blue-50 flex">
@@ -44,13 +51,11 @@ export default function StudentLogin() {
         </Link>
         <div className="relative z-10 space-y-6">
           <h2 className="text-4xl font-bold leading-tight">Join your class and start practicing spelling</h2>
-          {[
-            { title: 'Instant Feedback', text: 'Check your answers in real-time.' },
-            { title: 'Adaptive Stories', text: 'Stories tailored to your level.' },
-            { title: 'Progress Tracking', text: 'See your improvement over time.' },
-          ].map((item) => (
+          {highlights.map((item) => (
             <div key={item.title} className="flex items-start gap-4">
-              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">✓</div>
+              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0 text-white">
+                {item.icon}
+              </div>
               <div>
                 <div className="font-semibold mb-1">{item.title}</div>
                 <div className="text-blue-100 text-sm">{item.text}</div>
@@ -58,7 +63,7 @@ export default function StudentLogin() {
             </div>
           ))}
         </div>
-        <div className="relative z-10 text-sm text-blue-100">© 2024 SpellWise. Learning Platform.</div>
+        <div className="relative z-10 text-sm text-blue-100">(c) 2024 SpellWise. Learning Platform.</div>
       </aside>
 
       <section className="flex-1 flex items-center justify-center p-8">
@@ -97,7 +102,7 @@ export default function StudentLogin() {
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="********"
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition"
                   autoComplete="current-password"
                   disabled={busy}
@@ -147,7 +152,9 @@ export default function StudentLogin() {
 
               <div className="text-center text-sm pt-4">
                 <span className="text-gray-600">No account yet? </span>
-                <span className="text-gray-600">Ask your teacher for a username.</span>
+                <Link to="/signup?role=student" className="text-purple-600 font-semibold hover:underline">
+                  Sign up as a student
+                </Link>
               </div>
             </form>
           </div>

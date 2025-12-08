@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+﻿import { useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../lib/api';
 import { toast } from '../../store/toasts';
-import { hydrateStudentSession } from '../../lib/studentSession';
 
 type StoryPayload = {
   paragraphs?: string[];
@@ -13,27 +12,9 @@ type Blank = {
   word: string;
   occurrenceIndex: number;
   paragraphIndex: number;
-  sentenceIndex?: number;
   charStart?: number;
   charEnd?: number;
 };
-
-type SentenceClip = {
-  id: string;
-  paragraphIndex: number;
-  sentenceIndex: number;
-  text: string;
-  startSec?: number;
-  endSec?: number;
-};
-
-function splitSentences(paragraph: string) {
-  const parts = paragraph
-    .split(/(?<=[.!?])\s+/g)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  return parts.length ? parts : [paragraph];
-}
 
 function parseParagraph(
   paragraph: string,
@@ -70,15 +51,14 @@ function parseParagraph(
   paraOcc.forEach((o) => {
     const idx = (wordCounts[o.word] || 0) + 1;
     wordCounts[o.word] = idx;
-      const blank: Blank = {
-        key: `${o.word}-${idx}-${pIdx}-${blanks.length}`,
-        word: o.word,
-        occurrenceIndex: idx,
-        paragraphIndex: pIdx,
-        sentenceIndex: o.sentenceIndex,
-        charStart: o.charStart,
-        charEnd: o.charEnd,
-      };
+    const blank: Blank = {
+      key: `${o.word}-${idx}-${pIdx}-${blanks.length}`,
+      word: o.word,
+      occurrenceIndex: idx,
+      paragraphIndex: pIdx,
+      charStart: o.charStart,
+      charEnd: o.charEnd,
+    };
     blanks.push(blank);
     for (let i = 0; i < segments.length; i++) {
       const seg = segments[i];
@@ -96,8 +76,6 @@ function parseParagraph(
 }
 
 export default function StudentTest() {
-  hydrateStudentSession();
-
   const assignmentId = sessionStorage.getItem('assignmentId') || '';
   const experimentId = sessionStorage.getItem('exp.experimentId') || '';
   const condition = sessionStorage.getItem('exp.condition') || 'with_hints';
@@ -108,18 +86,6 @@ export default function StudentTest() {
   const cues1 = JSON.parse(sessionStorage.getItem('exp.cues1') || '[]') as any[];
   const cues2 = JSON.parse(sessionStorage.getItem('exp.cues2') || '[]') as any[];
 
-  if (!assignmentId) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-8">
-        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-lg text-center space-y-3">
-          <h2 className="text-xl font-semibold text-gray-800">Session not found</h2>
-          <p className="text-gray-600 text-sm">Please re-enter your join code to continue.</p>
-          <a href="/student" className="btn primary px-4 py-2 inline-flex justify-center">Go to join page</a>
-        </div>
-      </div>
-    );
-  }
-
   const [storyIndex, setStoryIndex] = useState(0);
   const [values, setValues] = useState<Record<string, string>>({});
   const [correct, setCorrect] = useState<Record<string, boolean>>({});
@@ -129,8 +95,6 @@ export default function StudentTest() {
   const [hintHistory, setHintHistory] = useState<{ key: string; text: string }[]>([]);
   const [showHelp, setShowHelp] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const segmentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [activeClipId, setActiveClipId] = useState<string | null>(null);
   const base = import.meta.env.VITE_API_BASE_URL || '';
 
   const stories = useMemo(() => [story1, story2], [story1, story2]);
@@ -161,44 +125,6 @@ export default function StudentTest() {
   const solved = Object.values(correct).filter(Boolean).length;
   const progressPct = totalBlanks ? Math.min(100, Math.round((solved / totalBlanks) * 100)) : 0;
 
-  const sentenceClips = useMemo<SentenceClip[]>(() => {
-    const story = stories[storyIndex] || {};
-    const paragraphs = story.paragraphs || [];
-    const clips: SentenceClip[] = [];
-    (cues || []).forEach((c: any, idx: number) => {
-      const para = paragraphs[c.paragraphIndex] || '';
-      const sentences = splitSentences(para);
-      const text = sentences[c.sentenceIndex] || para;
-      clips.push({
-        id: `${storyIndex}-${idx}`,
-        paragraphIndex: c.paragraphIndex,
-        sentenceIndex: c.sentenceIndex,
-        text,
-        startSec: c.startSec,
-        endSec: c.endSec,
-      });
-    });
-    return clips;
-  }, [cues, stories, storyIndex]);
-
-  const playClip = (clip: SentenceClip) => {
-    if (!audioRef.current || clip.startSec == null) return;
-    if (segmentTimer.current) {
-      clearTimeout(segmentTimer.current);
-      segmentTimer.current = null;
-    }
-    const start = Math.max(0, clip.startSec - 0.05);
-    const end = clip.endSec ?? clip.startSec + 2;
-    audioRef.current.currentTime = start;
-    audioRef.current.play().catch(() => {});
-    const durationMs = Math.max(0, end - start) * 1000;
-    setActiveClipId(clip.id);
-    segmentTimer.current = setTimeout(() => {
-      audioRef.current?.pause();
-      setActiveClipId(null);
-    }, durationMs + 150);
-  };
-
   // Auto-pause near end of current cue
   useEffect(() => {
     if (!audioRef.current) return;
@@ -208,32 +134,15 @@ export default function StudentTest() {
       const next = cues.find((c) => t <= c.endSec + 0.1);
       if (next && t >= next.endSec && solved < totalBlanks) {
         audioRef.current.pause();
-        setActiveClipId(null);
-      }
-      if (activeClipId) {
-        const playing = sentenceClips.find((c) => c.id === activeClipId);
-        if (playing && playing.endSec != null && t >= playing.endSec - 0.05) {
-          audioRef.current.pause();
-          setActiveClipId(null);
-        }
       }
     };
     audioRef.current.addEventListener('timeupdate', handler);
     return () => audioRef.current?.removeEventListener('timeupdate', handler);
-  }, [cues, solved, totalBlanks, activeClipId, sentenceClips]);
-
-  useEffect(() => {
-    return () => {
-      if (segmentTimer.current) clearTimeout(segmentTimer.current);
-    };
-  }, []);
+  }, [cues, solved, totalBlanks]);
 
   const handleCheck = async (blank: Blank) => {
     const text = (values[blank.key] || '').trim();
     if (!text) return;
-    const clip =
-      sentenceClips.find((c) => c.paragraphIndex === blank.paragraphIndex && c.sentenceIndex === blank.sentenceIndex) ||
-      sentenceClips.find((c) => c.paragraphIndex === blank.paragraphIndex);
     try {
       const { data } = await api.post('/api/student/test-attempt', {
         assignmentId,
@@ -248,21 +157,7 @@ export default function StudentTest() {
         setHint(null);
         setHintForKey(null);
         toast.success('Correct!');
-        if (clip?.startSec != null) {
-          if (audioRef.current) {
-            audioRef.current.currentTime = Math.max(0, clip.startSec - 0.05);
-          }
-        }
         audioRef.current?.play().catch(() => {});
-        // Move focus to next blank if available
-        const allBlanks = parsed.blanks;
-        const idx = allBlanks.findIndex((b) => b.key === blank.key);
-        const next = allBlanks.slice(idx + 1).find((b) => !correct[b.key]);
-        if (next) {
-          // simple scroll to next occurrence
-          const el = document.querySelector<HTMLInputElement>(`input[data-blank="${next.key}"]`);
-          el?.focus();
-        }
       } else {
         toast.error('Try again');
         audioRef.current?.pause();
@@ -298,16 +193,12 @@ export default function StudentTest() {
     const val = values[b.key] || '';
     const ok = !!correct[b.key];
     const fb = feedback[b.key] || [];
-    const clip =
-      sentenceClips.find((c) => c.paragraphIndex === b.paragraphIndex && c.sentenceIndex === b.sentenceIndex) ||
-      sentenceClips.find((c) => c.paragraphIndex === b.paragraphIndex);
     return (
       <span key={b.key} className="inline-flex items-center gap-2 align-baseline">
         <input
           className={`px-3 py-2 border-2 rounded-lg text-lg font-semibold text-center ${
             ok ? 'border-green-500 bg-green-50' : 'border-gray-300'
           }`}
-          data-blank={b.key}
           value={val}
           onChange={(e) => setValues((v) => ({ ...v, [b.key]: e.target.value }))}
           onKeyDown={(e) => {
@@ -328,27 +219,16 @@ export default function StudentTest() {
           </span>
         )}
         {!ok && (
-          <button className="text-sm px-2.5 py-1 border rounded-lg bg-white hover:shadow-sm" onClick={() => handleCheck(b)}>
+          <button className="text-sm px-2 py-1 border rounded-lg bg-white hover:shadow" onClick={() => handleCheck(b)}>
             Check
           </button>
         )}
-        {!ok && clip && (
-          <button
-            className={`text-xs px-2.5 py-1 border rounded-lg bg-white hover:shadow-sm inline-flex items-center gap-1 ${
-              activeClipId === clip.id ? 'border-indigo-400 text-indigo-700 bg-indigo-50' : 'text-gray-600'
-            }`}
-            onClick={() => playClip(clip)}
-            title="Play this sentence"
-          >
-            Play Play sentence
-          </button>
-        )}
         {!ok && condition === 'with_hints' && (
-          <button className="text-sm px-2.5 py-1 border rounded-lg bg-white hover:shadow-sm text-gray-600" onClick={() => handleHint(b)}>
+          <button className="text-sm px-2 py-1 border rounded-lg bg-white hover:shadow" onClick={() => handleHint(b)}>
             Hint
           </button>
         )}
-        {ok && <span className="text-green-600 text-sm">OK</span>}
+        {ok && <span className="text-green-600 text-sm">✓</span>}
       </span>
     );
   };
@@ -373,45 +253,29 @@ export default function StudentTest() {
           <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-2 flex flex-wrap items-center gap-3">
             <audio ref={audioRef} controls className="flex-1 min-w-[240px]" src={audioSrc} />
             <div className="flex items-center gap-2">
-            <button
-              className="px-2.5 py-1 border rounded-lg bg-white hover:shadow-sm transition text-gray-700"
-              onClick={() => {
-                if (audioRef.current) audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime - 3);
-              }}
-            >
-              -3s -3s
-            </button>
-            <button className="px-2.5 py-1 border rounded-lg bg-white hover:shadow-sm transition text-gray-700" onClick={() => audioRef.current?.play()}>
-              Play
-            </button>
-            <button className="px-2.5 py-1 border rounded-lg bg-white hover:shadow-sm transition text-gray-700" onClick={() => audioRef.current?.pause()}>
-              Pause
-            </button>
-            <button
-              className="px-2.5 py-1 border rounded-lg bg-white hover:shadow-sm transition text-gray-700"
-              onClick={() => {
-                if (audioRef.current) audioRef.current.currentTime = audioRef.current.currentTime + 3;
-              }}
-            >
-              +3s +3s
+              <button
+                className="px-2.5 py-1 border rounded-lg bg-white hover:shadow transition"
+                onClick={() => {
+                  if (audioRef.current) audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime - 3);
+                }}
+              >
+                ⏪ -3s
+              </button>
+              <button className="px-2.5 py-1 border rounded-lg bg-white hover:shadow transition" onClick={() => audioRef.current?.play()}>
+                ▶️
+              </button>
+              <button className="px-2.5 py-1 border rounded-lg bg-white hover:shadow transition" onClick={() => audioRef.current?.pause()}>
+                ⏸️
+              </button>
+              <button
+                className="px-2.5 py-1 border rounded-lg bg-white hover:shadow transition"
+                onClick={() => {
+                  if (audioRef.current) audioRef.current.currentTime = audioRef.current.currentTime + 3;
+                }}
+              >
+                ⏩ +3s
               </button>
             </div>
-            {sentenceClips.length > 0 && (
-              <div className="flex flex-wrap gap-2 w-full">
-                {sentenceClips.map((clip) => (
-                  <button
-                    key={clip.id}
-                    className={`text-xs px-2.5 py-1 border rounded-full bg-white hover:shadow-sm transition ${
-                      activeClipId === clip.id ? 'border-indigo-400 text-indigo-700 bg-indigo-50' : 'text-gray-600'
-                    }`}
-                    onClick={() => playClip(clip)}
-                    title={clip.text}
-                  >
-                    P{clip.paragraphIndex + 1} S{clip.sentenceIndex + 1}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -425,9 +289,9 @@ export default function StudentTest() {
               )}
             </p>
           ))}
-          {storyIndex === 0 && (
+          {storyIndex === 0 && solved === totalBlanks && (
             <button
-              className="mt-6 px-6 py-3 rounded-xl font-semibold shadow hover:shadow-lg transition bg-purple-600 text-white"
+              className="mt-6 px-6 py-3 bg-purple-600 text-white rounded-xl font-semibold shadow hover:shadow-lg"
               onClick={() => {
                 setStoryIndex(1);
                 setValues({});
@@ -436,11 +300,9 @@ export default function StudentTest() {
                 setHint(null);
                 setHintForKey(null);
                 setHintHistory([]);
-                audioRef.current?.pause();
-                if (audioRef.current) audioRef.current.currentTime = 0;
               }}
             >
-              Next Story
+              Continue to Story 2
             </button>
           )}
           {storyIndex === 1 && solved === totalBlanks && (
@@ -501,3 +363,4 @@ export default function StudentTest() {
     </div>
   );
 }
+

@@ -1,4 +1,4 @@
-﻿import { Route, Routes, Navigate, useLocation } from "react-router-dom";
+import { Route, Routes, Navigate, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useAuth } from "../store/auth";
 import Login from "./Login";
@@ -19,6 +19,7 @@ import AppHeader from "../components/AppHeader";
 
 function RequireRole({ role, children }: { role: 'teacher'|'student'; children: JSX.Element }) {
   const state = useAuth();
+  if (!state.hydrated) return <div className="py-6 text-center text-sm text-gray-500">Checking session...</div>;
   if (state.role !== role) return <Navigate to="/login" replace />;
   return children;
 }
@@ -89,7 +90,7 @@ export default function App() {
           <Route path="/student/recall-immediate" element={<Navigate to="/student/run" replace />} />
           <Route path="/student/recall-delayed" element={<Navigate to="/student/run" replace />} />
           <Route path="/student/run" element={<RequireRole role="student"><RunFull /></RequireRole>} />
-          <Route path="/student/test" element={<RequireRole role="student"><StudentTest /></RequireRole>} />
+          <Route path="/student/test" element={<Navigate to="/student/run" replace />} />
         </Routes>
         </div>
       </main>

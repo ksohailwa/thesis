@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
+import { ArrowLeft } from 'lucide-react'
 import api from '../../lib/api'
 import LoadingScreen from '../../components/LoadingScreen'
-import { StoryManager } from './StoryManager'
+import StoryManager from './StoryManager'
 import { toast } from '../../store/toasts'
 
 type ExperimentStatus = 'draft' | 'live' | 'closed'
 type Condition = 'with-hints' | 'without-hints'
+
+const participationEnabled = import.meta.env.VITE_ENABLE_PARTICIPATION === 'true'
 
 export default function TeacherManage() {
   const { id: expId } = useParams()
@@ -49,12 +52,17 @@ export default function TeacherManage() {
   }
 
   async function fetchParticipation() {
+    if (!participationEnabled) return
     if (!expId) return
     try {
       const { data } = await api.get(`/api/experiments/${expId}/participation`)
       setParticipation(data)
-    } catch (e) {
-      console.error('Failed to fetch participation:', e)
+    } catch (e: any) {
+      // Endpoint may not exist in some setups; ignore 404 to avoid noisy errors
+      const status = e?.response?.status
+      if (status !== 404) {
+        console.error('Failed to fetch participation:', e)
+      }
     }
   }
 
@@ -87,6 +95,21 @@ export default function TeacherManage() {
     } catch (e: any) {
       const error = e?.response?.data?.error || 'Failed to close'
       setStatusMessage(`Close failed: ${error}`)
+      toast.error(error)
+    }
+  }
+
+  async function reopenExperiment() {
+    if (!expId) return
+    try {
+      await api.post(`/api/experiments/${expId}/status`, { status: 'live' })
+      setExperimentStatus('live')
+      setStatusMessage('Experiment re-opened and set to live')
+      toast.success('Experiment re-opened')
+      await fetchParticipation()
+    } catch (e: any) {
+      const error = e?.response?.data?.error || 'Failed to reopen'
+      setStatusMessage(`Re-open failed: ${error}`)
       toast.error(error)
     }
   }
@@ -128,8 +151,9 @@ export default function TeacherManage() {
       <div className="bg-white rounded-2xl shadow-lg p-6 border-2 border-gray-100 transition-colors">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <Link to="/teacher" className="text-sm text-blue-600 hover:underline mb-2 inline-block">
-              ← Back to Dashboard
+            <Link to="/teacher" className="text-sm text-blue-600 hover:underline mb-2 inline-block flex items-center gap-2">
+              <ArrowLeft size={16} />
+              <span>Back to Dashboard</span>
             </Link>
             <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
               {title}
@@ -175,6 +199,14 @@ export default function TeacherManage() {
                 onClick={closeExperiment}
               >
                 Close
+              </button>
+            )}
+            {experimentStatus === 'closed' && (
+              <button
+                className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 font-semibold transition"
+                onClick={reopenExperiment}
+              >
+                Re-open
               </button>
             )}
           </div>
@@ -264,7 +296,7 @@ export default function TeacherManage() {
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xl font-bold text-gray-900">Student Progress</h3>
               <button className="text-gray-500 hover:text-gray-700" onClick={() => setSelectedStudent(null)}>
-                ✕
+                Close
               </button>
             </div>
             {loadingStudent ? (

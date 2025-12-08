@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs';
 import { User } from '../models/User';
 import { signAccessToken, signRefreshToken, verifyRefresh } from '../utils/jwt';
 import logger from '../utils/logger';
+import { config } from '../config';
 
 const router = Router();
 
@@ -48,13 +49,24 @@ router.post('/login', async (req, res) => {
     role: user.role,
   });
   const refreshToken = signRefreshToken({ sub: String(user._id) });
-  res.cookie('refresh', refreshToken, { httpOnly: true, sameSite: 'lax' });
+  res.cookie('refresh', refreshToken, {
+    httpOnly: true,
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    secure: process.env.NODE_ENV === 'production',
+  });
   logger.info('User logged in', { userId: user._id, email: user.email, role: user.role });
-  return res.json({ accessToken, role: user.role, email: user.email, username: user.username });
+  return res.json({
+    accessToken,
+    refreshToken: config.allowRefreshTokenInResponse ? refreshToken : undefined,
+    role: user.role,
+    email: user.email,
+    username: user.username,
+  });
 });
 
 router.post('/refresh', async (req, res) => {
-  const token = req.cookies?.refresh;
+  const headerToken = (req.headers['x-refresh'] || req.headers['x-refresh-token']) as string | undefined;
+  const token = headerToken || req.cookies?.refresh;
   if (!token) return res.status(401).json({ error: 'Missing refresh' });
   try {
     const payload = verifyRefresh(token) as any;
@@ -66,8 +78,17 @@ router.post('/refresh', async (req, res) => {
       username: (user as any).username,
       role: user.role,
     });
+    const newRefreshToken = signRefreshToken({ sub: String(user._id) });
+    res.cookie('refresh', newRefreshToken, {
+      httpOnly: true,
+      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+      secure: process.env.NODE_ENV === 'production',
+    });
     logger.debug('Token refreshed', { userId: user._id });
-    return res.json({ accessToken });
+    return res.json({
+      accessToken,
+      refreshToken: config.allowRefreshTokenInResponse ? newRefreshToken : undefined,
+    });
   } catch (e) {
     logger.warn('Token refresh failed', { error: e });
     return res.status(401).json({ error: 'Invalid refresh' });
@@ -149,9 +170,18 @@ router.post('/student/login', async (req, res) => {
     role: user.role,
   });
   const refreshToken = signRefreshToken({ sub: String(user._id) });
-  res.cookie('refresh', refreshToken, { httpOnly: true, sameSite: 'lax' });
+  res.cookie('refresh', refreshToken, {
+    httpOnly: true,
+    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    secure: process.env.NODE_ENV === 'production',
+  });
   logger.info('Student logged in', { userId: user._id, username: user.username });
-  return res.json({ accessToken, role: user.role, username: user.username });
+  return res.json({
+    accessToken,
+    refreshToken: config.allowRefreshTokenInResponse ? refreshToken : undefined,
+    role: user.role,
+    username: user.username,
+  });
 });
 
 export default router;

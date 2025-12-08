@@ -1,7 +1,10 @@
 import { useState } from 'react'
+import { AlertCircle, ArrowRight, BarChart2, Headphones, PenLine } from 'lucide-react'
 import api from '../../lib/api'
+import { persistStudentSession } from '../../lib/studentSession'
 import { useNavigate, Link } from 'react-router-dom'
 import LoadingScreen from '../../components/LoadingScreen'
+import { useAuth } from '../../store/auth'
 
 export default function StudentJoin() {
   const [code, setCode] = useState('')
@@ -28,10 +31,35 @@ export default function StudentJoin() {
       sessionStorage.setItem('exp.story2', JSON.stringify(data.story2 || {}))
       sessionStorage.setItem('exp.tts1', data.tts1Url || '')
       sessionStorage.setItem('exp.tts2', data.tts2Url || '')
+      sessionStorage.setItem('exp.tts1Segments', JSON.stringify(data.tts1Segments || []))
+      sessionStorage.setItem('exp.tts2Segments', JSON.stringify(data.tts2Segments || []))
       sessionStorage.setItem('exp.cues1', JSON.stringify(data.cues1 || []))
       sessionStorage.setItem('exp.cues2', JSON.stringify(data.cues2 || []))
       sessionStorage.setItem('exp.schedule', JSON.stringify(data.schedule || {}))
-      nav('/student/test')
+      
+      // Set global auth state
+      useAuth.getState().setAuth({
+        accessToken: 'student-session',
+        role: 'student',
+        email: 'student@local',
+        demo: true
+      })
+
+      persistStudentSession({
+        assignmentId: data.assignmentId || '',
+        experimentId: data.experimentId,
+        condition: data.condition || 'with_hints',
+        story1: data.story1,
+        story2: data.story2,
+        tts1: data.tts1Url || '',
+        tts2: data.tts2Url || '',
+        tts1Segments: data.tts1Segments || [],
+        tts2Segments: data.tts2Segments || [],
+        cues1: data.cues1 || [],
+        cues2: data.cues2 || [],
+        schedule: data.schedule || {},
+      })
+      nav('/student/run')
     } catch (e: any) {
       const msg = e?.response?.data?.error
       if (!e?.response || e?.code === 'ERR_NETWORK') setError('Cannot connect to server. Please check your internet connection.')
@@ -81,7 +109,7 @@ export default function StudentJoin() {
             {error && (
               <div className="p-4 bg-red-50 border-2 border-red-200 rounded-xl">
                 <div className="flex items-start gap-3">
-                  <span className="text-red-500 text-xl">⚠️</span>
+                  <AlertCircle className="text-red-500" size={22} />
                   <div className="flex-1">
                     <p className="text-sm font-medium text-red-900">Cannot Join</p>
                     <p className="text-sm text-red-700 mt-1">{error}</p>
@@ -105,7 +133,7 @@ export default function StudentJoin() {
               ) : (
                 <span className="flex items-center justify-center gap-2">
                   <span>Join Experiment</span>
-                  <span className="text-2xl">→</span>
+                  <ArrowRight size={18} />
                 </span>
               )}
             </button>
@@ -115,15 +143,15 @@ export default function StudentJoin() {
         <div className="mt-8 text-center space-y-3">
           <div className="flex items-center justify-center gap-8 text-sm text-gray-600">
             <div className="flex items-center gap-2">
-              <span role="img" aria-label="listen">🎧</span>
+              <Headphones size={18} aria-hidden />
               <span>Listen to stories</span>
             </div>
             <div className="flex items-center gap-2">
-              <span role="img" aria-label="write">✍️</span>
+              <PenLine size={18} aria-hidden />
               <span>Practice spelling</span>
             </div>
             <div className="flex items-center gap-2">
-              <span role="img" aria-label="track">📊</span>
+              <BarChart2 size={18} aria-hidden />
               <span>Track progress</span>
             </div>
           </div>

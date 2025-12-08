@@ -8,7 +8,7 @@ export default function DemoLogin() {
 
   async function enter() {
     const { data } = await api.post('/api/auth/demo');
-    setAuth({ accessToken: data.accessToken, role: data.role, email: data.email, demo: true });
+    setAuth({ accessToken: data.accessToken, refreshToken: data.refreshToken || null, role: data.role, email: data.email, demo: true });
     nav('/student/join');
   }
 

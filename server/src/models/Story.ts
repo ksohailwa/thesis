@@ -14,6 +14,7 @@ export interface IStory extends Document {
   paragraphs: string[]; // 5 paragraphs
   targetOccurrences: IStoryOccurrence[]; // exactly 4 per word
   ttsAudioUrl?: string;
+  ttsSegments?: string[];
   createdAt: Date;
 }
 
@@ -23,6 +24,7 @@ const StorySchema = new Schema<IStory>({
   paragraphs: { type: [String], default: [] },
   targetOccurrences: { type: [{ word: String, paragraphIndex: Number, sentenceIndex: Number, charStart: Number, charEnd: Number }], default: [] },
   ttsAudioUrl: { type: String },
+  ttsSegments: { type: [String], default: [] },
   createdAt: { type: Date, default: () => new Date() }
 });
 

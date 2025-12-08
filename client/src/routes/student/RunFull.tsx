@@ -2,34 +2,117 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import api from '../../lib/api'
 import { toast } from '../../store/toasts'
 import ErrorBoundaryComponent from '../../components/ErrorBoundary'
+import { hydrateStudentSession } from '../../lib/studentSession'
 
-type HintRequestState = {
+// Sub-components
+import StudentHeader from './components/StudentHeader'
+import Sidebar from './components/Sidebar'
+import StoryReader from './components/StoryReader'
+import FeedbackModal from './components/FeedbackModal'
+
+// --- Types ---
+type Blank = {
+  key: string
   word: string
-  hintsUsed: number
-  lastHint: string | null
+  occurrenceIndex: number
+  paragraphIndex: number
+  sentenceIndex?: number
+  charStart?: number
+  charEnd?: number
 }
 
-type Phase = 'baseline'|'learning'|'reinforcement'|'recall'
+type StoryPayload = {
+  paragraphs?: string[]
+  occurrences?: { word: string; paragraphIndex: number; sentenceIndex?: number; charStart?: number; charEnd?: number }[]
+}
 
-export default function RunFullWrapper() {
-  return (
-    <ErrorBoundaryComponent>
-      <RunFull />
-    </ErrorBoundaryComponent>
-  )
+// --- Helpers ---
+function splitSentences(paragraph: string) {
+  const parts = paragraph
+    .split(/(?<=[.!?])\s+/g)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  return parts.length ? parts : [paragraph]
+}
+
+function parseParagraph(
+  paragraph: string,
+  pIdx: number,
+  wordCounts: Record<string, number>,
+  occs?: StoryPayload['occurrences']
+): { segments: (string | Blank)[]; blanks: Blank[] } {
+  const blanks: Blank[] = []
+  let segments: (string | Blank)[] = [paragraph]
+  
+  // Strategy 1: Bold markers (**word**)
+  if (paragraph.includes('**')) {
+    const parts = paragraph.split(/(\*\*[^*]+\*\*)/g)
+    segments = []
+    parts.forEach((part) => {
+      const m = part.match(/^\*\*([^*]+)\*\*$/)
+      if (m) {
+        const word = m[1]
+        const idx = (wordCounts[word] || 0) + 1
+        wordCounts[word] = idx
+        const blank: Blank = { 
+          key: `${word}-${idx}-${pIdx}-${blanks.length}`, 
+          word, 
+          occurrenceIndex: idx, 
+          paragraphIndex: pIdx 
+        }
+        blanks.push(blank)
+        segments.push(blank)
+      } else if (part) {
+        segments.push(part)
+      }
+    })
+    return { segments, blanks }
+  }
+
+  // Strategy 2: Occurrences from backend (Explicit + Fallback Scan)
+  const paraOcc = (occs || []).filter((o) => o.paragraphIndex === pIdx)
+  
+  paraOcc.forEach((o) => {
+    const idx = (wordCounts[o.word] || 0) + 1
+    wordCounts[o.word] = idx
+    const blank: Blank = {
+      key: `${o.word}-${idx}-${pIdx}-${blanks.length}`,
+      word: o.word,
+      occurrenceIndex: idx,
+      paragraphIndex: pIdx,
+      sentenceIndex: o.sentenceIndex,
+      charStart: o.charStart,
+      charEnd: o.charEnd,
+    }
+
+    let inserted = false
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i]
+      if (typeof seg !== 'string') continue
+      const pos = seg.toLowerCase().indexOf(o.word.toLowerCase())
+      if (pos >= 0) {
+        const before = seg.slice(0, pos)
+        const after = seg.slice(pos + o.word.length)
+        segments.splice(i, 1, before, blank, after)
+        blanks.push(blank)
+        inserted = true
+        break
+      }
+    }
+  })
+  
+  segments = segments.filter(s => typeof s !== 'string' || s.length > 0)
+  return { segments, blanks }
 }
 
 function Confetti() {
-  const pieces = useMemo(
-    () =>
-      Array.from({ length: 30 }, () => ({
-        left: Math.random() * 100,
-        delay: Math.random() * 1.5,
-        duration: 3 + Math.random() * 2,
-        color: ['#6366f1', '#ec4899', '#f97316','#10b981'][Math.floor(Math.random() * 4)],
-      })),
-    []
-  )
+  const pieces = useMemo(() =>
+    Array.from({ length: 30 }, () => ({
+      left: Math.random() * 100,
+      delay: Math.random() * 1.5,
+      duration: 3 + Math.random() * 2,
+      color: ['#6366f1', '#ec4899', '#f97316', '#10b981'][Math.floor(Math.random() * 4)],
+    })), [])
 
   return (
     <div className="pointer-events-none fixed inset-0 overflow-hidden z-40">
@@ -49,824 +132,387 @@ function Confetti() {
   )
 }
 
+export default function RunFullWrapper() {
+  return (
+    <ErrorBoundaryComponent>
+      <RunFull />
+    </ErrorBoundaryComponent>
+  )
+}
+
 function RunFull() {
-  const expId = sessionStorage.getItem('exp.experimentId') ||
-sessionStorage.getItem('sessionId') || ''
-  const condition = (sessionStorage.getItem('exp.condition') ||'with-hints') as 'with-hints'|'without-hints'
-  const stories = JSON.parse(sessionStorage.getItem('exp.stories') || '{"A":{"paragraphs":[]},"B":{"paragraphs":[]}}')
-  const schedule = JSON.parse(sessionStorage.getItem('exp.schedule')|| '{}') as Record<string, Record<Phase, any>>
-  const words: string[] =JSON.parse(sessionStorage.getItem('targetWords') || '[]')
-  const label: 'H'|'N' = condition === 'with-hints' ? 'H' : 'N'
-  const [storyKey, setStoryKey] = useState<'A'|'B'>('A')
-  const paragraphs: string[] = stories?.[storyKey]?.paragraphs || []
+  hydrateStudentSession()
+  const expId = sessionStorage.getItem('exp.experimentId') || sessionStorage.getItem('sessionId') || ''
+  const assignmentId = sessionStorage.getItem('assignmentId') || ''
+  const condition = (sessionStorage.getItem('exp.condition') || 'with_hints') as 'with-hints'|'without-hints'
+  const label = condition === 'with-hints' ? 'H' : 'N'
+  
+  const story1 = JSON.parse(sessionStorage.getItem('exp.story1') || '{}') as StoryPayload
+  const story2 = JSON.parse(sessionStorage.getItem('exp.story2') || '{}') as StoryPayload
+  const tts1Segments = JSON.parse(sessionStorage.getItem('exp.tts1Segments') || '[]')
+  const tts2Segments = JSON.parse(sessionStorage.getItem('exp.tts2Segments') || '[]')
+  const tts1 = sessionStorage.getItem('exp.tts1') || ''
+  const tts2 = sessionStorage.getItem('exp.tts2') || ''
 
-  type Blank = { key: string; word: string; occurrence: number;paragraphIndex: number; sentenceIndex: number; charStart?: number; charEnd?: number }
-  const effectiveWords = useMemo(() => {
-    if (words.length) return words
-    const occs = stories?.[storyKey]?.targetOccurrences || []
-    const uniq = Array.from(new Set(occs.map((o: any) => (o.word || '').toString()))).filter(Boolean)
-    return uniq
-  }, [words, stories, storyKey])
+  if (!expId && !assignmentId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-8">
+        <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-lg text-center space-y-3">
+          <h2 className="text-xl font-semibold text-gray-800">Session not found</h2>
+          <p className="text-gray-600 text-sm">Please re-enter your join code to continue.</p>
+          <a href="/student" className="btn primary px-4 py-2 inline-flex justify-center">Go to join page</a>
+        </div>
+      </div>
+    )
+  }
 
-  const blanksBySentence = useMemo(() => {
-    const map = new Map<string, Blank[]>()
-    const phases: Phase[] = ['baseline','learning','reinforcement','recall']
-    for (const w of effectiveWords) {
-      phases.forEach((ph, i) => {
-        const occ = (schedule[w] || {})[ph]
-        if (!occ) return
-        if ((occ.story || 'A') !== storyKey) return
-        const k = `${occ.paragraphIndex}:${occ.sentenceIndex}`
-        const arr = map.get(k) || []
-        arr.push({ key: `${w}:${i+1}`, word: w, occurrence: i+1,paragraphIndex: occ.paragraphIndex, sentenceIndex: occ.sentenceIndex, charStart: occ.charStart, charEnd: occ.charEnd })
-        map.set(k, arr)
-      })
-    }
-
-    // Fallback: if schedule is missing, derive blanks from story occurrences
-    if (map.size === 0) {
-      const storyData = stories?.[storyKey]
-      const occs: any[] = storyData?.targetOccurrences || []
-      const counters: Record<string, number> = {}
-      occs.forEach((occ) => {
-        const word = occ.word
-        counters[word] = (counters[word] || 0) + 1
-        const key = `${word}:${counters[word]}`
-        const mapKey = `${occ.paragraphIndex}:${occ.sentenceIndex}`
-        const arr = map.get(mapKey) || []
-        arr.push({
-          key,
-          word,
-          occurrence: counters[word],
-          paragraphIndex: occ.paragraphIndex,
-          sentenceIndex: occ.sentenceIndex,
-          charStart: occ.charStart,
-          charEnd: occ.charEnd,
-        })
-        map.set(mapKey, arr)
-      })
-
-      // If still nothing, create blanks inline by scanning paragraphs for targets
-      if (map.size === 0 && storyData?.paragraphs?.length) {
-        storyData.paragraphs.forEach((para: string, pIdx: number) => {
-          const sentences = splitSentences(para)
-          sentences.forEach((sent, sIdx) => {
-            effectiveWords.forEach((word) => {
-              const regex = new RegExp(`\\b${word.replace(/[-/\\^$*+?.()|[\\]{}]/g, '\\$&')}\\b`, 'gi')
-              let m: RegExpExecArray | null
-              let localCount = 0
-              while ((m = regex.exec(sent)) !== null) {
-                localCount += 1
-                const key = `${word}:${pIdx}:${sIdx}:${localCount}`
-                const arr = map.get(`${pIdx}:${sIdx}`) || []
-                arr.push({
-                  key,
-                  word,
-                  occurrence: localCount,
-                  paragraphIndex: pIdx,
-                  sentenceIndex: sIdx,
-                  charStart: m.index,
-                  charEnd: m.index + m[0].length,
-                })
-                map.set(`${pIdx}:${sIdx}`, arr)
-              }
-            })
-          })
-        })
-      }
-
-      // If still nothing, synthesize blanks across sentences so inputs show up
-      if (map.size === 0 && storyData?.paragraphs?.length) {
-        const sentencesFlat = storyData.paragraphs.flatMap((para: string, pIdx: number) =>
-          splitSentences(para).map((_, sIdx) => ({ pIdx, sIdx }))
-        )
-        const slots = sentencesFlat.length || 1
-        effectiveWords.forEach((word, wi) => {
-          for (let k = 0; k < 4; k++) {
-            const slot = (wi * 4 + k) % slots
-            const { pIdx, sIdx } = sentencesFlat[slot] || { pIdx: 0, sIdx: 0 }
-            const arr = map.get(`${pIdx}:${sIdx}`) || []
-            const occurrence = arr.filter((b) => b.word === word).length + 1
-            const key = `${word}:${pIdx}:${sIdx}:synthetic-${occurrence}`
-            arr.push({
-              key,
-              word,
-              occurrence,
-              paragraphIndex: pIdx,
-              sentenceIndex: sIdx,
-              charStart: 0,
-              charEnd: 0,
-            })
-            map.set(`${pIdx}:${sIdx}`, arr)
-          }
-        })
-      }
-    }
-
-    // Ensure each target word has at least 4 blanks by scanning text; if missing, prepend blanks
-    if (paragraphs.length) {
-      const sentencesByP = paragraphs.map((para) => splitSentences(para))
-      const posKey = (p: number, s: number, start: number) => `${p}:${s}:${start}`
-      for (const word of effectiveWords) {
-        const existing = Array.from(map.values()).flat().filter((b) => b.word === word)
-        const seen = new Set(existing.map((b) => posKey(b.paragraphIndex, b.sentenceIndex, b.charStart ?? -1)))
-        let needed = Math.max(0, 4 - existing.length)
-        if (needed === 0) continue
-        for (let p = 0; p < sentencesByP.length && needed > 0; p++) {
-          const sentences = sentencesByP[p]
-          for (let s = 0; s < sentences.length && needed > 0; s++) {
-            const sent = sentences[s]
-            const regex = new RegExp(`\\b${word.replace(/[-/\\^$*+?.()|[\\]{}]/g, '\\$&')}\\b`, 'gi')
-            let m: RegExpExecArray | null
-            while ((m = regex.exec(sent)) !== null && needed > 0) {
-              const start = m.index
-              const pos = posKey(p, s, start)
-              if (seen.has(pos)) continue
-              const arr = map.get(`${p}:${s}`) || []
-              const occurrence = arr.filter((b) => b.word === word).length + 1
-              const key = `${word}:${p}:${s}:${occurrence}`
-              arr.push({
-                key,
-                word,
-                occurrence,
-                paragraphIndex: p,
-                sentenceIndex: s,
-                charStart: start,
-                charEnd: start + m[0].length,
-              })
-              map.set(`${p}:${s}`, arr)
-              seen.add(pos)
-              needed -= 1
-            }
-          }
-        }
-        // If still short, prepend placeholder blanks at sentence starts
-        for (let p = 0; p < sentencesByP.length && needed > 0; p++) {
-          const sentences = sentencesByP[p]
-          for (let s = 0; s < sentences.length && needed > 0; s++) {
-            const arr = map.get(`${p}:${s}`) || []
-            const occurrence = arr.filter((b) => b.word === word).length + 1
-            const key = `${word}:${p}:${s}:placeholder-${occurrence}`
-            arr.push({
-              key,
-              word,
-              occurrence,
-              paragraphIndex: p,
-              sentenceIndex: s,
-              charStart: 0,
-              charEnd: 0,
-            })
-            map.set(`${p}:${s}`, arr)
-            needed -= 1
-          }
-        }
-      }
-    }
-
-    return map
-  }, [schedule, words, storyKey, stories, paragraphs])
-
-  // Blank input states
-  const [blanks, setBlanks] = useState<Record<string, { value: string;
- correct: boolean; feedback: string }>>({})
-  const [hints, setHints] = useState<Record<string,HintRequestState>>({})
-  const [activeHintWord, setActiveHintWord] = useState<string |null>(null)
-  const [showHintModal, setShowHintModal] = useState(false)
-
-  // Existing states (keep as-is)
-  const [answers, setAnswers] = useState<Record<string, string>>({})
-  const [attempts, setAttempts] = useState<Record<string, number>>({})
+  const [storyIndex, setStoryIndex] = useState(0)
+  
+  const [blanksState, setBlanksState] = useState<Record<string, { value: string; correct: boolean; feedback: string }>>({})
   const [locked, setLocked] = useState<Record<string, boolean>>({})
-  const [posDiffs, setPosDiffs] = useState<Record<string, boolean[]>>({})
-  const [activeKey, setActiveKey] = useState<string | null>(null)
-  const [durations, setDurations] = useState<Record<string,number>>({})
-  const [segments, setSegments] = useState<string[][]>([])
-  const [cur, setCur] = useState<{ p: number; s: number }>({ p: 0, s:0 })
-  const [showFeedback, setShowFeedback] = useState(false)
-  const [feedback, setFeedback] = useState({ difficulty: 3, enjoyment:3, comment: '', effort: 'medium' as 'low' | 'medium' | 'high' })
-  const [lookupWord, setLookupWord] = useState<string | null>(null)
-  const [definition, setDefinition] = useState<string>('')
+  const [hints, setHints] = useState<Record<string, { used: number; text: string }>>({})
+  
+  const [activeBlankKey, setActiveBlankKey] = useState<string | null>(null)
   const [streak, setStreak] = useState(0)
   const [maxStreak, setMaxStreak] = useState(0)
-  const [offsets, setOffsets] = useState<number[][]>([])
-  const [isOnline, setIsOnline] = useState(true)
-  const [pendingAttempts, setPendingAttempts] = useState<any[]>([])
   const [showConfetti, setShowConfetti] = useState(false)
+  const [showFeedback, setShowFeedback] = useState(false)
+  const [showHintModal, setShowHintModal] = useState(false)
+  const [activeHintWord, setActiveHintWord] = useState<string | null>(null)
+  const [feedbackData, setFeedbackData] = useState({ difficulty: 3, enjoyment: 3, comment: '', effort: 'medium' })
   const [submitting, setSubmitting] = useState(false)
+  const [autoAdvance, setAutoAdvance] = useState(false)
+  const [isPlaying, setIsPlaying] = useState(false)
+
   const audioRef = useRef<HTMLAudioElement>(null)
-  const segRef = useRef<HTMLAudioElement>(null)
+  const sentenceAudioRef = useRef<HTMLAudioElement>(null)
+  const [currentSentenceId, setCurrentSentenceId] = useState<string | null>(null)
   const base = import.meta.env.VITE_API_BASE_URL || ''
-  // Helper functions
-  function splitSentences(text: string): string[] {
-    const parts: string[] = []
-    const re = /([^.!?]*[.!?])/g
-    let m: RegExpExecArray | null
-    while ((m = re.exec(text))) parts.push(m[1].trim())
-    if (parts.length === 0 && text.trim()) parts.push(text.trim())
-    return parts
-  }
 
-  // Check blank function
-  async function checkBlank(blankKey: string, targetWord: string,attempt: string) {
-    if (!attempt.trim()) {
-      toast.error('Please type something')
-      return
-    }
+  const currentStory = storyIndex === 0 ? story1 : story2
+  const currentSegments = storyIndex === 0 ? tts1Segments : tts2Segments
+  const currentTts = storyIndex === 0 ? tts1 : tts2
 
-    const isCorrect = attempt.toLowerCase().trim() === targetWord.toLowerCase().trim()
+  const parsedStory = useMemo(() => {
+    const wordCounts: Record<string, number> = {}
+    return (currentStory.paragraphs || []).map((p, pIdx) => 
+      parseParagraph(p, pIdx, wordCounts, currentStory.occurrences)
+    )
+  }, [currentStory])
 
-    if (isCorrect) {
-      setBlanks(prev => ({
-        ...prev,
-        [blankKey]: { value: attempt, correct: true, feedback:'correct' }
-      }))
-      setLocked(prev => ({ ...prev, [blankKey]: true }))
-      toast.success('Correct! 👏')
-      setStreak(streak + 1)
-      setMaxStreak(Math.max(maxStreak, streak + 1))
-      try {
-        await api.post('/api/student/attempt', {
-          experimentId: expId,
-          word: targetWord,
-          attempt,
-          correct: true,
-          story: storyKey,
+  const allBlanks = useMemo(() => 
+    parsedStory.flatMap(p => p.blanks), 
+    [parsedStory]
+  )
+
+  const sentenceClips = useMemo(() => {
+    const clips: any[] = []
+    let globalIndex = 0
+    ;(currentStory.paragraphs || []).forEach((p, pIdx) => {
+      const sentences = splitSentences(p)
+      sentences.forEach((_, sIdx) => {
+        clips.push({
+          id: `${storyIndex}-${pIdx}-${sIdx}`,
+          paragraphIndex: pIdx,
+          sentenceIndex: sIdx,
+          globalIndex: globalIndex
         })
-      } catch (e) {
-        console.error('Failed to record attempt', e)
-        setPendingAttempts(prev => [...prev, { word: targetWord,attempt, correct: true }])
-      }
-    } else {
-      let feedback = ''
-      for (let i = 0; i < Math.min(attempt.length, targetWord.length);i++) {
-        if (attempt[i].toLowerCase() === targetWord[i].toLowerCase())
-{
-          feedback += '✓'
-        } else {
-          feedback += '✗'
-        }
-      }
-      if (attempt.length < targetWord.length) {
-        feedback += ` +${targetWord.length - attempt.length}`
-      }
-
-      setBlanks(prev => ({
-        ...prev,
-        [blankKey]: { value: attempt, correct: false, feedback: `Try again: ${feedback}` }
-      }))
-
-      try {
-        await api.post('/api/student/attempt', {
-          experimentId: expId,
-          word: targetWord,
-          attempt,
-          correct: false,
-          feedback,
-          story: storyKey,
-        })
-      } catch (e) {
-        setPendingAttempts(prev => [...prev, { word: targetWord,attempt, correct: false }])
-      }
-    }
-  }
-
-  // Get hint function
-  async function getHint() {
-    if (!activeHintWord) return
-
-    const hintData = hints[activeHintWord] || { word: activeHintWord,hintsUsed: 0, lastHint: null }
-    if (hintData.hintsUsed >= 3 && label === 'H') {
-      toast.error('No more hints available for this word')
-      return
-    }
-
-    try {
-      const { data } = await api.post('/api/student/hint', {
-        experimentId: expId,
-        word: activeHintWord,
+        globalIndex++
       })
-
-      const hintText = data.hint || 'Think about the spelling carefully'
-      setHints(prev => ({
-        ...prev,
-        [activeHintWord]: {
-          word: activeHintWord,
-          hintsUsed: hintData.hintsUsed + 1,
-          lastHint: hintText
-        }
-      }))
-      toast.info(`💡 Hint: ${hintText}`)
-      setShowHintModal(false)
-    } catch (e) {
-      toast.error('Failed to get hint')
-    }
-  }
-
-  // Submit test function
-  async function submitTest() {
-    const allLocked = allKeys.every(k => locked[k])
-    if (!allLocked) {
-      toast.error('Please complete all blanks correctly first')
-      return
-    }
-
-    if (storyKey === 'A') {
-      // Move to Story 2
-      continueToStoryTwo()
-      return
-    }
-
-    // Both stories done - submit
-    setSubmitting(true)
-    try {
-      await api.post('/api/student/submit', {
-        experimentId: expId,
-        difficulty: feedback.difficulty,
-        enjoyment: feedback.enjoyment,
-        effort: feedback.effort,
-        comment: feedback.comment,
-        totalCorrect: allKeys.filter(k => locked[k]).length,
-        totalAttempts: allKeys.length,
-      })
-      toast.success('Test submitted! Thank you for participating.')
-      setTimeout(() => window.location.href = '/student/join', 2000)
-    } catch (e) {
-      toast.error('Failed to submit test')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  function renderSentence(sentence: string, blanksInSentence: Blank[]) {
-    if (!blanksInSentence.length) {
-      return <span>{sentence}</span>
-    }
-
-    const sorted = [...blanksInSentence].sort((a, b) => (a.charStart ?? 0) - (b.charStart ?? 0))
-    const parts: JSX.Element[] = []
-    let cursor = 0
-
-    sorted.forEach((blank, idx) => {
-      const word = blank.word
-      const key = blank.key
-      const blankData = blanks[key] || { value: '', correct: false, feedback: '' }
-      const isCorrect = blankData.correct
-      const blankValue = blankData.value || ''
-
-      const wordLower = word.toLowerCase()
-      let start = sentence.toLowerCase().indexOf(wordLower, cursor)
-      if (start < 0 && typeof blank.charStart === 'number' && blank.charStart < sentence.length) {
-        start = blank.charStart
-      }
-      if (start < 0) start = cursor
-      const end = start + word.length
-
-      if (cursor < start) {
-        parts.push(<span key={`text-${key}-${idx}`}>{sentence.slice(cursor, start)}</span>)
-      }
-
-      parts.push(
-        <input
-          key={key}
-          type="text"
-          value={blankValue}
-          onChange={(e) =>
-            setBlanks((prev) => ({
-              ...prev,
-              [key]: { ...prev[key], value: e.target.value, correct: false, feedback: '' },
-            }))
-          }
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              const val = (e.target as HTMLInputElement).value
-              checkBlank(key, word, val)
-            }
-          }}
-          disabled={locked[key]}
-          className={`inline-block border-2 px-1 py-0.5 rounded font-semibold text-center focus:outline-none transition ${
-            isCorrect
-              ? 'border-green-500 bg-green-50'
-              : blankValue && !isCorrect
-              ? 'border-red-500 bg-red-50'
-              : 'border-gray-300 bg-white focus:border-blue-500'
-          }`}
-          style={{ width: `${Math.max(4, word.length)}ch` }}
-          placeholder="_"
-          autoComplete="off"
-        />
-      )
-
-      cursor = end
     })
+    return clips
+  }, [currentStory, storyIndex])
 
-    if (cursor < sentence.length) {
-      parts.push(<span key="tail">{sentence.slice(cursor)}</span>)
-    }
+  const solvedCount = allBlanks.filter(b => locked[b.key]).length
+  const totalBlanks = allBlanks.length
+  const progressPct = totalBlanks ? (solvedCount / totalBlanks) * 100 : 0
+  const isStoryComplete = solvedCount === totalBlanks && totalBlanks > 0
 
-    return <span className="break-words">{parts}</span>
-  }
-
-  // Existing helper functions
-  function hasBlanks(p: number, s: number) { return (blanksBySentence.get(`${p}:${s}`) || []).length > 0 }
-  function allLocked(p: number, s: number) {
-    const arr = blanksBySentence.get(`${p}:${s}`) || []
-    if (!arr.length) return true
-    return arr.every(b => !!locked[b.key])
-  }
-
-  function skip(delta: number) {
-    if (!audioRef.current) return
-    try { audioRef.current.currentTime = Math.max(0,audioRef.current.currentTime + delta) } catch {}
-  }
-
-  function focusNextBlank() {
-    const ordered: string[] = []
-    for (let p = 0; p < paragraphs.length; p++) {
-      const parts = splitSentences(paragraphs[p])
-      for (let s = 0; s < parts.length; s++) {
-        const arr = blanksBySentence.get(`${p}:${s}`) || []
-        arr.forEach((b) => ordered.push(b.key))
+  useEffect(() => {
+    if (audioRef.current && currentTts) {
+      const src = currentTts.startsWith('http') ? currentTts : `${base}${currentTts}`
+      const path = audioRef.current.src.split(window.location.origin)[1] || audioRef.current.src
+      if (!path.includes(currentTts)) {
+        audioRef.current.src = src
+        audioRef.current.load()
       }
     }
-    const next = ordered.find((k) => !locked[k])
-    if (next) {
-      document.getElementById(`blank-${next}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      document.getElementById(`blank-${next}`)?.focus()
+  }, [currentTts, base])
+
+  useEffect(() => {
+    if (isStoryComplete) {
+      setShowConfetti(true)
+      const timer = setTimeout(() => setShowConfetti(false), 3500)
+      const feedbackTimer = setTimeout(() => setShowFeedback(true), 1500)
+      return () => {
+        clearTimeout(timer)
+        clearTimeout(feedbackTimer)
+      }
+    }
+  }, [isStoryComplete])
+
+  function softPause() {
+    // Pause BOTH audios
+    if (audioRef.current && !audioRef.current.paused) {
+      audioRef.current.pause()
+      setIsPlaying(false)
+    }
+    if (sentenceAudioRef.current && !sentenceAudioRef.current.paused) {
+      sentenceAudioRef.current.pause()
+    }
+    setAutoAdvance(false)
+  }
+
+  function softResume(useSentenceAudio = false) {
+    // Resume appropriate audio
+    if (useSentenceAudio && sentenceAudioRef.current) {
+       // If we were playing sentence audio, resume it? 
+       // Actually sentence audio usually starts from 0.
+       // But if we paused mid-sentence, we might want to resume.
+       sentenceAudioRef.current.play().catch(() => {})
+    } else if (audioRef.current) {
+       audioRef.current.currentTime = Math.max(0, audioRef.current.currentTime - 1.5)
+       audioRef.current.play().catch(() => {})
+       setIsPlaying(true)
     }
   }
 
-  function continueToStoryTwo() {
-    setStoryKey('B')
-    setBlanks({})
-    setAnswers({})
-    setAttempts({})
+  function restartStory(targetIndex: number) {
+    softPause()
+    setBlanksState({})
     setLocked({})
     setHints({})
-    setPosDiffs({})
-    setSegments([])
-    setOffsets([])
-    setCur({ p: 0, s: 0 })
     setStreak(0)
+    setActiveBlankKey(null)
+    setActiveHintWord(null)
+    setCurrentSentenceId(null)
+    setShowHintModal(false)
     setShowFeedback(false)
     setShowConfetti(false)
-    audioRef.current?.pause()
-    segRef.current?.pause()
+    window.scrollTo(0, 0)
+    setStoryIndex(targetIndex)
   }
 
-  const allKeys: string[] = useMemo(() => {
-    const ordered: string[] = []
-    for (let p = 0; p < paragraphs.length; p++) {
-      const parts = splitSentences(paragraphs[p])
-      for (let s = 0; s < parts.length; s++) {
-        const arr = blanksBySentence.get(`${p}:${s}`) || []
-        arr.forEach(b => ordered.push(b.key))
+  function playSentence(pIdx: number, sIdx: number, autoContinue = false) {
+    const clip = sentenceClips.find(c => c.paragraphIndex === pIdx && c.sentenceIndex === sIdx)
+    if (!clip) return
+
+    // Pause main audio when playing a sentence clip
+    if (audioRef.current) {
+      audioRef.current.pause()
+      setIsPlaying(false)
+    }
+
+    if (sentenceAudioRef.current) {
+      // Prefer precomputed segment URL; fallback to deterministic per-sentence file
+      const segUrl = currentSegments[clip.globalIndex]
+      const fallbackLabel = storyIndex === 0 ? 'H' : 'N'
+      // Backend naming convention: {label}_s{globalIndex}.mp3
+      const fallbackPath = `/static/audio/${expId}/${fallbackLabel}_s${clip.globalIndex}.mp3`
+      const chosen = segUrl || fallbackPath
+      const src = chosen.startsWith('http') ? chosen : `${base}${chosen}`
+
+      sentenceAudioRef.current.src = src
+      sentenceAudioRef.current.currentTime = 0
+      sentenceAudioRef.current.onerror = () => {
+        toast.error('Sentence audio is unavailable. Please regenerate TTS or try again.')
+        setCurrentSentenceId(null)
+      }
+
+      sentenceAudioRef.current.play().catch(e => console.error("Segment play error:", e))
+      setCurrentSentenceId(clip.id)
+      setAutoAdvance(autoContinue)
+      
+      sentenceAudioRef.current.onended = () => {
+        setCurrentSentenceId(null)
+        if (autoContinue) {
+           const nextIndex = clip.globalIndex + 1
+           if (nextIndex < sentenceClips.length) {
+             const nextClip = sentenceClips[nextIndex]
+             playSentence(nextClip.paragraphIndex, nextClip.sentenceIndex, true)
+           } else {
+             setAutoAdvance(false)
+           }
+        }
       }
     }
-    return ordered
-  }, [paragraphs, blanksBySentence])
+  }
 
-  const storyDone = allKeys.every(k => !!locked[k])
-  const bothDone = storyDone && storyKey === 'B'
-  const solvedCount = allKeys.filter((k) => locked[k]).length
-  const totalAttempts = Object.values(attempts).reduce((sum, val) => sum + val, 0)
-  const accuracy = totalAttempts ? Math.max(0, Math.min(100, Math.round((solvedCount / totalAttempts) * 100))) : solvedCount > 0 ? 100 : 0
-
-  useEffect(() => {
-    if (!storyDone) return
-    setShowConfetti(true)
-    const timer = setTimeout(() => setShowConfetti(false), 3500)
-    return () => clearTimeout(timer)
-  }, [storyDone, storyKey])
-
-  useEffect(() => {
-    if (!allKeys.length || !storyDone) return
-    const timer = setTimeout(() => setShowFeedback(true), 1500)
-    return () => clearTimeout(timer)
-  }, [allKeys, storyDone])
-
-  const storyLabel = storyKey === 'A' ? '1' : '2'
-  const progressPct = allKeys.length ? (solvedCount / allKeys.length) * 100 : 0
-
-  // Load audio
-  useEffect(() => {
-    (async () => {
-      const audioLabel = label === 'H' ? 'H' : 'N'
-      const full = `/static/audio/${expId}/${audioLabel}.mp3`
-      if (audioRef.current) {
-        audioRef.current.src = `${base}${full}`
-        const cefr = (sessionStorage.getItem('exp.level') ||'B1').toUpperCase()
-        const rate = cefr === 'A2' ? 0.85 : cefr === 'B1' ? 0.9 : cefr=== 'B2' ? 0.95 : cefr === 'C1' ? 1.0 : 1.05
-        audioRef.current.playbackRate = rate
+  function focusNextBlank(currentKey?: string) {
+    const currentIndex = currentKey ? allBlanks.findIndex(b => b.key === currentKey) : -1
+    let nextIndex = -1
+    for (let i = currentIndex + 1; i < allBlanks.length; i++) {
+      if (!locked[allBlanks[i].key]) { nextIndex = i; break }
+    }
+    if (nextIndex === -1) {
+      for (let i = 0; i < currentIndex; i++) {
+        if (!locked[allBlanks[i].key]) { nextIndex = i; break }
       }
-    })()
-  }, [expId, label, base])
+    }
+    if (nextIndex !== -1) {
+      const nextKey = allBlanks[nextIndex].key
+      const el = document.getElementById(`blank-${nextKey}`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        setTimeout(() => el.focus(), 50)
+      }
+    }
+  }
 
-  // Restore progress from sessionStorage
-  useEffect(() => {
+  async function checkBlank(blank: Blank, attempt: string) {
+    const val = attempt.trim()
+    if (!val) { toast.error('Please type something'); return }
+    const isCorrect = val.toLowerCase() === blank.word.toLowerCase()
+    setBlanksState(prev => ({ ...prev, [blank.key]: { value: val, correct: isCorrect, feedback: isCorrect ? 'Correct!' : 'Try again' } }))
+    if (isCorrect) {
+      setLocked(prev => ({ ...prev, [blank.key]: true }))
+      toast.success('Correct! ≡ƒæÅ')
+      setStreak(s => s + 1)
+      setMaxStreak(m => Math.max(m, streak + 1))
+      
+      // Resume Logic
+      const currentClipIndex = sentenceClips.findIndex(c => c.paragraphIndex === blank.paragraphIndex && c.sentenceIndex === blank.sentenceIndex)
+      if (currentClipIndex !== -1) {
+        const blanksInSentence = allBlanks.filter(b => b.paragraphIndex === blank.paragraphIndex && b.sentenceIndex === blank.sentenceIndex)
+        const remainingHere = blanksInSentence.some(b => b.key !== blank.key && !locked[b.key])
+        
+        if (remainingHere) {
+           // Stay on current sentence
+           playSentence(blank.paragraphIndex, blank.sentenceIndex!, true)
+        } else {
+           // Move to next sentence
+           const nextClip = sentenceClips[currentClipIndex + 1]
+           if (nextClip) {
+             playSentence(nextClip.paragraphIndex, nextClip.sentenceIndex, true)
+           }
+        }
+      }
+
+      focusNextBlank(blank.key)
+      api.post('/api/student/attempt', { experimentId: expId, word: blank.word, attempt: val, correct: true, story: storyIndex === 0 ? 'A' : 'B' }).catch(console.error)
+    } else {
+      setStreak(0)
+      softPause()
+      toast.error('Try again')
+      let fbStr = ''
+      for(let i=0; i<Math.min(val.length, blank.word.length); i++) fbStr += val[i].toLowerCase() === blank.word[i].toLowerCase() ? '✓' : '✗'
+      setBlanksState(prev => ({ ...prev, [blank.key]: { value: val, correct: false, feedback: fbStr } }))
+      api.post('/api/student/attempt', { experimentId: expId, word: blank.word, attempt: val, correct: false, story: storyIndex === 0 ? 'A' : 'B' }).catch(console.error)
+    }
+  }
+
+  async function getHint() {
+    if (!activeHintWord) return
+    const used = hints[activeHintWord]?.used || 0
+    if (used >= 3 && label === 'H') { toast.error('No more hints for this word'); return }
     try {
-      const saved = sessionStorage.getItem(`progress-${expId}`)
-      if (saved) {
-        const state = JSON.parse(saved)
-        setStoryKey(state.storyKey)
-        setBlanks(state.blanks || {})
-        setLocked(state.locked || {})
-        setHints(state.hints || {})
-      }
-    } catch (err) {
-      console.error('Failed to restore progress', err)
-    }
-  }, [expId])
-
-  // Save progress periodically
-  useEffect(() => {
-    if (!expId) return
-    const saveState = () => {
-      const state = {
-        storyKey,
-        blanks,
-        locked,
-        hints,
-        activeKey,
-        cur,
-        timestamp: Date.now(),
-      }
-      sessionStorage.setItem(`progress-${expId}`,JSON.stringify(state))
-    }
-
-    const interval = setInterval(saveState, 5000)
-    return () => {
-      clearInterval(interval)
-      saveState()
-    }
-  }, [expId, storyKey, blanks, locked, hints, activeKey, cur])
+      const { data } = await api.post('/api/student/hint', { experimentId: expId, word: activeHintWord })
+      setHints(prev => ({ ...prev, [activeHintWord]: { used: used + 1, text: data.hint } }))
+      setShowHintModal(false)
+    } catch (e) { toast.error('Could not get hint') }
+  }
 
   async function submitFeedback() {
-    setSubmitting(true)
     try {
-      await api.post('/api/student/feedback', {
-        experimentId: expId,
-        difficulty: feedback.difficulty,
-        enjoyment: feedback.enjoyment,
-        effort: feedback.effort,
-        comment: feedback.comment,
-      })
-      toast.success('Feedback submitted!')
-      setShowFeedback(false)
-      if (storyKey === 'A') {
-        continueToStoryTwo()
+      await api.post('/api/student/feedback', { experimentId: expId, ...feedbackData })
+      if (storyIndex === 0) {
+        restartStory(1)
       } else {
-        await submitTest()
+        setSubmitting(true)
+        await api.post('/api/student/submit', { experimentId: expId, totalCorrect: solvedCount, totalAttempts: 0 })
+        toast.success('All done!')
+        setTimeout(() => window.location.href = '/student', 1500)
       }
-    } catch (e) {
-      toast.error('Failed to submit feedback')
-    } finally {
-      setSubmitting(false)
-    }
+    } catch (e) { toast.error('Failed to save progress'); setSubmitting(false) }
+  }
+
+  const renderBlankInput = (blank: Blank) => {
+    const state = blanksState[blank.key] || { value: '', correct: false, feedback: '' }
+    const isLocked = locked[blank.key]
+    return (
+      <span key={blank.key} className="inline-block mx-1 relative">
+        <input
+          id={`blank-${blank.key}`}
+          type="text"
+          value={state.value}
+          onChange={e => setBlanksState(prev => ({ ...prev, [blank.key]: { ...state, value: e.target.value } }))}
+          onFocus={() => { setActiveBlankKey(blank.key); setActiveHintWord(blank.word) }}
+          onKeyDown={e => {
+            if (e.key === 'Enter') checkBlank(blank, state.value)
+            if (e.key === 'Tab') { e.preventDefault(); focusNextBlank(blank.key) }
+          }}
+          disabled={isLocked}
+          className={`border-b-2 px-1 py-0.5 text-center font-bold text-lg outline-none transition-all ${isLocked ? 'border-green-500 text-green-700 bg-transparent' : state.feedback && !state.correct ? 'border-red-500 bg-red-50 text-red-700 animate-shake' : 'border-purple-300 focus:border-purple-600 bg-purple-50/50'}`}
+          style={{ width: `${Math.max(3, blank.word.length)}ch` }}
+          autoComplete="off"
+        />
+        {isLocked && <span className="absolute -top-3 -right-2 text-green-500 text-xs">✓</span>}
+      </span>
+    )
   }
 
   return (
-    <div className="transition-colors duration-300">
-      {/* Header with Progress */}
-      <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-sm border-b shadow-lg transition-colors">
-        <div className="container py-4">
-          <div className="mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-semibold text-gray-700">
-                Progress: {solvedCount} / {allKeys.length || 0}
-              </span>
-              <span className="text-sm font-medium text-purple-600">Story {storyLabel} of 2</span>
-            </div>
-            <div className="w-full bg-gray-200 rounded-full h-3 overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-purple-500 to-pink-500 transition-all duration-500 rounded-full"
-                style={{ width: `${progressPct}%` }}
-              />
-            </div>
-          </div>
+    <div className="transition-colors duration-300 min-h-screen bg-gray-50 pb-20">
+      <StudentHeader
+        storyIndex={storyIndex}
+        solvedCount={solvedCount}
+        totalBlanks={totalBlanks}
+        progressPct={progressPct}
+        isPlaying={isPlaying} // Pass isPlaying state
+        onTogglePlay={() => { // Pass the handler
+           if (audioRef.current?.paused) {
+             audioRef.current.play(); setIsPlaying(true)
+           } else {
+             audioRef.current?.pause(); setIsPlaying(false)
+           }
+        }}
+        onSkip={(secs) => { if(audioRef.current) audioRef.current.currentTime += secs }}
+        isStoryComplete={isStoryComplete}
+      />
 
-          {/* Audio Player */}
-          <div className="bg-gradient-to-r from-purple-100 to-pink-100 rounded-lg p-3 border border-purple-200">
-            <audio ref={audioRef} controls className="w-full mb-2" />
-            <div className="flex flex-wrap gap-2">
-              <button onClick={() => audioRef.current?.play()}
-className="px-3 py-1 bg-white rounded text-xs font-medium hover:shadow transition-colors">▶ Play</button>
-              <button onClick={() => audioRef.current?.pause()}
-className="px-3 py-1 bg-white rounded text-xs font-medium hover:shadow transition-colors">⏸ Pause</button>
-              <button onClick={() => skip(-3)} className="px-3 py-1 bg-white rounded text-xs font-medium hover:shadow transition-colors">⏪ -3s</button>
-              <button onClick={() => skip(3)} className="px-3 py-1 bg-white rounded text-xs font-medium hover:shadow transition-colors">+3s ⏩</button>
-              <button onClick={focusNextBlank} className="px-3 py-1 bg-white rounded text-xs font-medium hover:shadow transition-colors">Next Blank</button>
-              {streak > 0 && <span className="ml-auto px-3 py-1 bg-orange-100 text-orange-700 rounded text-xs font-medium">🔥 Streak:
-{streak}</span>}
-            </div>
-          </div>
-        </div>
+      <div className="container mx-auto px-4 py-8 grid lg:grid-cols-4 gap-8">
+        <StoryReader
+          parsedStory={parsedStory}
+          allBlanks={allBlanks}
+          currentStory={currentStory}
+          sentenceClips={sentenceClips}
+          currentSentenceId={currentSentenceId}
+          storyIndex={storyIndex}
+          isStoryComplete={isStoryComplete}
+          onPlaySentence={playSentence}
+          onShowFeedback={() => setShowFeedback(true)}
+          onGoToStory={restartStory} // Pass the restartStory handler
+          renderBlank={renderBlankInput}
+          splitSentences={splitSentences}
+        />
+
+        <Sidebar
+          label={label}
+          streak={streak}
+          activeBlankKey={activeBlankKey}
+          activeHintWord={activeHintWord}
+          hints={hints}
+          sentenceClips={sentenceClips}
+          currentSentenceId={currentSentenceId}
+          onGetHint={() => setShowHintModal(true)}
+          onPlaySentence={playSentence}
+        />
       </div>
 
-      {/* Main Content */}
-      <div className="container mx-auto px-4 py-8">
-        <div className="grid lg:grid-cols-4 gap-6">
-          {/* Story - 3 cols */}
-          <div className="lg:col-span-3">
-            {bothDone && (
-              <div className="mb-6 p-6 bg-gradient-to-r from-green-50 to-emerald-50 rounded-xl border-2 border-green-300">
-              <div className="text-4xl mb-2">🎉</div>
-                <h2 className="text-2xl font-bold text-green-900">Both stories complete!</h2>
-              </div>
-            )}
-
-            <div className="bg-white rounded-xl shadow-lg p-6 space-y-4 transition-colors">
-              {paragraphs.map((p, pi) => {
-                const sentences = splitSentences(p)
-                return (
-                  <div key={pi}>
-                    <div className="text-lg leading-relaxed space-y-2">
-                      {sentences.map((s, si) => {
-                        const blanksHere = blanksBySentence.get(`${pi}:${si}`) || []
-                        const isComplete = blanksHere.every((b) =>locked[b.key])
-                        return (
-                          <span
-                            key={si}
-                            className={`inline-block transition-all ${ 
-                              isComplete ? 'bg-green-50 px-1 rounded' : ''
-                            }`}
-                          >
-                            {renderSentence(s, blanksHere)}{' '}
-                          </span>
-                        )
-                      })}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-
-            {storyDone && storyKey === 'A' && (
-              <div className="mt-6 p-6 bg-gradient-to-r from-purple-100 to-pink-100 rounded-xl border-2 border-purple-300 text-center transition-colors">
-                <h3 className="text-xl font-bold text-purple-900 mb-2">Great job on Story 1!</h3>
-                <button
-                  onClick={continueToStoryTwo}
-                  className="px-6 py-2 bg-purple-600 text-white rounded-lg font-semibold hover:bg-purple-700 transition-colors"
-                >
-                  Continue to Story 2 →
-                </button>
-              </div>
-            )}
-
-            {storyDone && storyKey === 'B' && (
-              <div className="mt-6 p-6 bg-gradient-to-r from-green-100 to-emerald-100 rounded-xl border-2 border-green-300 text-center transition-colors">
-                <button
-                  onClick={submitTest}
-                  disabled={submitting}
-                  className="px-6 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors"
-                >
-                  {submitting ? '⏳ Submitting...' : '✅ Submit Test'}
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Hints Panel - 1 col */}
-          <div className="lg:col-span-1 space-y-4">
-            {/* Stats */}
-            <div className="bg-white rounded-xl shadow-lg p-4 transition-colors">
-              <h3 className="font-bold text-gray-800 mb-3">📊 Stats</h3>
-              <div className="space-y-2 text-sm text-gray-600">
-                <div className="flex justify-between">
-                  <span>Correct:</span>
-                  <span className="font-bold text-green-600">{solvedCount}/{allKeys.length}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Accuracy:</span>
-                  <span className="font-bold text-blue-600">{accuracy}%</span>
-                </div>
-                {maxStreak > 0 && (
-                  <div className="flex justify-between">
-                    <span>Best Streak:</span>
-                    <span className="font-bold text-orange-600">{maxStreak}🔥</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Hints Panel */}
-            {label === 'H' && (
-              <div className="bg-amber-50 rounded-xl shadow-lg border-2 border-amber-200 p-4 transition-colors">
-                <h3 className="font-bold text-amber-900 mb-3">💡
-Hints</h3>
-                {activeHintWord ? (
-                  <div className="space-y-3">
-                    <div className="text-sm font-semibold text-amber-900">Word: {activeHintWord}</div>
-                    {hints[activeHintWord]?.lastHint && (
-                      <div className="p-2 bg-white rounded border border-amber-200 text-sm text-gray-800">
-                        {hints[activeHintWord].lastHint}
-                      </div>
-                    )}
-                    <div className="text-xs text-amber-700">
-                      Hints used: {hints[activeHintWord]?.hintsUsed ||  0}/3
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-xs text-amber-700">Select a word and click 💡 to get a hint</p>
-                )}
-              </div>
-            )}
-
-            {label === 'N' && (
-              <div className="bg-red-50 rounded-xl shadow-lg border-2 border-red-200 p-4 transition-colors">
-                <h3 className="font-bold text-red-900 mb-2">🚫 No Hints</h3>
-                <p className="text-xs text-red-700">This condition has   hints disabled.</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Feedback Modal */}
       {showFeedback && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6 border transition-colors">
-            <h2 className="text-2xl font-bold mb-4 text-gray-900">How was that?</h2>
-
-            <div className="space-y-4 mb-6">
-              <div>
-                <label className="block text-sm font-medium mb-2 text-gray-700">Difficulty</label>
-                <div className="flex gap-1">
-                  {[1, 2, 3, 4, 5].map(v => (
-                    <button
-                      key={v}
-                      onClick={() => setFeedback(f => ({ ...f, difficulty: v }))}
-                      className={`flex-1 py-2 rounded text-xs font-medium transition-colors ${ 
-                        feedback.difficulty === v ? 'bg-purple-600 text-white' : 'bg-gray-200'
-                      }`}
-                    >
-                      {v}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2 text-gray-700">Mental Effort</label>
-                <div className="space-y-1">
-                  {['low', 'medium', 'high'].map(e => (
-                    <label key={e} className="flex items-center gap-2 text-gray-700">
-                      <input
-                        type="radio"
-                        name="effort"
-                        value={e}
-                        checked={feedback.effort === e}
-                        onChange={() => setFeedback(f => ({ ...f, effort: e as any }))}
-                        className="accent-purple-600"
-                      />
-                      <span className="text-sm capitalize">{e}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-2">
-              <button
-                onClick={() => setShowFeedback(false)}
-                className="flex-1 px-4 py-2 border rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors"
-              >
-                Skip
-              </button>
-              <button
-                onClick={submitFeedback}
-                disabled={submitting}
-                className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-lg text-sm font-medium hover:bg-purple-700 disabled:opacity-50 transition-colors"
-              >
-                {submitting ? '⏳...' : 'Submit'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Hint Modal */}
-      {showHintModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 border transition-colors">
-            <h3 className="text-lg font-bold mb-4 text-gray-900">Get a Hint</h3>
-            <p className="text-sm text-gray-600 mb-4">Word: <strong>{activeHintWord}</strong></p>
-            <button
-              onClick={getHint}
-              className="w-full px-4 py-2 bg-amber-500 text-white rounded-lg font-semibold hover:bg-amber-600 transition-colors"
-            >
-              Show Hint
-            </button>
-            <button
-              onClick={() => setShowHintModal(false)}
-              className="w-full mt-2 px-4 py-2 border rounded-lg font-semibold hover:bg-gray-50 transition-colors"
-            >
-              Close
-            </button>
-          </div>
-        </div>
+        <FeedbackModal
+          feedbackData={feedbackData}
+          setFeedbackData={setFeedbackData}
+          submitFeedback={submitFeedback}
+          submitting={submitting}
+          storyIndex={storyIndex}
+        />
       )}
 
       {showConfetti && <Confetti />}
+      
+      <audio ref={audioRef} className="hidden" onEnded={() => setIsPlaying(false)} />
+      <audio ref={sentenceAudioRef} className="hidden" />
     </div>
   )
 }

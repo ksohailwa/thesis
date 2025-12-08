@@ -38,7 +38,13 @@ app.use(
   })
 );
 
-app.use(cors({ origin: config.corsOrigin, credentials: true }));
+app.use(
+  cors({
+    origin: config.corsOrigin,
+    credentials: true,
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-refresh', 'x-refresh-token'],
+  })
+);
 app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
 

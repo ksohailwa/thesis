@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import api from '../lib/api'
 import { toMessage } from '../lib/err'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Eye, EyeOff } from 'lucide-react'
 
 export default function Signup() {
   const [email, setEmail] = useState('')
@@ -12,6 +13,13 @@ export default function Signup() {
   const [busy, setBusy] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const nav = useNavigate()
+  const [params] = useSearchParams()
+
+  // If arriving from student flow (/signup?role=student), preselect student
+  useEffect(() => {
+    const r = params.get('role')
+    if (r === 'student' || r === 'teacher') setRole(r)
+  }, [params])
 
   async function submit(e: React.FormEvent) {
     e.preventDefault()
@@ -22,7 +30,7 @@ export default function Signup() {
     setBusy(true)
     try {
       await api.post('/api/auth/signup', { email, password, role })
-      nav('/login')
+      nav(role === 'student' ? '/student-login' : '/login')
     } catch (e: any) {
       setError(toMessage(e?.response?.data?.error) || 'Signup failed. Please try again.')
     } finally {
@@ -47,7 +55,7 @@ export default function Signup() {
         <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
           <div className="mb-8">
             <h1 className="text-3xl font-bold mb-2">Create Account</h1>
-            <p className="text-gray-600">Join SpellWise and start creating experiments</p>
+            <p className="text-gray-600">Choose your role to get started.</p>
           </div>
 
           <form onSubmit={submit} className="space-y-4">
@@ -90,7 +98,7 @@ export default function Signup() {
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="********"
                   className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition pr-12"
                   autoComplete="new-password"
                   disabled={busy}
@@ -101,7 +109,7 @@ export default function Signup() {
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
                   disabled={busy}
                 >
-                  {showPassword ? '🙈' : '👁️'}
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
               <p className="text-xs text-gray-500 mt-1">Must be at least 6 characters</p>
@@ -113,7 +121,7 @@ export default function Signup() {
                 type={showPassword ? 'text' : 'password'}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="••••••••"
+                placeholder="********"
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 autoComplete="new-password"
                 disabled={busy}

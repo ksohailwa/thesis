@@ -18,7 +18,18 @@ export interface IExperiment {
     story1?: { level?: string; targetWords: string[] };
     story2?: { level?: string; targetWords: string[] };
   };
+  storySets?: {
+    set1?: {
+      story1?: { level?: string; targetWords: string[] };
+      story2?: { level?: string; targetWords: string[] };
+    };
+    set2?: {
+      story1?: { level?: string; targetWords: string[] };
+      story2?: { level?: string; targetWords: string[] };
+    };
+  };
   storyRefs?: { story1?: Types.ObjectId; story2?: Types.ObjectId };
+  storyRefsSet2?: { story1?: Types.ObjectId; story2?: Types.ObjectId };
 }
 
 const ExperimentSchema = new Schema<IExperiment>(
@@ -46,7 +57,21 @@ const ExperimentSchema = new Schema<IExperiment>(
       story1: { level: { type: String }, targetWords: { type: [String], default: [] } },
       story2: { level: { type: String }, targetWords: { type: [String], default: [] } },
     },
+    storySets: {
+      set1: {
+        story1: { level: { type: String }, targetWords: { type: [String], default: [] } },
+        story2: { level: { type: String }, targetWords: { type: [String], default: [] } },
+      },
+      set2: {
+        story1: { level: { type: String }, targetWords: { type: [String], default: [] } },
+        story2: { level: { type: String }, targetWords: { type: [String], default: [] } },
+      },
+    },
     storyRefs: {
+      story1: { type: Schema.Types.ObjectId, ref: 'Story' },
+      story2: { type: Schema.Types.ObjectId, ref: 'Story' },
+    },
+    storyRefsSet2: {
       story1: { type: Schema.Types.ObjectId, ref: 'Story' },
       story2: { type: Schema.Types.ObjectId, ref: 'Story' },
     },

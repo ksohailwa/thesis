@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { CheckCircle2, Eye, EyeOff } from 'lucide-react'
 import api from '../lib/api'
 import { toMessage } from '../lib/err'
 import { useAuth } from '../store/auth'
@@ -23,7 +24,12 @@ export default function Login() {
     setBusy(true)
     try {
       const { data } = await api.post('/api/auth/login', { email: em, password: pw })
-      setAuth({ accessToken: data.accessToken, role: data.role, email: data.email })
+      setAuth({
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken || null,
+        role: data.role,
+        email: data.email
+      })
       nav(data.role === 'teacher' ? '/teacher' : '/student/join')
     } catch (e: any) {
       setError(toMessage(e?.response?.data?.error) || 'Login failed. Please check your credentials.')
@@ -35,12 +41,24 @@ export default function Login() {
   async function tryDemo() {
     try {
       const { data } = await api.post('/api/auth/demo')
-      setAuth({ accessToken: data.accessToken, role: data.role, email: data.email, demo: true })
+      setAuth({
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken || null,
+        role: data.role,
+        email: data.email,
+        demo: true
+      })
       nav('/demo')
     } catch {
       setError('Demo mode unavailable')
     }
   }
+
+  const highlights = [
+    { title: 'AI-Generated Content', text: 'Create contextual stories automatically.', icon: <CheckCircle2 size={18} /> },
+    { title: 'Research-Grade Analytics', text: 'Track progress with detailed metrics.', icon: <CheckCircle2 size={18} /> },
+    { title: 'Adaptive Learning', text: 'Phase-based difficulty progression.', icon: <CheckCircle2 size={18} /> },
+  ]
 
   return (
     <div className="flex flex-col lg:flex-row gap-8 h-full">
@@ -57,13 +75,11 @@ export default function Login() {
             <br />
             spelling research platform
           </h2>
-          {[
-            { title: 'AI-Generated Content', text: 'Create contextual stories automatically.' },
-            { title: 'Research-Grade Analytics', text: 'Track progress with detailed metrics.' },
-            { title: 'Adaptive Learning', text: 'Phase-based difficulty progression.' },
-          ].map((item) => (
+          {highlights.map((item) => (
             <div key={item.title} className="flex items-start gap-4">
-              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0">✓</div>
+              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center flex-shrink-0 text-white">
+                {item.icon}
+              </div>
               <div>
                 <div className="font-semibold mb-1">{item.title}</div>
                 <div className="text-blue-100 text-sm">{item.text}</div>
@@ -71,7 +87,7 @@ export default function Login() {
             </div>
           ))}
         </div>
-        <div className="relative z-10 text-sm text-blue-100">© 2024 SpellWise. Research Platform.</div>
+        <div className="relative z-10 text-sm text-blue-100">(c) 2024 SpellWise. Research Platform.</div>
       </aside>
 
       <section className="flex-1 flex items-center justify-center p-8">
@@ -111,7 +127,7 @@ export default function Login() {
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder="••••••••"
+                    placeholder="********"
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition pr-12"
                     autoComplete="current-password"
                     disabled={busy}
@@ -122,7 +138,7 @@ export default function Login() {
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
                     disabled={busy}
                   >
-                    {showPassword ? '🙈' : '👁️'}
+                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                   </button>
                 </div>
               </div>
