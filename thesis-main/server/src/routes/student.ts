@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Router } from 'express';
 import { z } from 'zod';
 import { Types } from 'mongoose';
@@ -20,6 +19,19 @@ import { Assignment } from '../models/Assignment';
 import { User } from '../models/User';
 import { toDbLabel } from '../utils/labelMapper';
 import { clearAnalyticsCache } from '../utils/analyticsCache';
+import type {
+  WordOccurrence,
+  NoiseOccurrence,
+  NoiseWord,
+  StoryParagraphCue,
+  StoryOrder,
+  HintsStory,
+  WordSchedule,
+  WordScheduleEntry,
+  HintStage,
+  RecallScore,
+  LLMNoiseWordsResponse,
+} from '../types/requests';
 
 function safeWordFile(word: string) {
   return word
@@ -69,21 +81,15 @@ function sentenceIndexAt(paragraph: string, charPos: number) {
 
 function deriveNoiseOccurrences(
   paragraphs: string[],
-  occurrences: {
-    word: string;
-    paragraphIndex: number;
-    sentenceIndex?: number;
-    charStart?: number;
-    charEnd?: number;
-  }[]
-) {
+  occurrences: WordOccurrence[]
+): NoiseOccurrence[] {
   const targetSet = new Set((occurrences || []).map((o) => (o.word || '').toLowerCase()));
   const sentencesPerParagraph = paragraphs.map((p) => {
     const parts = p.split(/(?<=[.!?])\s+/).filter(Boolean);
     return parts.length ? parts : [p];
   });
 
-  const noiseOccurrences: any[] = [];
+  const noiseOccurrences: NoiseOccurrence[] = [];
   paragraphs.forEach((p, pIdx) => {
     const tokens = p.split(/\b/);
     const targetsInParagraph = (occurrences || []).filter((o) => o.paragraphIndex === pIdx);
@@ -99,14 +105,14 @@ function deriveNoiseOccurrences(
     };
     const targetSentenceSet = new Set<number>();
     const targetRanges = targetsInParagraph
-      .filter((o: any) => typeof o.charStart === 'number' && typeof o.charEnd === 'number')
-      .map((o: any) => {
+      .filter((o) => typeof o.charStart === 'number' && typeof o.charEnd === 'number')
+      .map((o) => {
         if (typeof o.sentenceIndex === 'number') {
           targetSentenceSet.add(o.sentenceIndex);
         } else if (typeof o.charStart === 'number') {
           targetSentenceSet.add(sentenceIndexAt(o.charStart));
         }
-        return { start: o.charStart, end: o.charEnd };
+        return { start: o.charStart as number, end: o.charEnd as number };
       });
     const isAdjacentToTarget = (cand: { start: number; end: number }) => {
       for (const r of targetRanges) {
@@ -171,14 +177,9 @@ function deriveNoiseOccurrences(
 
 async function selectNoiseOccurrencesLLM(
   paragraphs: string[],
-  targetOccurrences: {
-    word: string;
-    paragraphIndex: number;
-    charStart?: number;
-    charEnd?: number;
-  }[],
+  targetOccurrences: WordOccurrence[],
   targetWords: string[]
-) {
+): Promise<NoiseOccurrence[] | null> {
   const oa = getOpenAI();
   if (!oa) return null;
   try {
@@ -203,18 +204,18 @@ async function selectNoiseOccurrencesLLM(
       ],
     });
     const txt = r.choices?.[0]?.message?.content || '{}';
-    const data = JSON.parse(txt);
+    const data = JSON.parse(txt) as LLMNoiseWordsResponse;
     if (!Array.isArray(data?.noiseWords)) return null;
 
     const byParagraph = new Map<number, { word: string }[]>();
-    data.noiseWords.forEach((n: any) => {
+    data.noiseWords.forEach((n: NoiseWord) => {
       if (!n || typeof n.word !== 'string' || typeof n.paragraphIndex !== 'number') return;
       const list = byParagraph.get(n.paragraphIndex) || [];
       list.push({ word: n.word });
       byParagraph.set(n.paragraphIndex, list);
     });
 
-    const out: any[] = [];
+    const out: NoiseOccurrence[] = [];
     paragraphs.forEach((p, pIdx) => {
       const targetRanges = (targetOccurrences || [])
         .filter((o) => o.paragraphIndex === pIdx)
@@ -299,8 +300,8 @@ router.post('/join', requireAuth, requireRole('student'), async (req: AuthedRequ
   const existing = await Assignment.findOne({ experiment: exp._id, student: req.user!.sub });
   let assignmentDoc = existing;
   let chosen = withHints;
-  let storyOrder: 'A-first' | 'B-first' | undefined = existing?.storyOrder as any;
-  let hintsStory: 'A' | 'B' | undefined = existing?.hintsStory as any;
+  let storyOrder: StoryOrder | undefined = existing?.storyOrder as StoryOrder | undefined;
+  let hintsStory: HintsStory | undefined = existing?.hintsStory as HintsStory | undefined;
   if (!existing) {
     if (exp.assignedCondition === 'with-hints') {
       chosen = withHints;
@@ -469,9 +470,9 @@ router.post('/join', requireAuth, requireRole('student'), async (req: AuthedRequ
       occurrences,
     };
   }
-  const cuesFromStory = (story?: any) => {
+  const cuesFromStory = (story?: { paragraphs?: string[] }): StoryParagraphCue[] => {
     if (!story?.paragraphs) return [];
-    const cues: any[] = [];
+    const cues: StoryParagraphCue[] = [];
     story.paragraphs.forEach((p: string, pIdx: number) => {
       const parts = splitParagraphSentences(p);
       parts.forEach((_, sIdx) => {
