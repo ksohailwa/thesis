@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams, Link } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import api from '../../lib/api'
+import { logger } from '../../lib/logger'
 import LoadingScreen from '../../components/LoadingScreen'
 import StoryManager from './StoryManager'
 import { toast } from '../../store/toasts'
@@ -61,7 +62,7 @@ export default function TeacherManage() {
       // Endpoint may not exist in some setups; ignore 404 to avoid noisy errors
       const status = e?.response?.status
       if (status !== 404) {
-        console.error('Failed to fetch participation:', e)
+        logger.error('Failed to fetch participation', e)
       }
     }
   }

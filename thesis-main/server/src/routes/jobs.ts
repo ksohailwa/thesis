@@ -3,10 +3,12 @@ import { z } from 'zod';
 import { requireAuth, requireRole, AuthedRequest } from '../middleware/auth';
 import { enqueue, getJob, getJobsForExperiment, Job, JobType } from '../queue';
 import { createHeavyLimiter } from '../middleware/rateLimiters';
+import { createSuccessResponse, createErrorResponse } from '../utils/apiResponse';
+import { RATE_LIMIT } from '../constants';
 
 const router = Router();
 const jobLimiter = createHeavyLimiter({
-  max: 4,
+  max: RATE_LIMIT.HEAVY_MAX_JOBS,
   message: 'Please wait a few seconds before queuing another generation job.',
 });
 
@@ -25,7 +27,8 @@ router.post(
       regenerate: z.boolean().optional(),
     });
     const parsed = schema.safeParse(req.body);
-    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    if (!parsed.success)
+      return res.status(400).json(createErrorResponse('Invalid job request'));
     const job = enqueue({
       type: parsed.data.type as JobType,
       experimentId: parsed.data.experimentId,
@@ -34,19 +37,19 @@ router.post(
       targetWords: parsed.data.targetWords,
       regenerate: parsed.data.regenerate,
     });
-    return res.json({ id: job.id, status: job.status });
+    return res.json(createSuccessResponse({ id: job.id, status: job.status }));
   }
 );
 
 router.get('/:id', requireAuth, requireRole('teacher'), async (req, res) => {
   const j = getJob(req.params.id);
-  if (!j) return res.status(404).json({ error: 'Not found' });
-  return res.json(j);
+  if (!j) return res.status(404).json(createErrorResponse('Job not found'));
+  return res.json(createSuccessResponse(j));
 });
 
 router.get('/experiment/:id', requireAuth, requireRole('teacher'), async (req, res) => {
   const list = getJobsForExperiment(req.params.id);
-  return res.json(list);
+  return res.json(createSuccessResponse(list));
 });
 
 // Summarized per-experiment status for frontend polling
@@ -79,11 +82,13 @@ router.get('/experiment/:id/status', requireAuth, requireRole('teacher'), async 
   const set1 = buildSetStatus('set1');
   const set2 = buildSetStatus('set2');
 
-  res.json({
-    ...set1,
-    set1,
-    set2,
-  });
+  res.json(
+    createSuccessResponse({
+      ...set1,
+      set1,
+      set2,
+    })
+  );
 });
 
 export default router;

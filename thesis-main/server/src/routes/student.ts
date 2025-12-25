@@ -593,6 +593,7 @@ router.post('/attempt', requireAuth, requireRole('student'), async (req: AuthedR
     return res.json({ ok: true });
   }
 
+  if (!parsedLegacy.success) return res.status(400).json({ error: 'Invalid payload' });
   const { sessionId, storyTemplateId, taskType, targetWord, text } = parsedLegacy.data;
   const tpl = await StoryTemplate.findById(storyTemplateId);
   if (!tpl) return res.status(404).json({ error: 'Template not found' });

@@ -154,7 +154,7 @@ router.post('/tts', requireAuth, requireRole('teacher'), async (req: AuthedReque
           model: config.openaiTtsModel,
           voice: config.openaiTtsVoice,
           input: sentences[i],
-          format: 'mp3',
+          response_format: 'mp3',
         };
         const seg = await openai.audio.speech.create(params);
         const buf = Buffer.from(await seg.arrayBuffer());

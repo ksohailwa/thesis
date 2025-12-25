@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth, requireRole, AuthedRequest } from '../middleware/auth';
 import { getOpenAI } from '../utils/openai';
 import { config } from '../config';
+import { createSuccessResponse, createErrorResponse } from '../utils/apiResponse';
 
 const router = Router();
 
@@ -16,7 +17,8 @@ router.post(
     const targetWords: string[] = Array.isArray(req.body?.targetWords)
       ? req.body.targetWords.slice(0, 10)
       : [];
-    if (!targetWords.length) return res.status(400).json({ error: 'Provide 1-10 target words.' });
+    if (!targetWords.length)
+      return res.status(400).json(createErrorResponse('Provide 1-10 target words.'));
 
     const oa = getOpenAI();
     let used: 'openai' | 'mock' = 'mock';
@@ -40,7 +42,7 @@ Write a short educational story using each given target word at least once.
         const paragraphs = Array.isArray(parsed?.paragraphs) ? parsed.paragraphs.slice(0, 10) : [];
         if (paragraphs.length > 0) {
           used = 'openai';
-          return res.json({ ok: true, used, paragraphs });
+          return res.json(createSuccessResponse({ used, paragraphs }));
         }
       }
     } catch (e) {
@@ -53,7 +55,7 @@ Write a short educational story using each given target word at least once.
       const sent = (i: number) => `Paragraph ${p + 1}, sentence ${i + 1}.`;
       paragraphs.push(`${sent(0)} ${sent(1)} ${sent(2)} ${sent(3)}`);
     }
-    return res.json({ ok: true, used, paragraphs });
+    return res.json(createSuccessResponse({ used, paragraphs }));
   }
 );
 
@@ -62,9 +64,11 @@ export default router;
 // POST /api/simple/tts
 // body: { paragraphs: string[] }
 router.post('/tts', requireAuth, requireRole('teacher'), async (req: AuthedRequest, res) => {
-  const paragraphs: string[] = Array.isArray(req.body?.paragraphs) ? req.body.paragraphs : [];
+  const paragraphs: string[] = Array.isArray(req.body?.paragraphs)
+    ? req.body.paragraphs
+    : [];
   if (!paragraphs.length)
-    return res.status(400).json({ error: 'Provide paragraphs to synthesize.' });
+    return res.status(400).json(createErrorResponse('Provide paragraphs to synthesize.'));
 
   const urls: string[] = [];
   // Try OpenAI TTS when available
@@ -77,13 +81,13 @@ router.post('/tts', requireAuth, requireRole('teacher'), async (req: AuthedReque
           model: config.openaiTtsModel || 'gpt-4o-mini-tts',
           voice: config.openaiTtsVoice || 'alloy',
           input: p,
-          format: 'mp3',
+          response_format: 'mp3',
         });
         const buf = Buffer.from(await seg.arrayBuffer());
         const dataUrl = `data:audio/mpeg;base64,${buf.toString('base64')}`;
         urls.push(dataUrl);
       }
-      return res.json({ ok: true, used: 'openai', urls });
+      return res.json(createSuccessResponse({ used: 'openai', urls }));
     } catch (e) {
       // fall through to mock
     }
@@ -115,5 +119,5 @@ router.post('/tts', requireAuth, requireRole('teacher'), async (req: AuthedReque
     return `data:audio/wav;base64,${header.toString('base64')}`;
   }
   for (let i = 0; i < paragraphs.length; i++) urls.push(toneWavBase64());
-  return res.json({ ok: true, used: 'mock', urls });
+  return res.json(createSuccessResponse({ used: 'mock', urls }));
 });

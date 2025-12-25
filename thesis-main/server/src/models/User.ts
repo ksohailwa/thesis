@@ -1,5 +1,5 @@
 import mongoose, { Schema, Document } from 'mongoose';
-import type { Role } from '../types';
+import { Role } from '@spellwise/shared';
 
 export interface IUser extends Document {
   email?: string;

@@ -20,6 +20,7 @@ import {
 } from '../prompts';
 import { toConditionLabel } from '../utils/labelMapper';
 import { parseBoldMarkers } from '../utils/boldParser';
+import { generateFallbackStory } from '../utils/fallbackStory';
 import logger from '../utils/logger';
 
 const router = Router();
@@ -399,37 +400,6 @@ router.post(
     const oa = getOpenAI();
     const allWords = [...wordsH, ...wordsN];
 
-    const buildFallback = (storyWords: string[]) => {
-      const paragraphCount = 5;
-      const sentencesPerParagraph = Math.max(4, storyWords.length);
-      const baseSentences: string[][] = Array.from({ length: paragraphCount }, (_, p) =>
-        Array.from(
-          { length: sentencesPerParagraph },
-          (_, s) => `Paragraph ${p + 1}, sentence ${s + 1}.`
-        )
-      );
-      const occLocal: any[] = [];
-      const shuffle = (arr: string[]) => arr.sort(() => Math.random() - 0.5);
-      let lastOrder: string[] | null = null;
-      for (let pIdx = 0; pIdx < paragraphCount; pIdx++) {
-        let order = shuffle([...storyWords]);
-        if (lastOrder && order.join('|') === lastOrder.join('|')) {
-          order = order.slice(1).concat(order[0]);
-        }
-        lastOrder = order;
-        order.forEach((w, sIdx) => {
-          const current = baseSentences[pIdx][sIdx];
-          const insertion = ` ${w}`;
-          const charStart = current.length;
-          const charEnd = charStart + insertion.length;
-          baseSentences[pIdx][sIdx] = current.replace(/[.!?]+$/, '') + insertion + '.';
-          occLocal.push({ word: w, paragraphIndex: pIdx, sentenceIndex: sIdx, charStart, charEnd });
-        });
-      }
-      const paragraphs = baseSentences.map((sentences) => sentences.join(' '));
-      return { paragraphs, occ: occLocal };
-    };
-
     const validateStoryCounts = (storyWords: string[], paragraphCount: number, occ: any[]) => {
       if (paragraphCount !== 5) return false;
       for (const w of storyWords) {
@@ -492,9 +462,9 @@ router.post(
         paragraphs.length === paragraphCount &&
         validateStoryCounts(storyWords, paragraphCount, occ);
       if (!valid) {
-        const fallback = buildFallback(storyWords);
+        const fallback = generateFallbackStory(storyWords);
         paragraphs = fallback.paragraphs;
-        occ = fallback.occ;
+        occ = fallback.occurrences;
       }
       const map = label === 'H' ? 'A' : 'B';
       const filter = {

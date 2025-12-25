@@ -1,20 +1,28 @@
 import request from 'supertest';
-import { app } from '../index';
+import { app } from '../app';
+import { connectDB } from '../db';
+import mongoose from 'mongoose';
+import { User } from '../models/User';
+import { Experiment } from '../models/Experiment';
+import { signAccessToken } from '../utils/jwt';
 
 const PRIMARY_TEACHER = 'teacher@test.com';
-const SECOND_TEACHER = 'teacher2@test.com';
-const PASSWORD = 'test123';
+const SECONDARY_TEACHER = 'other@test.com';
 
 async function ensureTeacher(email: string) {
-  const signup = await request(app)
-    .post('/api/auth/signup')
-    .send({ email, password: PASSWORD, role: 'teacher' });
-  if (signup.status !== 200 && signup.status !== 409) {
-    throw new Error(`Unable to seed teacher account (${email}): status ${signup.status}`);
+  let user = await User.findOne({ email });
+  if (!user) {
+    user = await User.create({
+      email,
+      passwordHash: 'dummy',
+      role: 'teacher',
+    });
   }
-  const login = await request(app).post('/api/auth/login').send({ email, password: PASSWORD });
-  expect(login.status).toBe(200);
-  return login.body.accessToken;
+  return signAccessToken({
+    sub: String(user._id),
+    email: user.email,
+    role: user.role,
+  });
 }
 
 describe('Experiment Story Flow', () => {
@@ -22,7 +30,14 @@ describe('Experiment Story Flow', () => {
   let experimentId: string;
 
   beforeAll(async () => {
+    await connectDB();
     authToken = await ensureTeacher(PRIMARY_TEACHER);
+  });
+
+  afterAll(async () => {
+    await User.deleteMany({ email: { $in: [PRIMARY_TEACHER, SECONDARY_TEACHER] } });
+    await Experiment.deleteMany({});
+    await mongoose.connection.close();
   });
 
   it('creates a new experiment for the logged-in teacher', async () => {
@@ -65,7 +80,7 @@ describe('Experiment Story Flow', () => {
   });
 
   it('denies story-word access to other teachers (ownership enforcement)', async () => {
-    const otherToken = await ensureTeacher(SECOND_TEACHER);
+    const otherToken = await ensureTeacher(SECONDARY_TEACHER);
     const res = await request(app)
       .post(`/api/experiments/${experimentId}/story-words`)
       .set('Authorization', `Bearer ${otherToken}`)

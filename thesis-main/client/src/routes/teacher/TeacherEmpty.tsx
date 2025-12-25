@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Archive, ArrowRight, ClipboardList, Layers, PenSquare, PlayCircle } from 'lucide-react'
 import api from '../../lib/api'
+import { logger } from '../../lib/logger'
 import LoadingScreen from '../../components/LoadingScreen'
 import { toast } from '../../store/toasts'
-import Button from '../../components/ui/Button'
+import { Button } from '../../components/ui/Button'
 import Card from '../../components/ui/Card'
 import Input from '../../components/ui/Input'
 
@@ -32,7 +33,7 @@ export default function TeacherHome() {
       const { data } = await api.get('/api/experiments')
       setExperiments(Array.isArray(data) ? data : [])
     } catch (e) {
-      console.error('Failed to load experiments', e)
+      logger.error('Failed to load experiments', e)
     } finally {
       setLoading(false)
     }

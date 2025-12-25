@@ -1,5 +1,6 @@
 import axios from 'axios'
 import { useAuth } from '../store/auth'
+import { logger } from './logger'
 
 const AUTH_KEY = 'spellwise-auth'
 
@@ -93,7 +94,7 @@ api.interceptors.response.use(
     }
 
     if (!error.response) {
-      console.error('Network error - check your connection')
+      logger.error('Network error - check your connection', error)
     }
 
     return Promise.reject(error)

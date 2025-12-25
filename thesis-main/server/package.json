@@ -1,5 +1,5 @@
 {
-  "name": "spellwise-server",
+  "name": "@spellwise/server",
   "private": true,
   "version": "0.1.0",
   "type": "commonjs",
@@ -17,6 +17,7 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@spellwise/shared": "*",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.6",
     "cors": "^2.8.5",

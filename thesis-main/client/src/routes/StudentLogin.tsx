@@ -5,7 +5,7 @@ import { useAuth } from '../store/auth'
 import { Link, useNavigate } from 'react-router-dom'
 import { CheckCircle2, Sparkles, TrendingUp } from 'lucide-react'
 import logo from '../assets/spellwise.png'
-import Button from '../components/ui/Button'
+import { Button } from '../components/ui/Button'
 import Input from '../components/ui/Input'
 
 export default function StudentLogin() {
@@ -65,7 +65,7 @@ export default function StudentLogin() {
               </div>
               <div>
                 <div className="font-semibold mb-1">{item.title}</div>
-                <div className="text-blue-100 text-sm">{item.text}</div>
+                <div className="text-primary-100 text-sm">{item.text}</div>
               </div>
             </div>
           ))}
@@ -84,13 +84,13 @@ export default function StudentLogin() {
 
           <div className="bg-white rounded-2xl shadow-sm border border-neutral-200 p-8">
             <div className="mb-8">
-              <h1 className="text-3xl font-bold mb-2">Student Sign In</h1>
-              <p className="text-gray-600">Use your username and password to join your class.</p>
+              <h1 className="text-3xl font-bold mb-2 text-neutral-900">Student Sign In</h1>
+              <p className="text-neutral-600">Use your username and password to join your class.</p>
             </div>
 
             <form onSubmit={submit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
+                <label className="block text-sm font-medium text-neutral-700 mb-2">Username</label>
                 <Input
                   type="text"
                   value={username}
@@ -103,7 +103,7 @@ export default function StudentLogin() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+                <label className="block text-sm font-medium text-neutral-700 mb-2">Password</label>
                 <Input
                   type="password"
                   value={password}
@@ -120,26 +120,16 @@ export default function StudentLogin() {
                 </div>
               )}
 
-              <Button type="submit" disabled={busy} className="w-full" size="lg">
-                {busy ? (
-                  <span className="inline-flex items-center gap-2">
-                    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-                    </svg>
-                    Signing in...
-                  </span>
-                ) : (
-                  'Sign In'
-                )}
+              <Button type="submit" disabled={busy} isLoading={busy} className="w-full" size="lg">
+                Sign In
               </Button>
 
               <div className="relative my-6">
                 <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-gray-200"></div>
+                  <div className="w-full border-t border-neutral-200"></div>
                 </div>
                 <div className="relative flex justify-center text-sm">
-                  <span className="px-4 bg-white text-gray-500">Or continue with</span>
+                  <span className="px-4 bg-white text-neutral-500">Or continue with</span>
                 </div>
               </div>
 
@@ -148,15 +138,15 @@ export default function StudentLogin() {
               </Button>
 
               <div className="text-center text-sm pt-4">
-                <span className="text-gray-600">No account yet? </span>
-                <Link to="/signup?role=student" className="text-purple-600 font-semibold hover:underline">
+                <span className="text-neutral-600">No account yet? </span>
+                <Link to="/signup?role=student" className="text-primary-600 font-semibold hover:underline">
                   Sign up as a student
                 </Link>
               </div>
             </form>
           </div>
 
-          <p className="text-center text-sm text-gray-500 mt-8">By signing in, you agree to our Terms of Service and Privacy Policy.</p>
+          <p className="text-center text-sm text-neutral-500 mt-8">By signing in, you agree to our Terms of Service and Privacy Policy.</p>
         </div>
       </section>
     </div>

@@ -1,5 +1,5 @@
 {
-  "name": "spellwise-client",
+  "name": "@spellwise/client",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -9,6 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@spellwise/shared": "*",
+    "@tanstack/react-query": "^5.90.12",
     "axios": "^1.7.3",
     "i18next": "^23.11.5",
     "lucide-react": "^0.554.0",

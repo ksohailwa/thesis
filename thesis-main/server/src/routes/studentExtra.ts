@@ -11,6 +11,13 @@ import { requireAuth, requireRole, AuthedRequest } from '../middleware/auth';
 import { getOpenAI } from '../utils/openai';
 import { hintSystem, hintUser } from '../prompts';
 import { clearAnalyticsCache } from '../utils/analyticsCache';
+import {
+  StudentAttemptRequest,
+  StudentHintRequest,
+  StudentEventsRequest,
+  StudentFeedbackRequest,
+  HintResponse,
+} from '../types/requests';
 
 const router = Router();
 
@@ -24,9 +31,21 @@ router.post('/attempt', requireAuth, requireRole('student'), async (req: AuthedR
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { experimentId, story, targetWord, occurrenceIndex, text } = parsed.data;
-  const condLabel = toConditionLabel(story as StoryLabel);
+
+  // Type the request body
+  const body: StudentAttemptRequest = {
+    experimentId: parsed.data.experimentId,
+    word: parsed.data.targetWord,
+    attempt: parsed.data.text,
+    correct: false,
+    story: parsed.data.story as 'A' | 'B' | 'H' | 'N',
+    occurrenceIndex: parsed.data.occurrenceIndex,
+  };
+
+  const { experimentId, word: targetWord, occurrenceIndex, attempt: text } = body;
+  const condLabel = toConditionLabel(parsed.data.story as StoryLabel);
   const studentId = String(req.user?.sub || '');
+
   // Minimal: store attempt entry
   const phase = getPhaseForOccurrence(occurrenceIndex);
   const attempt = await Attempt.create({
@@ -45,6 +64,7 @@ router.post('/attempt', requireAuth, requireRole('student'), async (req: AuthedR
     finalText: text,
     score: 0,
   });
+
   // For H, return positional feedback hints (simple prefix match)
   const allowHints = condLabel === 'H' && occurrenceIndex < 5;
   let correctnessByPosition: boolean[] | undefined = undefined;
@@ -53,6 +73,7 @@ router.post('/attempt', requireAuth, requireRole('student'), async (req: AuthedR
     const len = Math.max(text.length, target.length);
     correctnessByPosition = Array.from({ length: len }, (_, i) => text[i] === target[i]);
   }
+
   res.json({ ok: true, attemptId: attempt._id, correctnessByPosition });
 });
 
@@ -64,11 +85,21 @@ router.post('/hint', requireAuth, requireRole('student'), async (req: AuthedRequ
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { story, targetWord } = parsed.data;
-  const condLabel = toConditionLabel(story as StoryLabel);
+
+  // Type the request body
+  const body: StudentHintRequest = {
+    experimentId: '',
+    targetWord: parsed.data.targetWord,
+    occurrenceIndex: parsed.data.occurrenceIndex,
+  };
+
+  const { targetWord, occurrenceIndex } = body;
+  const condLabel = toConditionLabel(parsed.data.story as StoryLabel);
+
   if (condLabel !== 'H') return res.status(400).json({ error: 'Hints disabled' });
-  if (parsed.data.occurrenceIndex >= 5)
+  if (occurrenceIndex >= 5)
     return res.status(403).json({ error: 'Hints disabled for 5th occurrence' });
+
   // Try LLM per exact prompt
   const oa = getOpenAI();
   if (oa) {
@@ -84,17 +115,21 @@ router.post('/hint', requireAuth, requireRole('student'), async (req: AuthedRequ
       });
       const text = r.choices?.[0]?.message?.content || '{}';
       const data = JSON.parse(text);
-      if (data?.hint) return res.json({ hint: data.hint });
+      if (data?.hint) {
+        const response: HintResponse = { hint: data.hint };
+        return res.json(response);
+      }
     } catch (err) {
       logger.warn('LLM hint failed', {
         error: err instanceof Error ? err.message : String(err),
       });
     }
   }
+
   // Fallback simple initial-letter hint
-  return res.json({
-    hint: `${targetWord[0] || ''}${'_'.repeat(Math.max(0, targetWord.length - 1))}`,
-  });
+  const hintText = `${targetWord[0] || ''}${'_'.repeat(Math.max(0, targetWord.length - 1))}`;
+  const response: HintResponse = { hint: hintText };
+  return res.json(response);
 });
 
 router.post('/define', requireAuth, requireRole('student'), async (req: AuthedRequest, res) => {
@@ -133,7 +168,7 @@ router.post('/events', requireAuth, requireRole('student'), async (req: AuthedRe
     events: z.array(
       z.object({
         type: z.string(),
-        payload: z.any().optional(),
+        payload: z.record(z.unknown()).optional(),
         ts: z.number().optional(),
         experimentId: z.string().optional(),
       })
@@ -141,9 +176,16 @@ router.post('/events', requireAuth, requireRole('student'), async (req: AuthedRe
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  // Type the request body
+  const body: StudentEventsRequest = {
+    experimentId: '',
+    events: parsed.data.events,
+  };
+
   const studentId = String(req.user?.sub || '');
   const docs = await Event.insertMany(
-    (parsed.data.events || []).map((e) => ({
+    body.events.map((e) => ({
       session: studentId,
       student: studentId,
       experiment: e.experimentId || undefined,
@@ -173,8 +215,11 @@ router.post('/feedback', requireAuth, requireRole('student'), async (req: Authed
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { experimentId, storyKey, condition, difficulty, enjoyment, comment, effort, storyIndex } =
-    parsed.data;
+
+  // Type the request body
+  const body: StudentFeedbackRequest = parsed.data as StudentFeedbackRequest;
+  
+  const { experimentId, storyKey, condition, difficulty, enjoyment, comment, effort, storyIndex } = body;
   const studentId = String(req.user?.sub || '');
 
   await Event.create({

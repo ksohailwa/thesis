@@ -5,7 +5,7 @@ import api from '../lib/api'
 import { toMessage } from '../lib/err'
 import { useAuth } from '../store/auth'
 import logo from '../assets/spellwise.png'
-import Button from '../components/ui/Button'
+import { Button } from '../components/ui/Button'
 import Input from '../components/ui/Input'
 
 export default function Login() {

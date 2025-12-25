@@ -2,6 +2,7 @@ import { getOpenAI } from '../utils/openai';
 import { parseBoldMarkers, ParsedOccurrence } from '../utils/boldParser';
 import { storySystemBold, storyUserBold } from '../prompts';
 import logger from '../utils/logger';
+import { generateFallbackStory } from '../utils/fallbackStory';
 
 export interface StoryGenerationOptions {
   experimentId: string;
@@ -69,22 +70,15 @@ export async function generateStory(opts: StoryGenerationOptions): Promise<Gener
   }
 
   logger.warn('Using fallback story generator', { experimentId: opts.experimentId });
-  return generateFallbackStory(opts);
+  return generateFallbackStoryForOptions(opts);
 }
 
-function generateFallbackStory(opts: StoryGenerationOptions): GeneratedStory {
-  const { words, paragraphCount } = opts;
-  const sentencesPerParagraph = Math.max(3, Math.ceil((4 * words.length) / paragraphCount));
-
-  // TODO: reuse local fallback logic currently in experiments.ts
+function generateFallbackStoryForOptions(opts: StoryGenerationOptions): GeneratedStory {
+  const { words } = opts;
+  const fallback = generateFallbackStory(words);
   return {
-    paragraphs: Array.from({ length: paragraphCount }, (_, p) =>
-      Array.from(
-        { length: sentencesPerParagraph },
-        (_, s) => `Paragraph ${p + 1}, sentence ${s + 1}.`
-      ).join(' ')
-    ),
-    occurrences: [],
+    paragraphs: fallback.paragraphs,
+    occurrences: fallback.occurrences as ParsedOccurrence[],
     attempt: 0,
     usedFallback: true,
   };

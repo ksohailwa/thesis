@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import api from '../../lib/api'
+import { logger } from '../../lib/logger'
 import { toast } from '../../store/toasts'
 import ErrorBoundaryComponent from '../../components/ErrorBoundary'
 import { hydrateStudentSession } from '../../lib/studentSession'
@@ -484,7 +485,7 @@ function RunFull() {
         setCurrentSentenceId(null)
       }
 
-      sentenceAudioRef.current.play().catch(e => console.error("Segment play error:", e))
+      sentenceAudioRef.current.play().catch(e => logger.error('Segment play error', e))
       setCurrentSentenceId(clip.id)
       setAutoAdvance(autoContinue)
       
@@ -619,12 +620,30 @@ function RunFull() {
       setMaxStreak(m => Math.max(m, streak + 1))
       
       focusNextBlank(blank.key)
-      api.post('/api/student/attempt', { experimentId: expId, word: blank.word, attempt: val, correct: true, story: currentStoryLabel, occurrenceIndex: blank.occurrenceIndex }).catch(console.error)
+      api
+        .post('/api/student/attempt', {
+          experimentId: expId,
+          word: blank.word,
+          attempt: val,
+          correct: true,
+          story: currentStoryLabel,
+          occurrenceIndex: blank.occurrenceIndex,
+        })
+        .catch(e => logger.error('Failed to submit attempt', e))
     } else {
       setStreak(0)
       softPause()
       toast.error('Try again')
-      api.post('/api/student/attempt', { experimentId: expId, word: blank.word, attempt: val, correct: false, story: currentStoryLabel, occurrenceIndex: blank.occurrenceIndex }).catch(console.error)
+      api
+        .post('/api/student/attempt', {
+          experimentId: expId,
+          word: blank.word,
+          attempt: val,
+          correct: false,
+          story: currentStoryLabel,
+          occurrenceIndex: blank.occurrenceIndex,
+        })
+        .catch(e => logger.error('Failed to submit attempt', e))
     }
   }
 

@@ -1,6 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../store/auth'
-import Button from '../components/ui/Button'
+import { Button } from '../components/ui/Button'
 import Card from '../components/ui/Card'
 
 export default function Landing() {

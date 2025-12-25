@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import api from '../../lib/api'
+import { logger } from '../../lib/logger'
 import LoadingScreen from '../../components/LoadingScreen'
 
 export default function TeacherAnalyticsPicker() {
@@ -14,7 +15,7 @@ export default function TeacherAnalyticsPicker() {
         const { data } = await api.get('/api/experiments')
         setExperiments(Array.isArray(data) ? data : [])
       } catch (e) {
-        console.error('Failed to load experiments', e)
+        logger.error('Failed to load experiments', e)
       } finally {
         setLoading(false)
       }

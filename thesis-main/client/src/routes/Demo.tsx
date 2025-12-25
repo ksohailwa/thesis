@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../lib/api';
+import { logger } from '../lib/logger';
 import { useAuth } from '../store/auth';
 import { useNavigate } from 'react-router-dom';
 import LoadingScreen from '../components/LoadingScreen';
@@ -17,7 +18,7 @@ export default function Demo() {
         const { data } = await api.get('/api/demo');
         setList(data || []);
       } catch (e) {
-        console.error(e);
+        logger.error('Failed to load demo experiments', e);
       } finally {
         setLoading(false);
       }

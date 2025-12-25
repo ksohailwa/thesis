@@ -1,14 +1,29 @@
-import React from 'react'
+import React from 'react';
 
-type Props = React.InputHTMLAttributes<HTMLInputElement>
+interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+  error?: string;
+}
 
-const base =
-  'w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-400 placeholder:text-neutral-400'
+const Input = React.forwardRef<HTMLInputElement, InputProps>(
+  ({ className = '', error, ...props }, ref) => {
+    return (
+      <div className="w-full">
+        <input
+          ref={ref}
+          className={`
+            w-full rounded-xl border border-neutral-300 bg-white px-4 py-2 text-sm text-neutral-900 placeholder:text-neutral-400
+            shadow-sm transition-all focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20 disabled:cursor-not-allowed disabled:bg-neutral-50 disabled:text-neutral-500
+            ${error ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : ''}
+            ${className}
+          `}
+          {...props}
+        />
+        {error && <p className="mt-1 text-xs text-red-500">{error}</p>}
+      </div>
+    );
+  }
+);
 
-const Input = React.forwardRef<HTMLInputElement, Props>(({ className = '', ...props }, ref) => {
-  return <input ref={ref} className={`${base} ${className}`} {...props} />
-})
+Input.displayName = 'Input';
 
-Input.displayName = 'Input'
-
-export default Input
+export default Input;

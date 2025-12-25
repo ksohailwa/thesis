@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { STORAGE_KEYS } from '../constants';
 
 type Role = 'teacher' | 'student' | null;
 
@@ -19,18 +20,18 @@ interface AuthState {
 const loadLegacy = () => {
   if (typeof window === 'undefined') return { accessToken: null, refreshToken: null as string | null, role: null as Role, email: null, demo: false };
   const legacy = {
-    accessToken: localStorage.getItem('accessToken'),
-    refreshToken: localStorage.getItem('refreshToken'),
-    role: (localStorage.getItem('role') as Role) || null,
-    email: localStorage.getItem('email'),
-    demo: localStorage.getItem('demo') === '1',
+    accessToken: localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN_KEY),
+    refreshToken: localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN_KEY),
+    role: (localStorage.getItem(STORAGE_KEYS.USER_ROLE_KEY) as Role) || null,
+    email: localStorage.getItem(STORAGE_KEYS.USER_EMAIL_KEY),
+    demo: localStorage.getItem(STORAGE_KEYS.DEMO_MODE_KEY) === '1',
   };
   // Clear legacy tokens to avoid cross-tab collisions; new sessions live in sessionStorage.
-  localStorage.removeItem('accessToken');
-  localStorage.removeItem('refreshToken');
-  localStorage.removeItem('role');
-  localStorage.removeItem('email');
-  localStorage.removeItem('demo');
+  localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN_KEY);
+  localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN_KEY);
+  localStorage.removeItem(STORAGE_KEYS.USER_ROLE_KEY);
+  localStorage.removeItem(STORAGE_KEYS.USER_EMAIL_KEY);
+  localStorage.removeItem(STORAGE_KEYS.DEMO_MODE_KEY);
   return legacy;
 };
 
@@ -57,19 +58,19 @@ export const useAuth = create<AuthState>()(
         },
         clear: () => {
           if (typeof window !== 'undefined') {
-            localStorage.removeItem('accessToken');
-            localStorage.removeItem('refreshToken');
-            localStorage.removeItem('role');
-            localStorage.removeItem('email');
-            localStorage.removeItem('demo');
-            sessionStorage.removeItem('spellwise-auth');
+            localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN_KEY);
+            localStorage.removeItem(STORAGE_KEYS.REFRESH_TOKEN_KEY);
+            localStorage.removeItem(STORAGE_KEYS.USER_ROLE_KEY);
+            localStorage.removeItem(STORAGE_KEYS.USER_EMAIL_KEY);
+            localStorage.removeItem(STORAGE_KEYS.DEMO_MODE_KEY);
+            sessionStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN_KEY);
           }
           set({ accessToken: null, refreshToken: null, role: null, email: null, demo: false });
         },
       };
     },
     {
-      name: 'spellwise-auth',
+      name: STORAGE_KEYS.AUTH_TOKEN_KEY,
       storage: createJSONStorage(() => (typeof window !== 'undefined' ? sessionStorage : undefined as any)),
       partialize: (state) => ({
         accessToken: state.accessToken,

@@ -17,10 +17,10 @@ export default function AppHeader({ onHelp, onScale }: AppHeaderProps) {
       <div className="container mx-auto px-4 h-16 flex items-center justify-between">
         {/* Logo */}
         <Link to="/" className="flex items-center gap-2 group">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-blue-100 transition-transform group-hover:scale-105">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white shadow-sm ring-1 ring-primary-100 transition-transform group-hover:scale-105">
             <img src={logo} alt="SpellWise logo" className="h-6 w-6 object-contain" />
           </div>
-          <span className="hidden sm:block text-xl font-bold tracking-tight text-gray-900">
+          <span className="hidden sm:block text-xl font-bold tracking-tight text-neutral-900">
             SpellWise
           </span>
         </Link>
@@ -92,7 +92,7 @@ export default function AppHeader({ onHelp, onScale }: AppHeaderProps) {
               </div>
             </div>
           ) : (
-            <Link to="/login" className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 transition-colors shadow-sm">
+            <Link to="/login" className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary-600 text-white text-sm font-medium hover:bg-primary-700 transition-colors shadow-sm shadow-primary-500/30">
               <LogIn size={16} />
               <span>Sign In</span>
             </Link>

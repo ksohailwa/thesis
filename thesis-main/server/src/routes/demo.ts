@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { Experiment } from '../models/Experiment';
+import { createSuccessResponse } from '../utils/apiResponse';
+import { STORY } from '../constants';
 
 const router = Router();
 
@@ -7,7 +9,7 @@ const router = Router();
 router.get('/demo', async (_req, res) => {
   const list = await Experiment.find({})
     .sort({ createdAt: -1 })
-    .limit(5)
+    .limit(STORY.DEMO_RECENT_LIMIT)
     .select('_id title level targetWords');
   const items = list.map((e) => ({
     id: String(e._id),
@@ -16,7 +18,7 @@ router.get('/demo', async (_req, res) => {
     targetWordsCount: (e.targetWords || []).length,
     description: '',
   }));
-  res.json(items);
+  res.json(createSuccessResponse(items));
 });
 
 // Lightweight demo join endpoint that does not depend on DB writes
@@ -60,18 +62,20 @@ router.post('/demo/join', async (_req, res) => {
     };
   });
 
-  return res.json({
-    experiment: {
-      id: demoId,
-      title: 'Demo Spelling Story',
-      description: 'Sample demo experiment',
-      level,
-      targetWords,
-    },
-    condition: 'with-hints',
-    stories,
-    schedule,
-  });
+  return res.json(
+    createSuccessResponse({
+      experiment: {
+        id: demoId,
+        title: 'Demo Spelling Story',
+        description: 'Sample demo experiment',
+        level,
+        targetWords,
+      },
+      condition: 'with-hints',
+      stories,
+      schedule,
+    })
+  );
 });
 
 export default router;

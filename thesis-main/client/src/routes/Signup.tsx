@@ -4,6 +4,8 @@ import { toMessage } from '../lib/err'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Eye, EyeOff } from 'lucide-react'
 import logo from '../assets/spellwise.png'
+import { Button } from '../components/ui/Button'
+import Input from '../components/ui/Input'
 
 export default function Signup() {
   const [email, setEmail] = useState('')
@@ -17,7 +19,6 @@ export default function Signup() {
   const nav = useNavigate()
   const [params] = useSearchParams()
 
-  // If arriving from student flow (/signup?role=student), preselect student
   useEffect(() => {
     const r = params.get('role')
     if (r === 'student' || r === 'teacher') setRole(r)
@@ -52,38 +53,40 @@ export default function Signup() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 flex items-center justify-center p-8">
+    <div className="min-h-screen bg-neutral-50 flex items-center justify-center p-8">
       <div className="w-full max-w-md">
         <div className="mb-8 text-center">
           <Link to="/" className="inline-flex items-center gap-3">
-            <img src={logo} alt="SpellWise" className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-purple-600 p-1 object-contain" />
-            <span className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+            <img src={logo} alt="SpellWise" className="w-12 h-12 rounded-xl bg-white p-1 object-contain shadow-sm ring-1 ring-primary-100" />
+            <span className="text-3xl font-bold text-neutral-900">
               SpellWise
             </span>
           </Link>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-8">
+        <div className="bg-white rounded-2xl shadow-xl border border-neutral-200 p-8">
           <div className="mb-8">
-            <h1 className="text-3xl font-bold mb-2">Create Account</h1>
-            <p className="text-gray-600">Choose your role to get started.</p>
+            <h1 className="text-3xl font-bold mb-2 text-neutral-900">Create Account</h1>
+            <p className="text-neutral-600">Choose your role to get started.</p>
           </div>
 
           <form onSubmit={submit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-3">I am a...</label>
+              <label className="block text-sm font-medium text-neutral-700 mb-3">I am a...</label>
               <div className="grid grid-cols-2 gap-3">
                 {(['teacher', 'student'] as const).map((type) => (
                   <button
                     key={type}
                     type="button"
                     onClick={() => setRole(type)}
-                    className={`p-4 rounded-xl border-2 transition ${
-                      role === type ? (type === 'teacher' ? 'border-blue-500 bg-blue-50' : 'border-purple-500 bg-purple-50') : 'border-gray-200 hover:border-gray-300'
+                    className={`p-4 rounded-xl border-2 transition text-left ${
+                      role === type 
+                        ? 'border-primary-500 bg-primary-50 text-primary-900' 
+                        : 'border-neutral-200 hover:border-neutral-300 text-neutral-600'
                     }`}
                   >
                     <div className="font-semibold text-sm capitalize">{type}</div>
-                    <p className="text-xs text-gray-500 mt-1">{type === 'teacher' ? 'Create & manage experiments' : 'Join and participate'}</p>
+                    <p className="text-xs opacity-80 mt-1">{type === 'teacher' ? 'Create experiments' : 'Join a session'}</p>
                   </button>
                 ))}
               </div>
@@ -91,26 +94,24 @@ export default function Signup() {
 
             {role === 'student' ? (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Username</label>
-                <input
+                <label className="block text-sm font-medium text-neutral-700 mb-2">Username</label>
+                <Input
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="Choose a username"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                   autoComplete="username"
                   disabled={busy}
                 />
               </div>
             ) : (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Email Address</label>
-                <input
+                <label className="block text-sm font-medium text-neutral-700 mb-2">Email Address</label>
+                <Input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="your@email.com"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                   autoComplete="email"
                   disabled={busy}
                 />
@@ -118,37 +119,36 @@ export default function Signup() {
             )}
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Password</label>
+              <label className="block text-sm font-medium text-neutral-700 mb-2">Password</label>
               <div className="relative">
-                <input
+                <Input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="********"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition pr-12"
                   autoComplete="new-password"
                   disabled={busy}
+                  className="pr-12"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-neutral-700"
                   disabled={busy}
                 >
                   {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                 </button>
               </div>
-              <p className="text-xs text-gray-500 mt-1">Must be at least 6 characters</p>
+              <p className="text-xs text-neutral-500 mt-1">Must be at least 6 characters</p>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Confirm Password</label>
-              <input
+              <label className="block text-sm font-medium text-neutral-700 mb-2">Confirm Password</label>
+              <Input
                 type={showPassword ? 'text' : 'password'}
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="********"
-                className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
                 autoComplete="new-password"
                 disabled={busy}
               />
@@ -160,17 +160,19 @@ export default function Signup() {
               </div>
             )}
 
-            <button
+            <Button
               type="submit"
               disabled={busy}
-              className="w-full bg-gradient-to-r from-blue-600 to-purple-600 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition disabled:opacity-50"
+              isLoading={busy}
+              className="w-full"
+              size="lg"
             >
-              {busy ? 'Creating Account...' : 'Create Account'}
-            </button>
+              Create Account
+            </Button>
 
             <div className="text-center text-sm pt-4">
-              <span className="text-gray-600">Already have an account? </span>
-              <Link to={role === 'student' ? '/student-login' : '/login'} className="text-blue-600 font-semibold hover:underline">
+              <span className="text-neutral-600">Already have an account? </span>
+              <Link to={role === 'student' ? '/student-login' : '/login'} className="text-primary-600 font-semibold hover:underline">
                 Sign in
               </Link>
             </div>
