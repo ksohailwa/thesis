@@ -1,0 +1,194 @@
+paths:
+  /api/student/join:
+    post:
+      tags:
+        - Student
+      summary: Join an experiment using class code
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - classCode
+              properties:
+                classCode:
+                  type: string
+                  description: 6-character class code
+      responses:
+        '200':
+          description: Successfully joined experiment
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  experimentId:
+                    type: string
+                  assignmentId:
+                    type: string
+                  condition:
+                    type: string
+                    enum: [with-hints, without-hints]
+                  storyOrder:
+                    type: string
+                    enum: [A-first, B-first]
+                  story1:
+                    $ref: '#/components/schemas/Story'
+                  story2:
+                    $ref: '#/components/schemas/Story'
+        '404':
+          description: Invalid class code or experiment not live
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/student/attempt:
+    post:
+      tags:
+        - Student
+      summary: Submit a spelling attempt
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Attempt'
+      responses:
+        '200':
+          description: Attempt recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recorded:
+                    type: boolean
+                  correct:
+                    type: boolean
+
+  /api/student/hint:
+    post:
+      tags:
+        - Student
+      summary: Request a hint for a word
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - experimentId
+                - targetWord
+              properties:
+                experimentId:
+                  type: string
+                targetWord:
+                  type: string
+                occurrenceIndex:
+                  type: integer
+                latestAttempt:
+                  type: string
+      responses:
+        '200':
+          description: Hint generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  hint:
+                    type: string
+
+  /api/student/feedback:
+    post:
+      tags:
+        - Student
+      summary: Submit story feedback
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - experimentId
+                - storyKey
+              properties:
+                experimentId:
+                  type: string
+                storyKey:
+                  type: string
+                  enum: [A, B]
+                difficulty:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                enjoyment:
+                  type: integer
+                  minimum: 1
+                  maximum: 5
+                comment:
+                  type: string
+                effort:
+                  type: string
+                  enum: [low, medium, high]
+      responses:
+        '200':
+          description: Feedback recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recorded:
+                    type: boolean
+                  breakUntil:
+                    type: string
+                    format: date-time
+
+  /api/student/events:
+    post:
+      tags:
+        - Student
+      summary: Log interaction events (audio play, key press, etc.)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - experimentId
+                - type
+              properties:
+                experimentId:
+                  type: string
+                type:
+                  type: string
+                  enum: [audio_play, key, hint_request, reveal, effort]
+                payload:
+                  type: object
+      responses:
+        '200':
+          description: Event logged
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logged:
+                    type: boolean

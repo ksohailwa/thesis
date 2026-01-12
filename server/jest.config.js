@@ -4,6 +4,9 @@ module.exports = {
   roots: ['<rootDir>/src'],
   testMatch: ['**/__tests__/**/*.test.ts'],
   collectCoverageFrom: ['src/**/*.ts', '!src/**/*.d.ts', '!src/__tests__/**', '!src/index.ts'],
+  moduleNameMapper: {
+    '^@spellwise/shared$': '<rootDir>/../shared/src/index.ts',
+  },
   coverageThreshold: {
     global: {
       branches: 50,

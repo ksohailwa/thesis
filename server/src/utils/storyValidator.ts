@@ -33,17 +33,17 @@ export function validateStories(targetWords: string[], payload: StoriesPayload):
     v.push('Paragraphs missing or not arrays.');
   if (!Array.isArray(A?.targetOccurrences) || !Array.isArray(B?.targetOccurrences))
     v.push('targetOccurrences missing or not arrays.');
-  if ((A?.paragraphs?.length || 0) !== 5) v.push('Story A must have exactly 5 paragraphs.');
-  if ((B?.paragraphs?.length || 0) !== 5) v.push('Story B must have exactly 5 paragraphs.');
+  if ((A?.paragraphs?.length || 0) !== 4) v.push('Story A must have exactly 4 paragraphs.');
+  if ((B?.paragraphs?.length || 0) !== 4) v.push('Story B must have exactly 4 paragraphs.');
   const occA = (A?.targetOccurrences || []) as Occurrence[];
   const occB = (B?.targetOccurrences || []) as Occurrence[];
 
   // Helper to check rules per story
   const checkStory = (name: 'A' | 'B', occ: Occurrence[]) => {
-    // Count: exactly 5 per word (1 per paragraph for that word)
+    // Count: exactly 4 per word (1 per paragraph for that word)
     for (const w of targetWords) {
       const c = countWord(occ, w);
-      if (c !== 5) v.push(`Story ${name}: word "${w}" must appear exactly 5 times (got ${c}).`);
+      if (c !== 4) v.push(`Story ${name}: word "${w}" must appear exactly 4 times (got ${c}).`);
     }
     // Per-paragraph cap: no more than 1 occurrence of the same word in a paragraph
     const byParaWord: Record<string, number> = {};

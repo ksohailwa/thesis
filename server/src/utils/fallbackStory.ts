@@ -15,10 +15,10 @@ export interface FallbackStoryResult {
 
 /**
  * Generate a minimal fallback story with target words distributed across paragraphs.
- * Each word appears exactly once per paragraph (5 times total for 5 paragraphs).
+ * Each word appears exactly once per paragraph (4 times total for 4 paragraphs).
  */
 export function generateFallbackStory(targetWords: string[]): FallbackStoryResult {
-  const paragraphCount = 5;
+  const paragraphCount = 4;
   if (targetWords.length === 0) {
     return { paragraphs: [], occurrences: [] };
   }

@@ -66,7 +66,7 @@ router.post('/attempt', requireAuth, requireRole('student'), async (req: AuthedR
   });
 
   // For H, return positional feedback hints (simple prefix match)
-  const allowHints = condLabel === 'H' && occurrenceIndex < 5;
+  const allowHints = condLabel === 'H' && occurrenceIndex < 4;
   let correctnessByPosition: boolean[] | undefined = undefined;
   if (allowHints) {
     const target = targetWord;
@@ -97,8 +97,8 @@ router.post('/hint', requireAuth, requireRole('student'), async (req: AuthedRequ
   const condLabel = toConditionLabel(parsed.data.story as StoryLabel);
 
   if (condLabel !== 'H') return res.status(400).json({ error: 'Hints disabled' });
-  if (occurrenceIndex >= 5)
-    return res.status(403).json({ error: 'Hints disabled for 5th occurrence' });
+  if (occurrenceIndex >= 4)
+    return res.status(403).json({ error: 'Hints disabled for 4th occurrence' });
 
   // Try LLM per exact prompt
   const oa = getOpenAI();
@@ -126,8 +126,8 @@ router.post('/hint', requireAuth, requireRole('student'), async (req: AuthedRequ
     }
   }
 
-  // Fallback simple initial-letter hint
-  const hintText = `${targetWord[0] || ''}${'_'.repeat(Math.max(0, targetWord.length - 1))}`;
+  // Fallback vague hint (no spelling revealed)
+  const hintText = `Check for any double letters or silent letters.`;
   const response: HintResponse = { hint: hintText };
   return res.json(response);
 });

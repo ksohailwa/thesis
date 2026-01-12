@@ -1,0 +1,294 @@
+paths:
+  /api/analytics/experiment/{id}/summary:
+    get:
+      tags:
+        - Analytics
+      summary: Get experiment analytics summary
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: story
+          in: query
+          schema:
+            type: string
+            enum: [A, B]
+        - name: condition
+          in: query
+          schema:
+            type: string
+            enum: [with-hints, without-hints]
+        - name: demo
+          in: query
+          schema:
+            type: string
+            enum: ['1']
+      responses:
+        '200':
+          description: Analytics summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  experiment:
+                    type: object
+                    properties:
+                      _id:
+                        type: string
+                      title:
+                        type: string
+                      status:
+                        type: string
+                  counts:
+                    type: object
+                    properties:
+                      students:
+                        type: integer
+                      attempts:
+                        type: integer
+                      correctRate:
+                        type: number
+                      hints:
+                        type: integer
+                      definitionAccuracy:
+                        type: number
+                      recallAvg:
+                        type: number
+                  byStory:
+                    type: object
+                    properties:
+                      A:
+                        type: object
+                        properties:
+                          attempts:
+                            type: integer
+                          accuracy:
+                            type: number
+                      B:
+                        type: object
+                        properties:
+                          attempts:
+                            type: integer
+                          accuracy:
+                            type: number
+                  funnel:
+                    type: object
+                    properties:
+                      joined:
+                        type: integer
+                      story1:
+                        type: integer
+                      story2:
+                        type: integer
+                      breakDone:
+                        type: integer
+                      recall:
+                        type: integer
+                  students:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        studentId:
+                          type: string
+                        username:
+                          type: string
+                        condition:
+                          type: string
+                        attempts:
+                          type: integer
+                        accuracy:
+                          type: number
+                        hints:
+                          type: integer
+                  words:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        word:
+                          type: string
+                        attempts:
+                          type: integer
+                        accuracy:
+                          type: number
+                  timeline:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        day:
+                          type: string
+                        attempts:
+                          type: integer
+                        correct:
+                          type: integer
+                  confusions:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        word:
+                          type: string
+                        attempts:
+                          type: integer
+                        topMisspellings:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              text:
+                                type: string
+                              count:
+                                type: integer
+
+  /api/analytics/experiment/{id}/student/{studentId}:
+    get:
+      tags:
+        - Analytics
+      summary: Get individual student analytics
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: studentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Student analytics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  student:
+                    type: object
+                  words:
+                    type: array
+                    items:
+                      type: object
+                  timeline:
+                    type: array
+                    items:
+                      type: object
+
+  /api/analytics/experiment/{id}/events:
+    get:
+      tags:
+        - Analytics
+      summary: Get experiment events (paginated)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 200
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Events list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  events:
+                    type: array
+                    items:
+                      type: object
+                  total:
+                    type: integer
+
+  /api/analytics/experiment/{id}/csv:
+    get:
+      tags:
+        - Analytics
+      summary: Export analytics data as CSV
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [summary, students, words, timeline]
+      responses:
+        '200':
+          description: CSV file
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+
+  /api/analytics/experiments/summary:
+    get:
+      tags:
+        - Analytics
+      summary: Get summary of all experiments
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Experiments summary
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  experiments:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        experimentId:
+                          type: string
+                        title:
+                          type: string
+                        status:
+                          type: string
+                        students:
+                          type: integer
+                        attempts:
+                          type: integer
+                        correctRate:
+                          type: number

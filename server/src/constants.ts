@@ -35,12 +35,12 @@ export const RATE_LIMIT = {
 
 export const STORY = {
   // Standard story structure
-  PARAGRAPH_COUNT: 5,
+  PARAGRAPH_COUNT: 4,
   MIN_SENTENCES_PER_PARAGRAPH: 4,
 
   // Target words per story
   MAX_TARGET_WORDS: 5,
-  TARGET_WORD_OCCURRENCES: 5, // Each word appears exactly 5 times (once per paragraph)
+  TARGET_WORD_OCCURRENCES: 4, // Each word appears exactly 4 times (once per paragraph)
 
   // Validation
   MIN_TARGET_WORDS: 1,
@@ -59,12 +59,12 @@ export const SPELL_PHASE = {
   BASELINE: 1,
   LEARNING_START: 2,
   LEARNING_END: 3,
-  RECALL: 4,
-  FINAL_REPEAT: 5,
+  RECALL: 4, // 4th occurrence is immediate recall (no hints)
+  
 
-  // Hints disabled from occurrence 5 onwards
-  HINTS_DISABLED_FROM: 5,
-  HINTS_DISABLED_THRESHOLD: 5,
+  // Hints disabled for recall phase (4th occurrence)
+  HINTS_DISABLED_FROM: 4,
+  HINTS_DISABLED_THRESHOLD: 4,
 
   // Phase names for logging/tracking
   PHASES: {
@@ -103,7 +103,7 @@ export const WORD = {
 export const ATTEMPT = {
   // Occurrence index validation
   MIN_OCCURRENCE: 1,
-  MAX_OCCURRENCE: 5,
+  MAX_OCCURRENCE: 4,
 
   // Scoring
   PERFECT_SCORE: 1.0,

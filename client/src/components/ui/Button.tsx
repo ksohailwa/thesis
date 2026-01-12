@@ -11,14 +11,14 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className = '', variant = 'primary', size = 'md', isLoading, leftIcon, children, disabled, ...props }, ref) => {
     
-    const baseStyles = 'inline-flex items-center justify-center rounded-xl font-medium transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98]';
+    const baseStyles = 'inline-flex items-center justify-center rounded-xl font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] relative overflow-hidden group';
     
     const variants = {
-      primary: 'bg-primary-600 text-white hover:bg-primary-700 shadow-sm shadow-primary-500/30 focus:ring-primary-500',
-      secondary: 'bg-white text-neutral-900 border border-neutral-200 hover:bg-neutral-50 hover:border-neutral-300 shadow-sm focus:ring-neutral-200',
-      outline: 'bg-transparent border-2 border-primary-600 text-primary-600 hover:bg-primary-50 focus:ring-primary-500',
+      primary: 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:shadow-lg hover:shadow-blue-500/40 focus:ring-blue-500 disabled:from-blue-500 disabled:to-indigo-500',
+      secondary: 'bg-white text-neutral-900 border border-neutral-200 hover:bg-neutral-50 hover:border-neutral-300 hover:shadow-md shadow-sm focus:ring-neutral-200',
+      outline: 'bg-transparent border-2 border-primary-600 text-primary-600 hover:bg-primary-50 focus:ring-primary-500 hover:shadow-md',
       ghost: 'bg-transparent text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 focus:ring-neutral-200',
-      danger: 'bg-red-600 text-white hover:bg-red-700 shadow-sm focus:ring-red-500',
+      danger: 'bg-gradient-to-r from-red-600 to-red-700 text-white hover:shadow-lg hover:shadow-red-500/40 focus:ring-red-500',
     };
 
     const sizes = {
@@ -34,9 +34,12 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         disabled={disabled || isLoading}
         {...props}
       >
-        {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        {!isLoading && leftIcon && <span className="mr-2">{leftIcon}</span>}
-        {children}
+        <span className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-500"></span>
+        <span className="relative inline-flex items-center gap-2">
+          {isLoading && <Loader2 className="h-4 w-4 animate-spin" />}
+          {!isLoading && leftIcon && <span>{leftIcon}</span>}
+          {children}
+        </span>
       </button>
     );
   }

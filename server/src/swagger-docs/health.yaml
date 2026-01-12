@@ -1,0 +1,52 @@
+paths:
+  /api/health:
+    get:
+      tags:
+        - Health
+      summary: Health check endpoint
+      description: Returns service status, database connectivity, and memory usage
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [ok, degraded]
+                  timestamp:
+                    type: string
+                    format: date-time
+                  database:
+                    type: object
+                    properties:
+                      connected:
+                        type: boolean
+                      readyState:
+                        type: integer
+                  memory:
+                    type: object
+                    properties:
+                      heapUsedMB:
+                        type: number
+                      heapTotalMB:
+                        type: number
+                      rssMB:
+                        type: number
+                  uptime:
+                    type: number
+                    description: Server uptime in seconds
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [error]
+                  error:
+                    type: string

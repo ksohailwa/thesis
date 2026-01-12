@@ -19,6 +19,14 @@ import { Assignment } from '../models/Assignment';
 import { User } from '../models/User';
 import { toDbLabel } from '../utils/labelMapper';
 import { clearAnalyticsCache } from '../utils/analyticsCache';
+import { WordMetadata } from '../models/WordMetadata';
+import { InterventionAttempt } from '../models/InterventionAttempt';
+import {
+  wordMetadataSystem,
+  wordMetadataUser,
+  sentenceValidationSystem,
+  sentenceValidationUser,
+} from '../prompts';
 import type {
   WordOccurrence,
   NoiseOccurrence,
@@ -437,10 +445,10 @@ router.post('/join', requireAuth, requireRole('student'), async (req: AuthedRequ
         )
       ) {
         picks.push(u);
-        if (picks.length >= 5) break;
+        if (picks.length >= 4) break;
       }
     }
-    const occurrences = picks.slice(0, 5).map((o, i) => ({
+    const occurrences = picks.slice(0, 4).map((o, i) => ({
       story: o.story,
       occurrence: i + 1,
       paragraphIndex: o.paragraphIndex,
@@ -759,8 +767,8 @@ router.post('/hint', requireAuth, requireRole('student'), async (req: AuthedRequ
   if (parsed.data.phase === 'baseline' || parsed.data.phase === 'recall') {
     return res.status(403).json({ error: 'Hints disabled for this phase' });
   }
-  if (typeof parsed.data.occurrenceIndex === 'number' && parsed.data.occurrenceIndex >= 5) {
-    return res.status(403).json({ error: 'Hints disabled for 5th occurrence' });
+  if (typeof parsed.data.occurrenceIndex === 'number' && parsed.data.occurrenceIndex >= 4) {
+    return res.status(403).json({ error: 'Hints disabled for 4th occurrence' });
   }
   if (parsed.data.abCondition === 'without-hints') {
     return res.status(403).json({ error: 'Hints disabled for this phase' });
@@ -835,7 +843,9 @@ router.post('/hint', requireAuth, requireRole('student'), async (req: AuthedRequ
   try {
     if (config.openaiApiKey) {
       const openai = new OpenAI({ apiKey: config.openaiApiKey });
-      const prompt = `Provide a brief, level-appropriate ${stage} hint for the word "${targetWord}". Language: ${locale}. Do not reveal full spelling or include the target word. Keep under 20 words. Context: ${(parsed.data.context || '').slice(0, 280)}. Student attempt: "${latestAttempt.slice(0, 120)}".`;
+      const prompt = `Give a VERY VAGUE spelling hint. Language: ${locale}.
+RULES: NEVER reveal the word, parts of it, syllables, letter positions, or phonetic breakdowns. Only say things like "check for double letters" or "look at the ending". Keep under 15 words.
+Student attempt: "${latestAttempt.slice(0, 60)}".`;
       const completion = await openai.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [{ role: 'user', content: prompt }],
@@ -1059,7 +1069,7 @@ router.post(
     const hintsEnabledForStory = (assignment as any).hintsStory
       ? (assignment as any).hintsStory === requestedStory
       : cond === 'with-hints';
-    const canHint = hintsEnabledForStory && occurrenceIndex < 5;
+    const canHint = hintsEnabledForStory && occurrenceIndex < 4;
     return res.json({ isCorrect, correctnessByPosition, canHint });
   }
 );
@@ -1074,14 +1084,16 @@ router.post('/test-hint', requireAuth, requireRole('student'), async (req: Authe
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { targetWord, latestAttempt, uiLanguage, occurrenceIndex } = parsed.data;
-  if (typeof occurrenceIndex === 'number' && occurrenceIndex >= 5) {
-    return res.status(403).json({ error: 'Hints disabled for 5th occurrence' });
+  if (typeof occurrenceIndex === 'number' && occurrenceIndex >= 4) {
+    return res.status(403).json({ error: 'Hints disabled for 4th occurrence' });
   }
-  const base = `Focus on the tricky part of "${targetWord}". Check vowels/consonants and length.`;
+  const base = `Check for any double letters or silent letters.`;
   if (!config.openaiApiKey) return res.json({ hint: base, used: 'mock' });
   try {
     const openai = new OpenAI({ apiKey: config.openaiApiKey });
-    const prompt = `Provide a brief, non-revealing hint for spelling "${targetWord}". Attempt: "${(latestAttempt || '').slice(0, 80)}". Language: ${uiLanguage}. Keep under 20 words.`;
+    const prompt = `Give a VERY VAGUE spelling hint. Language: ${uiLanguage}.
+RULES: NEVER reveal the word, parts of it, syllables, letter positions, or phonetic breakdowns. Only say things like "check for double letters" or "look at the ending". Keep under 15 words.
+Student attempt: "${(latestAttempt || '').slice(0, 60)}".`;
     const r = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
@@ -1185,6 +1197,496 @@ router.post(
       // ignore logging failures
     }
     return res.json({ scores, average: avg });
+  }
+);
+
+// =====================================================
+// INTERVENTION ENDPOINTS
+// =====================================================
+
+// Get word metadata for intervention exercises
+router.get(
+  '/word-metadata/:experimentId/:word',
+  requireAuth,
+  requireRole('student'),
+  async (req: AuthedRequest, res) => {
+    const { experimentId, word } = req.params;
+    if (!Types.ObjectId.isValid(experimentId)) {
+      return res.status(400).json({ error: 'Invalid experiment ID' });
+    }
+
+    // Try to find existing metadata
+    let metadata = await WordMetadata.findOne({
+      experiment: experimentId,
+      word: { $regex: new RegExp(`^${word}$`, 'i') },
+    });
+
+    // If not found, generate it
+    if (!metadata) {
+      const exp = await Experiment.findById(experimentId);
+      if (!exp) return res.status(404).json({ error: 'Experiment not found' });
+
+      const oa = getOpenAI();
+      if (oa) {
+        try {
+          const r = await oa.chat.completions.create({
+            model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+            response_format: { type: 'json_object' },
+            temperature: 0.3,
+            messages: [
+              { role: 'system', content: wordMetadataSystem() },
+              { role: 'user', content: wordMetadataUser(word, exp.cefr || exp.level || 'B1') },
+            ],
+          });
+          const txt = r.choices?.[0]?.message?.content || '{}';
+          const data = JSON.parse(txt);
+
+          metadata = await WordMetadata.create({
+            experiment: experimentId,
+            word: word.toLowerCase(),
+            definition: data.definition || `Definition for ${word}`,
+            partOfSpeech: data.partOfSpeech || '',
+            distractorDefinitions: data.distractorDefinitions || [],
+            commonCollocations: data.commonCollocations || ['make', 'have', 'get'],
+            exampleSentences: data.exampleSentences || [],
+            syllables: data.syllables || [],
+          });
+        } catch (e) {
+          // Fallback if LLM fails
+          metadata = await WordMetadata.create({
+            experiment: experimentId,
+            word: word.toLowerCase(),
+            definition: `A word meaning related to ${word}`,
+            partOfSpeech: '',
+            distractorDefinitions: [
+              'Something completely different',
+              'An unrelated concept',
+              'A different meaning entirely',
+            ],
+            commonCollocations: ['make', 'have', 'get'],
+            exampleSentences: [],
+            syllables: [],
+          });
+        }
+      } else {
+        // No OpenAI - use fallback
+        metadata = await WordMetadata.create({
+          experiment: experimentId,
+          word: word.toLowerCase(),
+          definition: `A word meaning related to ${word}`,
+          partOfSpeech: '',
+          distractorDefinitions: [
+            'Something completely different',
+            'An unrelated concept',
+            'A different meaning entirely',
+          ],
+          commonCollocations: ['make', 'have', 'get'],
+          exampleSentences: [],
+          syllables: [],
+        });
+      }
+    }
+
+    return res.json({
+      word: metadata.word,
+      definition: metadata.definition,
+      partOfSpeech: metadata.partOfSpeech,
+      distractorDefinitions: metadata.distractorDefinitions,
+      commonCollocations: metadata.commonCollocations,
+      exampleSentences: metadata.exampleSentences,
+      syllables: metadata.syllables,
+    });
+  }
+);
+
+// Start intervention session
+router.post(
+  '/intervention/start',
+  requireAuth,
+  requireRole('student'),
+  async (req: AuthedRequest, res) => {
+    const schema = z.object({
+      experimentId: z.string(),
+      storyLabel: z.enum(['A', 'B']),
+      targetWord: z.string(),
+      occurrenceIndex: z.number().int().min(1),
+      paragraphIndex: z.number().int().min(0),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const { experimentId, storyLabel, targetWord, occurrenceIndex, paragraphIndex } = parsed.data;
+
+    const story = await Story.findOne({ experiment: experimentId, label: storyLabel });
+    if (!story) return res.status(404).json({ error: 'Story not found' });
+
+    // Get or create intervention attempt
+    let intervention = await InterventionAttempt.findOne({
+      experiment: experimentId,
+      student: req.user!.sub,
+      story: story._id,
+      targetWord: targetWord.toLowerCase(),
+      occurrenceIndex,
+    });
+
+    if (!intervention) {
+      intervention = await InterventionAttempt.create({
+        experiment: experimentId,
+        student: req.user!.sub,
+        story: story._id,
+        targetWord: targetWord.toLowerCase(),
+        occurrenceIndex,
+        paragraphIndex,
+        startedAt: new Date(),
+      });
+    }
+
+    // Log event
+    try {
+      await Event.create({
+        experiment: experimentId,
+        student: req.user!.sub,
+        type: 'intervention_started',
+        payload: { targetWord, occurrenceIndex, paragraphIndex, storyLabel },
+        ts: new Date(),
+      });
+      clearAnalyticsCache();
+    } catch {
+      // ignore
+    }
+
+    return res.json({
+      interventionId: intervention._id,
+      currentExercise: intervention.mcqCompleted ? (intervention.jumbleCompleted ? 3 : 2) : 1,
+      mcqCompleted: intervention.mcqCompleted,
+      jumbleCompleted: intervention.jumbleCompleted,
+      sentenceCompleted: intervention.sentenceCompleted,
+      allCompleted: intervention.allExercisesCompleted,
+    });
+  }
+);
+
+// Submit MCQ answer
+router.post(
+  '/intervention/mcq',
+  requireAuth,
+  requireRole('student'),
+  async (req: AuthedRequest, res) => {
+    const schema = z.object({
+      interventionId: z.string(),
+      selectedAnswer: z.string(),
+      correctAnswer: z.string(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const { interventionId, selectedAnswer, correctAnswer } = parsed.data;
+
+    const intervention = await InterventionAttempt.findById(interventionId);
+    if (!intervention) return res.status(404).json({ error: 'Intervention not found' });
+
+    const isCorrect = selectedAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase();
+
+    intervention.mcqAttempts.push({
+      selectedAnswer,
+      correctAnswer,
+      isCorrect,
+      timestamp: new Date(),
+    });
+
+    if (isCorrect) {
+      intervention.mcqCompleted = true;
+    }
+
+    await intervention.save();
+
+    // Log event
+    try {
+      await Event.create({
+        experiment: intervention.experiment,
+        student: req.user!.sub,
+        type: 'mcq_attempt',
+        payload: {
+          targetWord: intervention.targetWord,
+          selectedAnswer,
+          correctAnswer,
+          isCorrect,
+          attemptNumber: intervention.mcqAttempts.length,
+        },
+        ts: new Date(),
+      });
+      clearAnalyticsCache();
+    } catch {
+      // ignore
+    }
+
+    return res.json({
+      isCorrect,
+      mcqCompleted: intervention.mcqCompleted,
+      attemptCount: intervention.mcqAttempts.length,
+    });
+  }
+);
+
+// Submit jumble answer
+router.post(
+  '/intervention/jumble',
+  requireAuth,
+  requireRole('student'),
+  async (req: AuthedRequest, res) => {
+    const schema = z.object({
+      interventionId: z.string(),
+      arrangement: z.string(),
+      targetWord: z.string(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const { interventionId, arrangement, targetWord } = parsed.data;
+
+    const intervention = await InterventionAttempt.findById(interventionId);
+    if (!intervention) return res.status(404).json({ error: 'Intervention not found' });
+
+    const isCorrect = arrangement.trim().toLowerCase() === targetWord.trim().toLowerCase();
+
+    intervention.jumbleAttempts.push({
+      arrangement,
+      isCorrect,
+      timestamp: new Date(),
+    });
+
+    if (isCorrect) {
+      intervention.jumbleCompleted = true;
+    }
+
+    await intervention.save();
+
+    // Log event
+    try {
+      await Event.create({
+        experiment: intervention.experiment,
+        student: req.user!.sub,
+        type: 'jumble_attempt',
+        payload: {
+          targetWord: intervention.targetWord,
+          arrangement,
+          isCorrect,
+          attemptNumber: intervention.jumbleAttempts.length,
+        },
+        ts: new Date(),
+      });
+      clearAnalyticsCache();
+    } catch {
+      // ignore
+    }
+
+    return res.json({
+      isCorrect,
+      jumbleCompleted: intervention.jumbleCompleted,
+      attemptCount: intervention.jumbleAttempts.length,
+    });
+  }
+);
+
+// Submit sentence
+router.post(
+  '/intervention/sentence',
+  requireAuth,
+  requireRole('student'),
+  async (req: AuthedRequest, res) => {
+    const schema = z.object({
+      interventionId: z.string(),
+      sentence: z.string(),
+      targetWord: z.string(),
+      baseWord: z.string(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const { interventionId, sentence, targetWord, baseWord } = parsed.data;
+
+    const intervention = await InterventionAttempt.findById(interventionId);
+    if (!intervention) return res.status(404).json({ error: 'Intervention not found' });
+
+    // Validate sentence using LLM or fallback
+    let isValid = false;
+    let usedTargetWord = false;
+    let usedBaseWord = false;
+    let feedback = '';
+
+    const oa = getOpenAI();
+    if (oa) {
+      try {
+        const r = await oa.chat.completions.create({
+          model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+          response_format: { type: 'json_object' },
+          temperature: 0.2,
+          messages: [
+            { role: 'system', content: sentenceValidationSystem() },
+            { role: 'user', content: sentenceValidationUser(sentence, targetWord, baseWord) },
+          ],
+        });
+        const txt = r.choices?.[0]?.message?.content || '{}';
+        const data = JSON.parse(txt);
+        isValid = !!data.isValid;
+        usedTargetWord = !!data.usedTargetWord;
+        usedBaseWord = !!data.usedBaseWord;
+        feedback = data.feedback || '';
+      } catch {
+        // Fallback: simple check
+        const lower = sentence.toLowerCase();
+        usedTargetWord = lower.includes(targetWord.toLowerCase());
+        usedBaseWord = lower.includes(baseWord.toLowerCase());
+        isValid = usedTargetWord && usedBaseWord && sentence.trim().length >= 10;
+        feedback = isValid ? 'Good job!' : 'Make sure to use both words in a complete sentence.';
+      }
+    } else {
+      // No OpenAI - simple check
+      const lower = sentence.toLowerCase();
+      usedTargetWord = lower.includes(targetWord.toLowerCase());
+      usedBaseWord = lower.includes(baseWord.toLowerCase());
+      isValid = usedTargetWord && usedBaseWord && sentence.trim().length >= 10;
+      feedback = isValid ? 'Good job!' : 'Make sure to use both words in a complete sentence.';
+    }
+
+    intervention.sentenceAttempts.push({
+      sentence,
+      usedTargetWord,
+      usedBaseWord,
+      baseWord,
+      isValid,
+      feedback,
+      timestamp: new Date(),
+    });
+
+    if (isValid) {
+      intervention.sentenceCompleted = true;
+    }
+
+    await intervention.save();
+
+    // Log event
+    try {
+      await Event.create({
+        experiment: intervention.experiment,
+        student: req.user!.sub,
+        type: 'sentence_attempt',
+        payload: {
+          targetWord: intervention.targetWord,
+          baseWord,
+          sentence,
+          isValid,
+          usedTargetWord,
+          usedBaseWord,
+          attemptNumber: intervention.sentenceAttempts.length,
+        },
+        ts: new Date(),
+      });
+      clearAnalyticsCache();
+    } catch {
+      // ignore
+    }
+
+    return res.json({
+      isValid,
+      usedTargetWord,
+      usedBaseWord,
+      feedback,
+      sentenceCompleted: intervention.sentenceCompleted,
+      attemptCount: intervention.sentenceAttempts.length,
+    });
+  }
+);
+
+// Complete intervention
+router.post(
+  '/intervention/complete',
+  requireAuth,
+  requireRole('student'),
+  async (req: AuthedRequest, res) => {
+    const schema = z.object({
+      interventionId: z.string(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const { interventionId } = parsed.data;
+
+    const intervention = await InterventionAttempt.findById(interventionId);
+    if (!intervention) return res.status(404).json({ error: 'Intervention not found' });
+
+    // Check if all exercises are completed
+    if (
+      intervention.mcqCompleted &&
+      intervention.jumbleCompleted &&
+      intervention.sentenceCompleted
+    ) {
+      intervention.allExercisesCompleted = true;
+      intervention.completedAt = new Date();
+      intervention.totalTimeMs = Date.now() - intervention.startedAt.getTime();
+      await intervention.save();
+
+      // Log completion event
+      try {
+        await Event.create({
+          experiment: intervention.experiment,
+          student: req.user!.sub,
+          type: 'intervention_completed',
+          payload: {
+            targetWord: intervention.targetWord,
+            occurrenceIndex: intervention.occurrenceIndex,
+            totalTimeMs: intervention.totalTimeMs,
+            mcqAttempts: intervention.mcqAttempts.length,
+            jumbleAttempts: intervention.jumbleAttempts.length,
+            sentenceAttempts: intervention.sentenceAttempts.length,
+          },
+          ts: new Date(),
+        });
+        clearAnalyticsCache();
+      } catch {
+        // ignore
+      }
+    }
+
+    return res.json({
+      allCompleted: intervention.allExercisesCompleted,
+      totalTimeMs: intervention.totalTimeMs,
+    });
+  }
+);
+
+// Get intervention status (for resume after refresh)
+router.get(
+  '/intervention/status/:experimentId/:storyLabel/:word/:occurrenceIndex',
+  requireAuth,
+  requireRole('student'),
+  async (req: AuthedRequest, res) => {
+    const { experimentId, storyLabel, word, occurrenceIndex } = req.params;
+
+    const story = await Story.findOne({ experiment: experimentId, label: storyLabel });
+    if (!story) return res.status(404).json({ error: 'Story not found' });
+
+    const intervention = await InterventionAttempt.findOne({
+      experiment: experimentId,
+      student: req.user!.sub,
+      story: story._id,
+      targetWord: word.toLowerCase(),
+      occurrenceIndex: parseInt(occurrenceIndex, 10),
+    });
+
+    if (!intervention) {
+      return res.json({ exists: false });
+    }
+
+    return res.json({
+      exists: true,
+      interventionId: intervention._id,
+      currentExercise: intervention.mcqCompleted ? (intervention.jumbleCompleted ? 3 : 2) : 1,
+      mcqCompleted: intervention.mcqCompleted,
+      jumbleCompleted: intervention.jumbleCompleted,
+      sentenceCompleted: intervention.sentenceCompleted,
+      allCompleted: intervention.allExercisesCompleted,
+    });
   }
 );
 

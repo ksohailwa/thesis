@@ -7,6 +7,7 @@ import { EffortResponse } from '../models/EffortResponse';
 import { Experiment } from '../models/Experiment';
 import { Assignment } from '../models/Assignment';
 import { User } from '../models/User';
+import { InterventionAttempt } from '../models/InterventionAttempt';
 import { getAnalyticsCache, setAnalyticsCache } from '../utils/analyticsCache';
 
 function toCsv(rows: (string | number | boolean | null | undefined)[][]) {
@@ -263,6 +264,14 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
     recall: 0,
   };
 
+  // Intervention metrics
+  let totalInterventions = 0;
+  let completedInterventions = 0;
+  let totalMcqAttempts = 0;
+  let totalJumbleAttempts = 0;
+  let totalSentenceAttempts = 0;
+  const interventionTimeMs: number[] = [];
+
   const filteredEvents = filterEvents(events, filters, allowedStudentIds);
 
   const ensureStudent = (id: string) => {
@@ -279,6 +288,12 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
         defTotal: 0,
         defCorrect: 0,
         recallScores: [],
+        // Intervention metrics per student
+        interventions: 0,
+        interventionsCompleted: 0,
+        mcqAttempts: 0,
+        jumbleAttempts: 0,
+        sentenceAttempts: 0,
       };
     }
     return perStudent[id];
@@ -392,6 +407,36 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
       }
     }
 
+    // Intervention events
+    if (e.type === 'intervention_started') {
+      totalInterventions += 1;
+      student.interventions += 1;
+    }
+
+    if (e.type === 'intervention_completed') {
+      completedInterventions += 1;
+      student.interventionsCompleted += 1;
+      const timeMs = (e.payload as any)?.totalTimeMs;
+      if (typeof timeMs === 'number' && timeMs > 0) {
+        interventionTimeMs.push(timeMs);
+      }
+    }
+
+    if (e.type === 'mcq_attempt') {
+      totalMcqAttempts += 1;
+      student.mcqAttempts += 1;
+    }
+
+    if (e.type === 'jumble_attempt') {
+      totalJumbleAttempts += 1;
+      student.jumbleAttempts += 1;
+    }
+
+    if (e.type === 'sentence_attempt') {
+      totalSentenceAttempts += 1;
+      student.sentenceAttempts += 1;
+    }
+
     timeline[day] = bucket;
   }
 
@@ -456,6 +501,10 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
       definitionAccuracy,
       recallAvg,
       timeOnTaskMin: minutes,
+      // Intervention metrics
+      interventions: s.interventions,
+      interventionsCompleted: s.interventionsCompleted,
+      interventionExercises: s.mcqAttempts + s.jumbleAttempts + s.sentenceAttempts,
     };
   });
 
@@ -489,6 +538,11 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
     };
   });
 
+  // Calculate average intervention time
+  const avgInterventionTimeMs = interventionTimeMs.length
+    ? Math.round(interventionTimeMs.reduce((s, x) => s + x, 0) / interventionTimeMs.length)
+    : 0;
+
   return {
     counts: {
       students: allowedStudentIds.length,
@@ -499,6 +553,18 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
       recallAvg: recallScores.length
         ? Math.round((recallScores.reduce((s, x) => s + x, 0) / recallScores.length) * 100) / 100
         : 0,
+      // Intervention metrics
+      interventions: totalInterventions,
+      interventionsCompleted: completedInterventions,
+      interventionCompletionRate: totalInterventions
+        ? Math.round((completedInterventions / totalInterventions) * 100)
+        : 0,
+      avgInterventionTimeSec: Math.round(avgInterventionTimeMs / 1000),
+      exerciseAttempts: {
+        mcq: totalMcqAttempts,
+        jumble: totalJumbleAttempts,
+        sentence: totalSentenceAttempts,
+      },
     },
     byStory: {
       A: {

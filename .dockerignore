@@ -1,0 +1,60 @@
+# .dockerignore
+# Dependencies
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Build outputs
+dist/
+build/
+coverage/
+.next/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Version control
+.git
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+logs/
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary
+temp/
+tmp/
+*.tmp
+
+# Testing
+jest/
+.nyc_output/
+
+# Documentation
+docs/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.circleci/
+
+# Project specific
+scripts/
+*.md
+fallback_snapshot.zip
+temp_out.txt
+temp_patch.diff
+New\ Text\ Document.txt

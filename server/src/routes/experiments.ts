@@ -9,6 +9,7 @@ import { Assignment } from '../models/Assignment';
 import { Condition } from '../models/Condition';
 import { Attempt } from '../models/Attempt';
 import { Event } from '../models/Event';
+import { WordMetadata } from '../models/WordMetadata';
 import { getOpenAI, generateSentenceTTS } from '../utils/openai';
 import {
   wordPoolSystem,
@@ -17,6 +18,8 @@ import {
   storyUser,
   storySystemBold,
   storyUserBold,
+  wordMetadataSystem,
+  wordMetadataUser,
 } from '../prompts';
 import { toConditionLabel } from '../utils/labelMapper';
 import { parseBoldMarkers } from '../utils/boldParser';
@@ -49,6 +52,59 @@ function normalizeWords(words: unknown[] = []) {
     .map((w) => w.trim())
     .filter((w) => w.length > 0)
     .map((w) => w.toLowerCase());
+}
+
+// Generate word metadata for intervention exercises
+async function generateWordMetadataForExperiment(
+  experimentId: string,
+  words: string[],
+  cefr: string,
+  openai: any
+) {
+  const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+
+  for (const word of words) {
+    // Check if metadata already exists
+    const existing = await WordMetadata.findOne({
+      experiment: experimentId,
+      word: { $regex: new RegExp(`^${word}$`, 'i') },
+    });
+
+    if (existing) continue;
+
+    try {
+      const r = await openai.chat.completions.create({
+        model: OPENAI_MODEL,
+        response_format: { type: 'json_object' },
+        temperature: 0.3,
+        messages: [
+          { role: 'system', content: wordMetadataSystem() },
+          { role: 'user', content: wordMetadataUser(word, cefr) },
+        ],
+      });
+
+      const txt = r.choices?.[0]?.message?.content || '{}';
+      const data = JSON.parse(txt);
+
+      await WordMetadata.create({
+        experiment: experimentId,
+        word: word.toLowerCase(),
+        definition: data.definition || `Definition for ${word}`,
+        partOfSpeech: data.partOfSpeech || '',
+        distractorDefinitions: data.distractorDefinitions || [],
+        commonCollocations: data.commonCollocations || ['make', 'have', 'get'],
+        exampleSentences: data.exampleSentences || [],
+        syllables: data.syllables || [],
+      });
+
+      logger.info(`Generated word metadata for "${word}"`, { experimentId });
+    } catch (e) {
+      logger.warn(`Failed to generate metadata for "${word}"`, {
+        experimentId,
+        error: (e as any)?.message,
+      });
+    }
+  }
 }
 
 function safeWordFile(word: string) {
@@ -126,7 +182,7 @@ async function selectNoiseOccurrencesLLM(
         {
           role: 'system',
           content:
-            'Pick exactly 2 non-target words per paragraph from the provided story. Do not choose words in the same sentence as target words, and avoid words adjacent to target words. Only use words that appear in the text. Return JSON only.',
+            'Pick exactly 1 non-target word per paragraph from the provided story. Do not choose words in the same sentence as target words, and avoid words adjacent to target words. Only use words that appear in the text. Return JSON only.',
         },
         {
           role: 'user',
@@ -162,7 +218,7 @@ async function selectNoiseOccurrencesLLM(
         .filter((o) => o.paragraphIndex === pIdx)
         .filter((o) => typeof o.charStart === 'number' && typeof o.charEnd === 'number')
         .map((o) => ({ start: o.charStart as number, end: o.charEnd as number }));
-      const picks = (byParagraph.get(pIdx) || []).slice(0, 2);
+      const picks = (byParagraph.get(pIdx) || []).slice(0, 1);
       picks.forEach((pick) => {
         const occ = findWordOccurrence(p, pick.word, targetRanges);
         if (!occ) return;
@@ -401,10 +457,10 @@ router.post(
     const allWords = [...wordsH, ...wordsN];
 
     const validateStoryCounts = (storyWords: string[], paragraphCount: number, occ: any[]) => {
-      if (paragraphCount !== 5) return false;
+      if (paragraphCount !== 4) return false;
       for (const w of storyWords) {
         const count = occ.filter((o: any) => o.word === w).length;
-        if (count < 5) return false;
+        if (count < 4) return false;
       }
       return true;
     };
@@ -429,7 +485,7 @@ router.post(
 
       let paragraphs: string[] = [];
       let occ: any[] = [];
-      const paragraphCount = 5;
+      const paragraphCount = 4;
       if (oa) {
         try {
           const r = await oa.chat.completions.create({
@@ -512,7 +568,7 @@ router.post(
     const storyKey = map === 'A' ? 'story1' : 'story2';
     const savedWords = (exp.stories as any)?.[storyKey]?.targetWords || exp.targetWords || [];
     const words = (parsed.data.targetWords || savedWords || []).slice(0, 5);
-    const paragraphCount = 5;
+    const paragraphCount = 4;
     const oa = getOpenAI();
     let paragraphs: string[] = [];
     let occ: any[] = [];
@@ -609,9 +665,9 @@ router.post(
       if (occList.length > 0) {
         for (const w of words) {
           const c = occList.filter((o: any) => o.word === w).length;
-          if (c < 5) {
+          if (c < 4) {
             out.ok = false;
-            out.violations.push(`Word "${w}" must appear at least 5 times (got ${c}).`);
+            out.violations.push(`Word "${w}" must appear at least 4 times (got ${c}).`);
           }
 
           // No more than one occurrence of the same word per paragraph
@@ -711,8 +767,8 @@ router.post(
       }
     }
 
-    // Derive noise words AFTER story text is finalized (2-3 random non-target words per paragraph)
-    if (paragraphs.length === 5) {
+    // Derive noise words AFTER story text is finalized (1 noise word per paragraph)
+    if (paragraphs.length === 4) {
       const targetSet = new Set(words.map((w: string) => w.toLowerCase()));
 
       // Helper to map char positions to sentenceIndex
@@ -813,7 +869,7 @@ router.post(
           const pool = basePool.filter((w) => !isAdjacentToTarget(w));
           if (!pool.length) return;
           pool.sort((a, b) => a.start - b.start);
-          pool.slice(0, 2).forEach((pick) => {
+          pool.slice(0, 1).forEach((pick) => {
             noiseOccurrences.push({
               word: pick.word,
               paragraphIndex: pIdx,
@@ -845,6 +901,14 @@ router.post(
     );
     const patch: any = map === 'A' ? { 'storyRefs.story1': s._id } : { 'storyRefs.story2': s._id };
     await Experiment.findByIdAndUpdate(exp._id, { $set: patch });
+
+    // Generate word metadata for intervention exercises (async, non-blocking)
+    if (words.length && oa) {
+      generateWordMetadataForExperiment(exp._id.toString(), words, exp.cefr || exp.level || 'B1', oa).catch(
+        (e) => logger.warn('Word metadata generation failed', { error: (e as any)?.message })
+      );
+    }
+
     return res.json({ ok: true, storyId: s._id, noiseOccurrences: s.noiseOccurrences || [] });
   }
 );
@@ -1164,7 +1228,7 @@ router.get('/:id/story/:label', requireAuth, requireRole('teacher'), async (req,
         const pool = basePool.filter((c) => !isAdjacentToTarget(c));
         if (!pool.length) return;
         pool.sort((a, b) => a.start - b.start);
-        pool.slice(0, 2).forEach((pick) => {
+        pool.slice(0, 1).forEach((pick) => {
           noiseOccurrences.push({
             word: pick.word,
             paragraphIndex: pIdx,

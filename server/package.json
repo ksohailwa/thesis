@@ -30,6 +30,8 @@
     "mongoose": "^8.6.2",
     "morgan": "^1.10.1",
     "openai": "^4.67.3",
+    "swagger-jsdoc": "^6.2.8",
+    "swagger-ui-express": "^5.0.1",
     "winston": "^3.18.3",
     "zod": "^3.23.8"
   },
@@ -43,6 +45,8 @@
     "@types/morgan": "^1.9.10",
     "@types/node": "^20.11.30",
     "@types/supertest": "^6.0.3",
+    "@types/swagger-jsdoc": "^6.0.4",
+    "@types/swagger-ui-express": "^4.1.8",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
     "@typescript-eslint/parser": "^6.21.0",
     "eslint": "^8.57.1",

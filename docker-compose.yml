@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7.0-alpine
+    container_name: spellwise-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-password}
+      MONGO_INITDB_DATABASE: spellwise
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - spellwise-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # SpellWise Server
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: spellwise-server
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: 4000
+      MONGO_URI: mongodb://${MONGO_USERNAME:-admin}:${MONGO_PASSWORD:-password}@mongodb:27017/spellwise?authSource=admin
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-your-access-secret-key-change-me}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-your-refresh-secret-key-change-me}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    ports:
+      - "${SERVER_PORT:-4000}:4000"
+    volumes:
+      - ./server/static:/app/server/static
+      - ./logs:/app/logs
+    networks:
+      - spellwise-network
+    healthcheck:
+      test: curl -f http://localhost:4000/health || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+  # SpellWise Client
+  client:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: spellwise-client
+    depends_on:
+      - server
+    ports:
+      - "${CLIENT_PORT:-3000}:3000"
+    networks:
+      - spellwise-network
+    healthcheck:
+      test: wget --quiet --tries=1 --spider http://localhost:3000/ || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local
+
+networks:
+  spellwise-network:
+    driver: bridge

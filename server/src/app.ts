@@ -21,6 +21,7 @@ import analyticsRouter from './routes/analytics';
 import demoRouter from './routes/demo';
 import demoLoginRouter from './routes/demoLogin';
 import jobsRouter from './routes/jobs';
+import { setupSwagger } from './swagger';
 
 const env = process.env.NODE_ENV || 'development';
 const configValidation = validateConfig();
@@ -111,6 +112,9 @@ app.use('/api/analytics', analyticsRouter);
 app.use('/api', demoRouter);
 app.use('/api', demoLoginRouter);
 app.use('/api/jobs', jobsRouter);
+
+// API Documentation
+setupSwagger(app);
 
 // Static audio hosting
 const audioDir = path.join(process.cwd(), 'static', 'audio');

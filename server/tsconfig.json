@@ -5,6 +5,10 @@
                             "moduleResolution": "Node",
                             "outDir": "dist",
                             "rootDir": "src",
+                            "baseUrl": ".",
+                            "paths": {
+                                "@spellwise/shared": ["../shared/src/index.ts"]
+                            },
                             "strict": true,
                             "strictNullChecks": true,
                             "strictFunctionTypes": true,
@@ -15,20 +19,12 @@
                             "forceConsistentCasingInFileNames": true
                         },
     "include": [
-                    "src/index.ts",
-                    "src/config.ts",
-                    "src/db.ts",
-                    "src/types.d.ts",
-                    "src/middleware/**/*.ts",
-                    "src/models/**/*.ts",
-                    "src/routes/**/*.ts",
-                    "src/utils/**/*.ts",
-                    "src/queue.ts"
+                    "src/**/*.ts"
                 ],
     "exclude": [
                     "node_modules",
                     "dist",
                     "**/*.test.ts",
-                    "**/__tests__"
+                    "**/__tests__/**"
                 ]
 }

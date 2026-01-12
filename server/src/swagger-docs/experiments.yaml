@@ -1,0 +1,256 @@
+paths:
+  /api/experiments:
+    get:
+      tags:
+        - Experiments
+      summary: List all experiments for the authenticated teacher
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of experiments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Experiment'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    post:
+      tags:
+        - Experiments
+      summary: Create a new experiment
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - title
+              properties:
+                title:
+                  type: string
+                description:
+                  type: string
+                cefr:
+                  type: string
+                  enum: [A1, A2, B1, B2, C1, C2]
+                targetWords:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '201':
+          description: Experiment created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Experiment'
+
+  /api/experiments/{id}:
+    get:
+      tags:
+        - Experiments
+      summary: Get experiment by ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Experiment details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Experiment'
+        '404':
+          description: Experiment not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+    patch:
+      tags:
+        - Experiments
+      summary: Update experiment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                description:
+                  type: string
+                cefr:
+                  type: string
+                targetWords:
+                  type: array
+                  items:
+                    type: string
+                status:
+                  type: string
+                  enum: [draft, live, closed]
+      responses:
+        '200':
+          description: Experiment updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Experiment'
+
+    delete:
+      tags:
+        - Experiments
+      summary: Delete experiment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Experiment deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+
+  /api/experiments/{id}/target-words:
+    post:
+      tags:
+        - Experiments
+      summary: Generate target word suggestions using AI
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cefr:
+                  type: string
+                count:
+                  type: integer
+                  default: 10
+      responses:
+        '200':
+          description: Word suggestions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  words:
+                    type: array
+                    items:
+                      type: string
+
+  /api/experiments/{id}/story-generation:
+    post:
+      tags:
+        - Experiments
+      summary: Generate stories using AI
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                targetWords:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Stories generated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  storyA:
+                    $ref: '#/components/schemas/Story'
+                  storyB:
+                    $ref: '#/components/schemas/Story'
+
+  /api/experiments/{id}/tts:
+    post:
+      tags:
+        - Experiments
+      summary: Generate text-to-speech audio for stories
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                story:
+                  type: string
+                  enum: [A, B]
+      responses:
+        '200':
+          description: TTS generation started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  audioUrl:
+                    type: string
+                  segments:
+                    type: array
+                    items:
+                      type: string
