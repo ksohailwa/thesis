@@ -1,0 +1,51 @@
+services:
+  mongodb:
+    image: mongo:7.0
+    container_name: spellwise-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-password}
+      MONGO_INITDB_DATABASE: spellwise
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - spellwise-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: spellwise-app
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      MONGO_URI: mongodb://${MONGO_USERNAME:-admin}:${MONGO_PASSWORD:-password}@mongodb:27017/spellwise?authSource=admin
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-change-this-secret}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-this-refresh-secret}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:4000}
+    ports:
+      - "${APP_PORT:-4000}:4000"
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - spellwise-network
+    restart: unless-stopped
+
+volumes:
+  mongodb_data:
+
+networks:
+  spellwise-network:
+    driver: bridge

@@ -539,8 +539,8 @@ router.post('/join', requireAuth, requireRole('student'), async (req: AuthedRequ
     tts2Url: storyB?.ttsAudioUrl || `/static/audio/${exp._id}/N.mp3`,
     tts1Segments: storyA?.ttsSegments || [],
     tts2Segments: storyB?.ttsSegments || [],
-    cues1: cuesFromStory(storyA),
-    cues2: cuesFromStory(storyB),
+    cues1: cuesFromStory(storyA ?? undefined),
+    cues2: cuesFromStory(storyB ?? undefined),
     schedule,
   });
 });

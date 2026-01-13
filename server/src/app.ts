@@ -133,7 +133,22 @@ app.use(
 );
 app.use('/static', express.static(staticDir));
 
-// 404 handler for unknown routes
+// Serve client build in production
+const clientDir = path.join(process.cwd(), 'server', 'static', 'client');
+if (env === 'production') {
+  app.use(express.static(clientDir));
+
+  // SPA fallback - serve index.html for client-side routes
+  app.get('*', (req, res, next) => {
+    // Skip API routes
+    if (req.path.startsWith('/api') || req.path.startsWith('/static')) {
+      return next();
+    }
+    res.sendFile(path.join(clientDir, 'index.html'));
+  });
+}
+
+// 404 handler for unknown API routes
 app.use((req, res) => {
   logger.warn('Route not found', { method: req.method, path: req.path });
   res.status(404).json({ error: 'Route not found' });
