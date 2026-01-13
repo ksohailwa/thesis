@@ -54,14 +54,22 @@ api.interceptors.response.use(
     }
 
     const originalRequest = error.config || {}
+    // Skip refresh loop for the refresh endpoint itself
+    if (originalRequest.url?.includes('/api/auth/refresh')) {
+      return Promise.reject(error)
+    }
     if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true
+      const state = useAuth.getState?.()
+      const stored = readStoredAuth() as any
+      const refresh = state?.refreshToken || stored.refreshToken || localStorage.getItem('refreshToken')
+      // Only try refresh if we have a refresh token
+      if (!refresh) {
+        return Promise.reject(error)
+      }
       try {
-        const state = useAuth.getState?.()
-        const stored = readStoredAuth() as any
-        const refresh = state?.refreshToken || stored.refreshToken || localStorage.getItem('refreshToken')
         const { data } = await api.post('/api/auth/refresh', undefined, {
-          headers: refresh ? { 'x-refresh': refresh } : undefined,
+          headers: { 'x-refresh': refresh },
         })
         if (data?.accessToken) {
           if (state?.setAuth && state.role && state.email) {

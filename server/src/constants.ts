@@ -20,9 +20,9 @@ export const SERVER = {
 // ============================================================================
 
 export const RATE_LIMIT = {
-  // Auth endpoints: 10 attempts per 15 minutes
-  AUTH_WINDOW_MS: 15 * 60 * 1000, // 15 minutes
-  AUTH_MAX_ATTEMPTS: 10,
+  // Auth endpoints: 50 attempts per 5 minutes
+  AUTH_WINDOW_MS: 5 * 60 * 1000, // 5 minutes
+  AUTH_MAX_ATTEMPTS: 50,
 
   // Heavy operations (story/TTS generation): 4 jobs per 15 minutes
   HEAVY_WINDOW_MS: 15 * 60 * 1000, // 15 minutes

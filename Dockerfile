@@ -20,6 +20,9 @@ COPY . .
 # Build shared, then server and client
 RUN npm run build --workspace=@spellwise/shared
 RUN npm run build --workspace=@spellwise/server
+
+# Build client with root base path for Docker
+ENV VITE_BASE_PATH=/
 RUN npm run build --workspace=@spellwise/client
 
 # Stage 2: Production server
