@@ -17,6 +17,9 @@ RUN npm ci
 # Copy source code
 COPY . .
 
+# Ensure server/static directory exists (for generated audio files)
+RUN mkdir -p /app/server/static/audio
+
 # Build shared, then server and client
 RUN npm run build --workspace=@spellwise/shared
 RUN npm run build --workspace=@spellwise/server
