@@ -9,6 +9,7 @@ export interface WordMetadata {
   commonCollocations: string[];
   exampleSentences: string[];
   syllables: string[];
+  audioUrl?: string | null;
 }
 
 interface InterventionState {

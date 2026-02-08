@@ -32,6 +32,9 @@ export default function StudentJoin() {
       if (data.storyOrder) sessionStorage.setItem('exp.storyOrder', data.storyOrder)
       if (data.hintsEnabledByStory) sessionStorage.setItem('exp.hintsEnabledByStory', JSON.stringify(data.hintsEnabledByStory))
       if (data.breakUntil) sessionStorage.setItem('exp.breakUntil', data.breakUntil)
+      if (data.recallUnlockAt) sessionStorage.setItem('exp.recallUnlockAt', data.recallUnlockAt)
+      if (data.story1CompletedAt) sessionStorage.setItem('exp.story1Complete', 'true')
+      if (data.story2CompletedAt) sessionStorage.setItem('exp.story2Complete', 'true')
       sessionStorage.setItem('exp.story1', JSON.stringify(data.story1 || {}))
       sessionStorage.setItem('exp.story2', JSON.stringify(data.story2 || {}))
       sessionStorage.setItem('exp.tts1', data.tts1Url || '')
@@ -47,8 +50,7 @@ export default function StudentJoin() {
         setAuth({
           accessToken: 'student-session',
           role: 'student',
-          email: auth.email || 'student@local',
-          demo: true
+          username: auth.username || 'student',
         })
       }
 

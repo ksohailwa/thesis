@@ -1,6 +1,6 @@
 /**
- * Parse bold markers (**word**) from LLM-generated story paragraphs.
- * Extracts target words and their positions for tracking occurrences.
+ * Parse bold markers (**word**) and noise markers (++word++) from LLM-generated story paragraphs.
+ * Extracts target words and noise words with their positions for tracking occurrences.
  */
 
 export interface ParsedOccurrence {
@@ -14,53 +14,90 @@ export interface ParsedOccurrence {
 export interface ParseResult {
   cleanParagraphs: string[];
   occurrences: ParsedOccurrence[];
+  noiseOccurrences: ParsedOccurrence[];
+}
+
+interface MarkerMatch {
+  word: string;
+  start: number;
+  end: number;
+  type: 'target' | 'noise';
 }
 
 export function parseBoldMarkers(rawParagraphs: string[]): ParseResult {
   const cleanParagraphs: string[] = [];
   const occurrences: ParsedOccurrence[] = [];
+  const noiseOccurrences: ParsedOccurrence[] = [];
 
   rawParagraphs.forEach((rawPara, paraIdx) => {
-    let cleanPara = '';
-    let sentenceIdx = 0;
+    // Find all markers (both target **word** and noise ++word++)
+    const markers: MarkerMatch[] = [];
 
-    // First try: Match **word** pattern
+    // Match **word** pattern for target words
     const boldRegex = /\*\*([^*]+)\*\*/g;
-    let lastIndex = 0;
     let match;
     while ((match = boldRegex.exec(rawPara)) !== null) {
-      const word = match[1].trim();
-      const boldStart = match.index;
-      const boldEnd = match.index + match[0].length;
+      markers.push({
+        word: match[1].trim(),
+        start: match.index,
+        end: match.index + match[0].length,
+        type: 'target',
+      });
+    }
 
-      // Add text before bold marker
-      const textBefore = rawPara.slice(lastIndex, boldStart);
+    // Match ++word++ pattern for noise words
+    const noiseRegex = /\+\+([^+]+)\+\+/g;
+    while ((match = noiseRegex.exec(rawPara)) !== null) {
+      markers.push({
+        word: match[1].trim(),
+        start: match.index,
+        end: match.index + match[0].length,
+        type: 'noise',
+      });
+    }
+
+    // Sort markers by position
+    markers.sort((a, b) => a.start - b.start);
+
+    // Build clean paragraph and track occurrences
+    let cleanPara = '';
+    let lastIndex = 0;
+
+    for (const marker of markers) {
+      // Add text before this marker
+      const textBefore = rawPara.slice(lastIndex, marker.start);
       cleanPara += textBefore;
       const charStartInPara = cleanPara.length;
 
       // Add word without markers
-      cleanPara += word;
+      cleanPara += marker.word;
       const charEndInPara = cleanPara.length;
 
-      // Count sentence index by periods in text before this word
-      const textUpToBold = rawPara.slice(0, boldStart);
-      sentenceIdx = (textUpToBold.match(/\./g) || []).length;
+      // Count sentence index by sentence-ending punctuation before this word
+      const textUpToMarker = rawPara.slice(0, marker.start);
+      const sentenceIdx = (textUpToMarker.match(/[.!?]+/g) || []).length;
 
-      occurrences.push({
-        word,
+      const occ: ParsedOccurrence = {
+        word: marker.word,
         paragraphIndex: paraIdx,
         sentenceIndex: sentenceIdx,
         charStart: charStartInPara,
         charEnd: charEndInPara,
-      });
+      };
 
-      lastIndex = boldEnd;
+      if (marker.type === 'target') {
+        occurrences.push(occ);
+      } else {
+        noiseOccurrences.push(occ);
+      }
+
+      lastIndex = marker.end;
     }
 
-    // Add remaining text after last bold marker
+    // Add remaining text after last marker
     cleanPara += rawPara.slice(lastIndex);
     cleanParagraphs.push(cleanPara);
   });
 
-  return { cleanParagraphs, occurrences };
+  return { cleanParagraphs, occurrences, noiseOccurrences };
 }

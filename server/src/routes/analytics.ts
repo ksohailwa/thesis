@@ -208,9 +208,10 @@ function buildDemoAnalytics(exp: any) {
 }
 
 async function computeExperimentAnalytics(experimentId: string, filters: AnalyticsFilters = {}) {
-  const [assignments, events] = await Promise.all([
+  const [assignments, events, effortResponses] = await Promise.all([
     Assignment.find({ experiment: experimentId }).populate('condition', 'type').lean(),
     Event.find({ experiment: experimentId }).lean(),
+    EffortResponse.find({}).lean(), // Query all, then filter by student
   ]);
   let allowedAssignments = assignments.slice();
   if (filters.condition) {
@@ -244,6 +245,7 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
     { attempts: number; correct: number; hints: number; definitions: number; recall: number }
   > = {};
   const timeOnTask: Record<string, { first?: Date; last?: Date }> = {};
+  const timePerStory: Record<string, { A: { first?: Date; last?: Date }; B: { first?: Date; last?: Date } }> = {};
   const confusion: Record<string, Record<string, number>> = {};
   const comparisons: Record<
     string,
@@ -282,12 +284,22 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
         studentId: id,
         username: (user as any).username || (user as any).email || 'unknown',
         condition: (assignment?.condition as any)?.type || 'unknown',
+        // Story assignment details
+        storyOrder: assignment?.storyOrder || null,
+        hintsStory: assignment?.hintsStory || null,
+        // Per-story tracking
+        storyAAttempts: 0,
+        storyACorrect: 0,
+        storyBAttempts: 0,
+        storyBCorrect: 0,
         attempts: 0,
         correct: 0,
         hints: 0,
         defTotal: 0,
         defCorrect: 0,
         recallScores: [],
+        delayedTestCompleted: false,
+        delayedTestScore: null as number | null,
         // Intervention metrics per student
         interventions: 0,
         interventionsCompleted: 0,
@@ -318,6 +330,15 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
       if (!t.first || ts < t.first) t.first = ts;
       if (!t.last || ts > t.last) t.last = ts;
       timeOnTask[sid] = t;
+
+      // Track time per story
+      const storyLabel = normalizeStoryLabel((e.payload as any)?.story);
+      if (storyLabel === 'A' || storyLabel === 'B') {
+        timePerStory[sid] = timePerStory[sid] || { A: {}, B: {} };
+        const st = timePerStory[sid][storyLabel];
+        if (!st.first || ts < st.first) st.first = ts;
+        if (!st.last || ts > st.last) st.last = ts;
+      }
     }
 
     if (e.type === 'attempt') {
@@ -330,6 +351,14 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
       if (correct) student.correct += 1;
       bucket.attempts += 1;
       if (correct) bucket.correct += 1;
+      // Track per-story attempts
+      if (story === 'A') {
+        student.storyAAttempts += 1;
+        if (correct) student.storyACorrect += 1;
+      } else if (story === 'B') {
+        student.storyBAttempts += 1;
+        if (correct) student.storyBCorrect += 1;
+      }
       if (word) {
         const w = String(word).toLowerCase();
         perWord[w] = perWord[w] || { total: 0, correct: 0 };
@@ -398,12 +427,18 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
 
     if (e.type === 'recall-attempt') {
       const scores = (e.payload as any)?.scores || [];
+      const isDelayed = (e.taskType as any) === 'delayed-recall' || (e.payload as any)?.delayed;
       if (Array.isArray(scores) && scores.length) {
         const avg = scores.reduce((s: number, i: any) => s + (i.score || 0), 0) / scores.length;
         recallScores.push(avg);
         student.recallScores.push(avg);
         bucket.recall += scores.length;
         funnel.recall += 1;
+        // Track delayed test completion
+        if (isDelayed) {
+          student.delayedTestCompleted = true;
+          student.delayedTestScore = Math.round(avg * 100) / 100;
+        }
       }
     }
 
@@ -477,6 +512,15 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
     };
   });
 
+  // Build effort response map per student
+  const effortByStudent: Record<string, number[]> = {};
+  effortResponses.forEach((e: any) => {
+    const sid = String(e.student);
+    if (!allowedStudentIds.includes(sid)) return;
+    effortByStudent[sid] = effortByStudent[sid] || [];
+    effortByStudent[sid].push(e.score);
+  });
+
   const students = Object.values(perStudent).map((s: any) => {
     const definitionAccuracy = s.defTotal ? Math.round((s.defCorrect / s.defTotal) * 100) : 0;
     const recallAvg = s.recallScores.length
@@ -491,16 +535,65 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
       tot.first && tot.last
         ? Math.max(0, Math.round((tot.last.getTime() - tot.first.getTime()) / 60000))
         : 0;
+
+    // Time per story
+    const storyTimes = timePerStory[s.studentId] || { A: {}, B: {} };
+    const timeStoryAMin = storyTimes.A.first && storyTimes.A.last
+      ? Math.max(0, Math.round((storyTimes.A.last.getTime() - storyTimes.A.first.getTime()) / 60000))
+      : 0;
+    const timeStoryBMin = storyTimes.B.first && storyTimes.B.last
+      ? Math.max(0, Math.round((storyTimes.B.last.getTime() - storyTimes.B.first.getTime()) / 60000))
+      : 0;
+
+    // Mental effort average
+    const efforts = effortByStudent[s.studentId] || [];
+    const avgMentalEffort = efforts.length
+      ? Math.round((efforts.reduce((sum, e) => sum + e, 0) / efforts.length) * 10) / 10
+      : null;
+
+    // Determine phase conditions based on storyOrder and hintsStory
+    let phase1Condition = null;
+    let phase1Story = null;
+    let phase2Condition = null;
+    let phase2Story = null;
+
+    if (s.storyOrder && s.hintsStory) {
+      const firstStory = s.storyOrder === 'A-first' ? 'A' : 'B';
+      const secondStory = s.storyOrder === 'A-first' ? 'B' : 'A';
+      phase1Story = firstStory;
+      phase2Story = secondStory;
+      phase1Condition = s.hintsStory === firstStory ? 'treatment' : 'control';
+      phase2Condition = s.hintsStory === secondStory ? 'treatment' : 'control';
+    }
+
     return {
       studentId: s.studentId,
       username: s.username,
       condition: s.condition,
+      // Phase details
+      storyOrder: s.storyOrder,
+      hintsStory: s.hintsStory,
+      phase1Condition,
+      phase1Story,
+      phase2Condition,
+      phase2Story,
+      // Per-story metrics
+      storyAAccuracy: s.storyAAttempts ? Math.round((s.storyACorrect / s.storyAAttempts) * 100) : 0,
+      storyBAccuracy: s.storyBAttempts ? Math.round((s.storyBCorrect / s.storyBAttempts) * 100) : 0,
+      timeStoryAMin,
+      timeStoryBMin,
+      // Overall metrics
       attempts: s.attempts,
       accuracy: s.attempts ? Math.round((s.correct / s.attempts) * 100) : 0,
       hints: s.hints,
       definitionAccuracy,
       recallAvg,
       timeOnTaskMin: minutes,
+      // Mental effort
+      avgMentalEffort,
+      // Delayed test
+      delayedTestCompleted: s.delayedTestCompleted,
+      delayedTestScore: s.delayedTestScore,
       // Intervention metrics
       interventions: s.interventions,
       interventionsCompleted: s.interventionsCompleted,

@@ -32,6 +32,7 @@ export interface GenerateStoriesRequest {
   cefr?: string;
   targetWords?: string[];
   topic?: string;
+  model?: 'openai' | 'claude';
 }
 
 export interface GenerateStoryRequest {

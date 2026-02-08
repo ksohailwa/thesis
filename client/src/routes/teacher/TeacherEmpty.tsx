@@ -15,7 +15,6 @@ export default function TeacherHome() {
   const [creating, setCreating] = useState(false)
   const [filter, setFilter] = useState<'all' | 'draft' | 'live' | 'closed'>('all')
   const [title, setTitle] = useState('')
-  const [level, setLevel] = useState<'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2'>('B1')
   const nav = useNavigate()
 
   useEffect(() => {
@@ -46,11 +45,10 @@ export default function TeacherHome() {
     }
     setCreating(true)
     try {
-      const { data } = await api.post('/api/experiments', { title: title.trim(), level })
+      const { data } = await api.post('/api/experiments', { title: title.trim() })
       const expId = data?.id || data?._id
       if (expId) nav(`/teacher/experiments/${expId}`)
       setTitle('')
-      setLevel('B1')
     } catch (e: any) {
       toast.error(e?.response?.data?.error || 'Failed to create')
     } finally {
@@ -103,21 +101,6 @@ export default function TeacherHome() {
               value={title}
               onChange={(e) => setTitle(e.target.value)}
             />
-          </div>
-          <div>
-            <label className="block text-sm text-gray-600 mb-1">Level</label>
-            <select
-              className="input"
-              value={level}
-              onChange={(e) => setLevel(e.target.value as any)}
-            >
-              <option value="A1">A1</option>
-              <option value="A2">A2</option>
-              <option value="B1">B1</option>
-              <option value="B2">B2</option>
-              <option value="C1">C1</option>
-              <option value="C2">C2</option>
-            </select>
           </div>
           <Button className="px-6 py-3" onClick={createNew} disabled={creating}>
             {creating ? 'Creating...' : 'Create Experiment'}

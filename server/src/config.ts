@@ -22,6 +22,10 @@ export const config = {
   openaiTtsModel: process.env.OPENAI_TTS_MODEL || 'tts-1',
   openaiTtsVoice: process.env.OPENAI_TTS_VOICE || 'alloy',
 
+  // Anthropic (Claude)
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
+  anthropicModel: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
+
   // TTS provider selection
   ttsProvider: (process.env.TTS_PROVIDER || 'openai') as 'openai' | 'elevenlabs' | 'mock',
   elevenApiKey: process.env.ELEVENLABS_API_KEY || '',

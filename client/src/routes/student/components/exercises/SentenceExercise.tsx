@@ -1,23 +1,25 @@
-import { useState } from 'react';
-import { PenLine, CheckCircle, XCircle, Lightbulb } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { PenLine, CheckCircle, XCircle, Lightbulb, RefreshCw } from 'lucide-react';
 
 type Props = {
   targetWord: string;
-  baseWord: string;
+  definition: string;
+  companionWords: string[];
   exampleSentences: string[];
   onComplete: () => void;
   onAttempt: (sentence: string, isValid: boolean, feedback: string) => void;
 };
 
-// Mask word to show only first letter
-function maskWord(word: string): string {
-  if (word.length <= 1) return word;
-  return word[0] + '_'.repeat(word.length - 1);
-}
+// Simple companion words that work with most target words
+const DEFAULT_COMPANION_WORDS = [
+  'always', 'never', 'often', 'really', 'very',
+  'sometimes', 'usually', 'quickly', 'slowly', 'carefully'
+];
 
 export default function SentenceExercise({
   targetWord,
-  baseWord,
+  definition,
+  companionWords,
   exampleSentences,
   onComplete,
   onAttempt,
@@ -28,8 +30,34 @@ export default function SentenceExercise({
   const [feedback, setFeedback] = useState('');
   const [isChecking, setIsChecking] = useState(false);
   const [showHint, setShowHint] = useState(false);
+  const [spellingErrorCount, setSpellingErrorCount] = useState(0);
+  const [companionIndex, setCompanionIndex] = useState(0);
 
-  const maskedTargetWord = maskWord(targetWord);
+  // Filter out companion words that contain the target word
+  const validCompanionWords = useMemo(() => {
+    const targetLower = targetWord.toLowerCase();
+    const filtered = companionWords.filter(
+      (w) => !w.toLowerCase().includes(targetLower) && !targetLower.includes(w.toLowerCase())
+    );
+    // If no valid companions, use defaults
+    if (filtered.length === 0) {
+      return DEFAULT_COMPANION_WORDS;
+    }
+    return filtered;
+  }, [companionWords, targetWord]);
+
+  // Current companion word (changes after 2 spelling errors)
+  const currentCompanionWord = validCompanionWords[companionIndex % validCompanionWords.length];
+
+  // Check if target word is spelled correctly in sentence
+  const checkTargetSpelling = (text: string): boolean => {
+    const words = text.toLowerCase().split(/\s+/);
+    return words.some((w) => {
+      // Remove punctuation and check exact match
+      const cleaned = w.replace(/[^a-z]/gi, '');
+      return cleaned === targetWord.toLowerCase();
+    });
+  };
 
   // Highlight words in sentence
   const getHighlightedSentence = () => {
@@ -37,7 +65,7 @@ export default function SentenceExercise({
 
     const lower = sentence.toLowerCase();
     const hasTarget = lower.includes(targetWord.toLowerCase());
-    const hasBase = lower.includes(baseWord.toLowerCase());
+    const hasCompanion = lower.includes(currentCompanionWord.toLowerCase());
 
     let result = sentence;
 
@@ -46,8 +74,8 @@ export default function SentenceExercise({
       const regex = new RegExp(`(${targetWord})`, 'gi');
       result = result.replace(regex, '<mark class="bg-purple-200 px-1 rounded">$1</mark>');
     }
-    if (hasBase) {
-      const regex = new RegExp(`(${baseWord})`, 'gi');
+    if (hasCompanion) {
+      const regex = new RegExp(`(${currentCompanionWord})`, 'gi');
       result = result.replace(regex, '<mark class="bg-blue-200 px-1 rounded">$1</mark>');
     }
 
@@ -59,23 +87,57 @@ export default function SentenceExercise({
 
     setIsChecking(true);
 
-    // Simulate API call - in real implementation, this calls the backend
     try {
       const lower = sentence.toLowerCase();
-      const hasTarget = lower.includes(targetWord.toLowerCase());
-      const hasBase = lower.includes(baseWord.toLowerCase());
-      const valid = hasTarget && hasBase && sentence.trim().length >= 10;
+      const hasCompanion = lower.includes(currentCompanionWord.toLowerCase());
+      const hasTargetCorrectSpelling = checkTargetSpelling(sentence);
+
+      // Check for misspelling of target word
+      const hasTargetMisspelled = !hasTargetCorrectSpelling &&
+        lower.split(/\s+/).some((w) => {
+          const cleaned = w.replace(/[^a-z]/gi, '');
+          // Simple similarity check - if word starts with same 2+ letters
+          return cleaned.length >= 3 &&
+                 targetWord.toLowerCase().startsWith(cleaned.slice(0, 2)) &&
+                 cleaned !== targetWord.toLowerCase();
+        });
+
+      const valid = hasTargetCorrectSpelling && hasCompanion && sentence.trim().length >= 10;
 
       setIsValid(valid);
-      setFeedback(
-        valid
-          ? 'Great sentence! You used both words correctly.'
-          : !hasTarget && !hasBase
-            ? `Remember to use both the target word and "${baseWord}" in your sentence.`
-            : !hasTarget
-              ? `Don't forget to include the target word in your sentence.`
-              : `Don't forget to include "${baseWord}" in your sentence.`
-      );
+
+      if (valid) {
+        setFeedback('Great sentence! You used both words correctly.');
+      } else if (hasTargetMisspelled) {
+        // Track spelling errors
+        const newErrorCount = spellingErrorCount + 1;
+        setSpellingErrorCount(newErrorCount);
+
+        // After 2 spelling errors, change companion word
+        if (newErrorCount >= 2 && validCompanionWords.length > 1) {
+          setCompanionIndex((prev) => prev + 1);
+          setFeedback(
+            `Check the spelling of "${targetWord}". Here's a new companion word to try with!`
+          );
+        } else {
+          setFeedback(
+            `Almost! Check the spelling of the target word. The correct spelling is: ${targetWord}`
+          );
+        }
+      } else if (!hasTargetCorrectSpelling && !hasCompanion) {
+        setFeedback(
+          `Remember to use both "${targetWord}" and "${currentCompanionWord}" in your sentence.`
+        );
+      } else if (!hasTargetCorrectSpelling) {
+        setFeedback(
+          `Don't forget to include the target word "${targetWord}" in your sentence.`
+        );
+      } else {
+        setFeedback(
+          `Don't forget to include "${currentCompanionWord}" in your sentence.`
+        );
+      }
+
       setShowResult(true);
       onAttempt(sentence, valid, feedback);
 
@@ -106,17 +168,36 @@ export default function SentenceExercise({
         <h3 className="text-xl font-bold text-gray-800">Write a sentence using both words</h3>
       </div>
 
-      {/* Word chips */}
-      <div className="flex justify-center gap-4">
-        <div className="px-4 py-2 bg-purple-100 border-2 border-purple-300 rounded-full">
-          <span className="text-sm text-purple-500">Target:</span>{' '}
-          <span className="font-bold text-purple-700 tracking-wider">{maskedTargetWord}</span>
+      {/* Target word with definition */}
+      <div className="p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl border border-purple-200">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-sm text-purple-500 font-medium">Target word:</span>
+          <span className="text-2xl font-bold text-purple-700 tracking-wide">{targetWord}</span>
         </div>
-        <div className="px-4 py-2 bg-blue-100 border-2 border-blue-300 rounded-full">
-          <span className="text-sm text-blue-500">Use with:</span>{' '}
-          <span className="font-bold text-blue-700">{baseWord}</span>
+        {definition && (
+          <p className="text-sm text-gray-600 italic">"{definition}"</p>
+        )}
+      </div>
+
+      {/* Companion word */}
+      <div className="flex justify-center">
+        <div className="px-4 py-2 bg-blue-100 border-2 border-blue-300 rounded-full flex items-center gap-2">
+          <span className="text-sm text-blue-500">Use with:</span>
+          <span className="font-bold text-blue-700">{currentCompanionWord}</span>
+          {spellingErrorCount >= 2 && (
+            <RefreshCw className="w-4 h-4 text-blue-500" />
+          )}
         </div>
       </div>
+
+      {/* Spelling error hint */}
+      {spellingErrorCount > 0 && spellingErrorCount < 2 && (
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-center">
+          <p className="text-sm text-amber-700">
+            <span className="font-medium">Tip:</span> Make sure to spell "{targetWord}" correctly!
+          </p>
+        </div>
+      )}
 
       {/* Hint toggle */}
       {exampleSentences.length > 0 && (
@@ -142,7 +223,7 @@ export default function SentenceExercise({
           value={sentence}
           onChange={(e) => setSentence(e.target.value)}
           disabled={showResult && isValid}
-          placeholder="Type your sentence here..."
+          placeholder={`Write a sentence using "${targetWord}" and "${currentCompanionWord}"...`}
           className="w-full p-4 border-2 border-gray-200 rounded-xl resize-none h-32 focus:border-purple-400 focus:ring-2 focus:ring-purple-100 transition-all disabled:bg-gray-50"
         />
 

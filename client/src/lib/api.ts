@@ -72,13 +72,12 @@ api.interceptors.response.use(
           headers: { 'x-refresh': refresh },
         })
         if (data?.accessToken) {
-          if (state?.setAuth && state.role && state.email) {
+          if (state?.setAuth && state.role && state.username) {
             state.setAuth({
               accessToken: data.accessToken,
               refreshToken: data.refreshToken || state.refreshToken || refresh || null,
               role: state.role as any,
-              email: state.email,
-              demo: state.demo,
+              username: state.username,
             })
           } else {
             localStorage.setItem('accessToken', data.accessToken)

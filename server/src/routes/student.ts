@@ -525,6 +525,9 @@ router.post('/join', requireAuth, requireRole('student'), async (req: AuthedRequ
     storyOrder: storyOrder || 'A-first',
     hintsEnabledByStory: { A: hintsStory === 'A', B: hintsStory === 'B' },
     breakUntil: assignmentDoc?.breakUntil ? assignmentDoc.breakUntil.toISOString() : undefined,
+    recallUnlockAt: assignmentDoc?.recallUnlockAt ? assignmentDoc.recallUnlockAt.toISOString() : undefined,
+    story1CompletedAt: assignmentDoc?.story1CompletedAt ? assignmentDoc.story1CompletedAt.toISOString() : undefined,
+    story2CompletedAt: assignmentDoc?.story2CompletedAt ? assignmentDoc.story2CompletedAt.toISOString() : undefined,
     story1: {
       paragraphs: storyA?.paragraphs || [],
       occurrences: storyA?.targetOccurrences || [],
@@ -906,26 +909,141 @@ router.post('/reveal', requireAuth, requireRole('student'), async (req: AuthedRe
 });
 
 router.post('/effort', requireAuth, requireRole('student'), async (req: AuthedRequest, res) => {
+  // Support both legacy (sessionId/taskType) and new (experimentId/storyLabel/paragraphIndex) formats
   const schema = z.object({
-    sessionId: z.string(),
-    taskType: z.string(),
+    sessionId: z.string().optional(),
+    experimentId: z.string().optional(),
+    taskType: z.string().optional(),
+    storyLabel: z.enum(['A', 'B']).optional(),
+    paragraphIndex: z.number().int().min(0).optional(),
     position: z.enum(['mid', 'end']),
     score: z.number().int().min(1).max(9),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { sessionId, taskType, position, score } = parsed.data;
+  const { sessionId, experimentId, taskType, storyLabel, paragraphIndex, position, score } = parsed.data;
+
+  // Must have either sessionId or experimentId
+  if (!sessionId && !experimentId) {
+    return res.status(400).json({ error: 'Either sessionId or experimentId is required' });
+  }
+
   if ((req as any).user?.demo) {
     return res.json({ ok: true, demo: true });
   }
+
   const saved = await EffortResponse.create({
-    session: sessionId,
-    taskType,
+    session: sessionId || undefined,
+    experiment: experimentId || undefined,
+    taskType: taskType || undefined,
+    storyLabel: storyLabel || undefined,
+    paragraphIndex: paragraphIndex ?? undefined,
     position,
     score,
     student: req.user!.sub,
   });
+
+  // Log event for analytics
+  try {
+    await Event.create({
+      experiment: experimentId || undefined,
+      session: sessionId || undefined,
+      student: req.user!.sub,
+      type: 'mental_effort',
+      payload: { storyLabel, paragraphIndex, position, score },
+      ts: new Date(),
+    });
+    clearAnalyticsCache();
+  } catch {
+    // ignore logging failures
+  }
+
   res.json(saved);
+});
+
+// Log paragraph progress after each paragraph completion
+router.post(
+  '/paragraph-progress',
+  requireAuth,
+  requireRole('student'),
+  async (req: AuthedRequest, res) => {
+    const schema = z.object({
+      experimentId: z.string(),
+      storyLabel: z.enum(['A', 'B']),
+      paragraphIndex: z.number().int().min(0),
+      totalBlanks: z.number().int().min(0),
+      solvedBlanks: z.number().int().min(0),
+      completedAt: z.string().optional(),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const { experimentId, storyLabel, paragraphIndex, totalBlanks, solvedBlanks, completedAt } =
+      parsed.data;
+
+    if ((req as any).user?.demo) {
+      return res.json({ ok: true, demo: true });
+    }
+
+    try {
+      await Event.create({
+        experiment: experimentId,
+        student: req.user!.sub,
+        type: 'paragraph_completed',
+        payload: {
+          storyLabel,
+          paragraphIndex,
+          totalBlanks,
+          solvedBlanks,
+          completedAt: completedAt || new Date().toISOString(),
+        },
+        ts: new Date(),
+      });
+      clearAnalyticsCache();
+    } catch {
+      // ignore logging failures
+    }
+
+    return res.json({ ok: true });
+  }
+);
+
+// Log break time between stories
+router.post('/break-log', requireAuth, requireRole('student'), async (req: AuthedRequest, res) => {
+  const schema = z.object({
+    experimentId: z.string(),
+    actualBreakMs: z.number().int().min(0),
+    expectedBreakMs: z.number().int().min(0),
+    skippedEarly: z.boolean(),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const { experimentId, actualBreakMs, expectedBreakMs, skippedEarly } = parsed.data;
+
+  if ((req as any).user?.demo) {
+    return res.json({ ok: true, demo: true });
+  }
+
+  try {
+    await Event.create({
+      experiment: experimentId,
+      student: req.user!.sub,
+      type: 'break_completed',
+      payload: {
+        actualBreakMs,
+        expectedBreakMs,
+        skippedEarly,
+        actualBreakMinutes: Math.round(actualBreakMs / 60000 * 100) / 100,
+      },
+      ts: new Date(),
+    });
+    clearAnalyticsCache();
+  } catch {
+    // ignore logging failures
+  }
+
+  return res.json({ ok: true });
 });
 
 router.post('/events', requireAuth, requireRole('student'), async (req: AuthedRequest, res) => {
@@ -1107,7 +1225,7 @@ Student attempt: "${(latestAttempt || '').slice(0, 60)}".`;
   }
 });
 
-// Delayed recall list (audio-only)
+// Delayed recall list with definitions - requires 12-hour wait after Story 2
 router.post(
   '/recall-list',
   requireAuth,
@@ -1118,16 +1236,22 @@ router.post(
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const assignment = await Assignment.findById(parsed.data.assignmentId);
     if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
-    if (assignment.breakUntil && new Date() < assignment.breakUntil) {
-      return res
-        .status(403)
-        .json({ error: 'Break not complete', breakUntil: assignment.breakUntil.toISOString() });
+
+    // Check if 12-hour recall unlock time has passed
+    if (assignment.recallUnlockAt && new Date() < assignment.recallUnlockAt) {
+      return res.status(403).json({
+        error: 'Recall test not yet available',
+        recallUnlockAt: assignment.recallUnlockAt.toISOString(),
+        remainingMs: assignment.recallUnlockAt.getTime() - Date.now(),
+      });
     }
     const expId = assignment.experiment;
     const [storyA, storyB] = await Promise.all([
       Story.findOne({ experiment: expId, label: 'A' }),
       Story.findOne({ experiment: expId, label: 'B' }),
     ]);
+
+    // Get unique target words
     const words = Array.from(
       new Set([
         ...(storyA?.targetOccurrences || []).map((o: any) => o.word),
@@ -1137,8 +1261,18 @@ router.post(
       .filter(Boolean)
       .slice(0, 10);
 
+    // Fetch word metadata for definitions
+    const wordMetadataList = await WordMetadata.find({
+      experiment: expId,
+      word: { $in: words.map((w) => w.toLowerCase()) },
+    });
+    const metadataByWord = new Map(
+      wordMetadataList.map((m) => [m.word.toLowerCase(), m])
+    );
+
     const { default: fs } = await import('fs');
     const { default: path } = await import('path');
+
     const items = words.map((word) => {
       const safe = safeWordFile(word);
       const rel = `/static/audio/${expId}/words/${safe}.mp3`;
@@ -1151,14 +1285,33 @@ router.post(
         `${safe}.mp3`
       );
       const available = fs.existsSync(abs);
-      return { word, audioUrl: available ? rel : null };
+
+      // Get metadata for this word
+      const metadata = metadataByWord.get(word.toLowerCase());
+      const correctDefinition = metadata?.definition || `Definition for ${word}`;
+      const distractors = metadata?.distractorDefinitions || [
+        'An unrelated concept',
+        'Something completely different',
+        'A different meaning entirely',
+      ];
+
+      // Shuffle options (correct + distractors)
+      const allOptions = [correctDefinition, ...distractors.slice(0, 3)];
+      const shuffledOptions = allOptions.sort(() => Math.random() - 0.5);
+
+      return {
+        word,
+        audioUrl: available ? rel : null,
+        correctDefinition,
+        definitionOptions: shuffledOptions,
+      };
     });
 
     return res.json({ items });
   }
 );
 
-// Delayed recall scoring
+// Delayed recall scoring (spelling + definition) - requires 12-hour wait after Story 2
 router.post(
   '/recall-attempt',
   requireAuth,
@@ -1166,22 +1319,52 @@ router.post(
   async (req: AuthedRequest, res) => {
     const schema = z.object({
       assignmentId: z.string(),
-      items: z.array(z.object({ word: z.string(), text: z.string() })).min(1),
+      items: z.array(
+        z.object({
+          word: z.string(),
+          spellingAttempt: z.string(),
+          selectedDefinition: z.string(),
+          correctDefinition: z.string(),
+        })
+      ).min(1),
     });
     const parsed = schema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const assignment = await Assignment.findById(parsed.data.assignmentId);
     if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
-    if (assignment.breakUntil && new Date() < assignment.breakUntil) {
-      return res
-        .status(403)
-        .json({ error: 'Break not complete', breakUntil: assignment.breakUntil.toISOString() });
+
+    // Check if 12-hour recall unlock time has passed
+    if (assignment.recallUnlockAt && new Date() < assignment.recallUnlockAt) {
+      return res.status(403).json({
+        error: 'Recall test not yet available',
+        recallUnlockAt: assignment.recallUnlockAt.toISOString(),
+        remainingMs: assignment.recallUnlockAt.getTime() - Date.now(),
+      });
     }
-    const scores = parsed.data.items.map((i) => ({
-      word: i.word,
-      score: normalizedLevenshtein(i.text.toLowerCase(), i.word.toLowerCase()),
-    }));
-    const avg = scores.reduce((s, i) => s + i.score, 0) / (scores.length || 1);
+
+    // Score both spelling and definition for each word
+    const scores = parsed.data.items.map((i) => {
+      const spellingScore = normalizedLevenshtein(
+        i.spellingAttempt.toLowerCase(),
+        i.word.toLowerCase()
+      );
+      const definitionCorrect =
+        i.selectedDefinition.trim().toLowerCase() === i.correctDefinition.trim().toLowerCase();
+
+      return {
+        word: i.word,
+        spellingScore,
+        spellingCorrect: spellingScore === 1,
+        definitionCorrect,
+        definitionScore: definitionCorrect ? 1 : 0,
+        combinedScore: (spellingScore + (definitionCorrect ? 1 : 0)) / 2,
+      };
+    });
+
+    const spellingAvg = scores.reduce((s, i) => s + i.spellingScore, 0) / (scores.length || 1);
+    const definitionAvg = scores.reduce((s, i) => s + i.definitionScore, 0) / (scores.length || 1);
+    const combinedAvg = scores.reduce((s, i) => s + i.combinedScore, 0) / (scores.length || 1);
+
     try {
       await Event.create({
         session: req.user?.sub as any,
@@ -1189,14 +1372,25 @@ router.post(
         experiment: assignment.experiment as any,
         taskType: 'delayed-recall',
         type: 'recall-attempt',
-        payload: { scores },
+        payload: {
+          scores,
+          spellingAvg,
+          definitionAvg,
+          combinedAvg,
+        },
         ts: new Date(),
       });
       clearAnalyticsCache();
     } catch {
       // ignore logging failures
     }
-    return res.json({ scores, average: avg });
+
+    return res.json({
+      scores,
+      spellingAverage: spellingAvg,
+      definitionAverage: definitionAvg,
+      combinedAverage: combinedAvg,
+    });
   }
 );
 
@@ -1241,13 +1435,18 @@ router.get(
           const txt = r.choices?.[0]?.message?.content || '{}';
           const data = JSON.parse(txt);
 
+          // Use companionWords from new prompt, fallback to commonCollocations, then defaults
+          const companions = data.companionWords || data.commonCollocations || [
+            'always', 'never', 'often', 'really', 'very'
+          ];
+
           metadata = await WordMetadata.create({
             experiment: experimentId,
             word: word.toLowerCase(),
             definition: data.definition || `Definition for ${word}`,
             partOfSpeech: data.partOfSpeech || '',
             distractorDefinitions: data.distractorDefinitions || [],
-            commonCollocations: data.commonCollocations || ['make', 'have', 'get'],
+            commonCollocations: companions,
             exampleSentences: data.exampleSentences || [],
             syllables: data.syllables || [],
           });
@@ -1263,7 +1462,7 @@ router.get(
               'An unrelated concept',
               'A different meaning entirely',
             ],
-            commonCollocations: ['make', 'have', 'get'],
+            commonCollocations: ['always', 'never', 'often', 'really', 'very'],
             exampleSentences: [],
             syllables: [],
           });
@@ -1280,11 +1479,25 @@ router.get(
             'An unrelated concept',
             'A different meaning entirely',
           ],
-          commonCollocations: ['make', 'have', 'get'],
+          commonCollocations: ['always', 'never', 'often', 'really', 'very'],
           exampleSentences: [],
           syllables: [],
         });
       }
+    }
+
+    // Build audio URL for the word (if TTS was generated)
+    const wordAudioPath = `/static/audio/${experimentId}/word_${word.toLowerCase()}.mp3`;
+    let audioUrl: string | null = null;
+    try {
+      const { default: fs } = await import('fs');
+      const { default: path } = await import('path');
+      const fullPath = path.join(process.cwd(), wordAudioPath);
+      if (fs.existsSync(fullPath)) {
+        audioUrl = wordAudioPath;
+      }
+    } catch {
+      // Audio file doesn't exist, leave null
     }
 
     return res.json({
@@ -1295,6 +1508,7 @@ router.get(
       commonCollocations: metadata.commonCollocations,
       exampleSentences: metadata.exampleSentences,
       syllables: metadata.syllables,
+      audioUrl,
     });
   }
 );

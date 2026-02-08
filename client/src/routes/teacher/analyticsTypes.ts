@@ -23,12 +23,30 @@ export type SummaryData = {
     studentId: string
     username: string
     condition: string
+    // Phase details
+    storyOrder: 'A-first' | 'B-first' | null
+    hintsStory: 'A' | 'B' | null
+    phase1Condition: 'treatment' | 'control' | null
+    phase1Story: 'A' | 'B' | null
+    phase2Condition: 'treatment' | 'control' | null
+    phase2Story: 'A' | 'B' | null
+    // Per-story metrics
+    storyAAccuracy: number
+    storyBAccuracy: number
+    timeStoryAMin: number
+    timeStoryBMin: number
+    // Overall metrics
     attempts: number
     accuracy: number
     hints: number
     definitionAccuracy: number
     recallAvg: number
     timeOnTaskMin?: number
+    // Mental effort
+    avgMentalEffort: number | null
+    // Delayed test
+    delayedTestCompleted: boolean
+    delayedTestScore: number | null
   }>
   words: Array<{ word: string; attempts: number; accuracy: number }>
   timeline: Array<{

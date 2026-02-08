@@ -5,6 +5,7 @@ type Props = {
   word: string;
   correctDefinition: string;
   distractorDefinitions: string[];
+  exampleSentence?: string;
   onComplete: () => void;
   onAttempt: (selectedAnswer: string, isCorrect: boolean) => void;
 };
@@ -23,6 +24,7 @@ export default function MCQExercise({
   word,
   correctDefinition,
   distractorDefinitions,
+  exampleSentence,
   onComplete,
   onAttempt,
 }: Props) {
@@ -109,8 +111,25 @@ export default function MCQExercise({
           <HelpCircle className="w-4 h-4 text-purple-600" />
           <span className="text-sm font-medium text-purple-700">Exercise 1: Definition Match</span>
         </div>
-        <h3 className="text-xl font-bold text-gray-800">
-          What is the correct definition of the target word?
+
+        {/* Target word display */}
+        <div className="mb-4 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl border border-purple-200">
+          <div className="text-sm text-gray-500 mb-1">Target word:</div>
+          <div className="text-2xl font-bold text-purple-700 tracking-wide">{word}</div>
+        </div>
+
+        {/* Example sentence with blank */}
+        {exampleSentence && (
+          <div className="mb-4 p-4 bg-amber-50 rounded-xl border border-amber-200">
+            <div className="text-sm text-amber-600 mb-2">Example sentence:</div>
+            <div className="text-gray-700 italic">
+              "{exampleSentence.replace(/____/g, '_____')}"
+            </div>
+          </div>
+        )}
+
+        <h3 className="text-lg font-bold text-gray-800">
+          What does this word mean?
         </h3>
       </div>
 

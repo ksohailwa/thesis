@@ -17,17 +17,19 @@ export default function TeacherManage() {
   const nav = useNavigate()
 
   const [title, setTitle] = useState('')
-  const [level, setLevel] = useState('')
+  const [level, setLevel] = useState<'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2'>('B1')
   const [loading, setLoading] = useState(true)
   const [experimentStatus, setExperimentStatus] = useState<ExperimentStatus>('draft')
   const [assignedCondition, setAssignedCondition] = useState<Condition>('with-hints')
   const [launchLoading, setLaunchLoading] = useState(false)
+  const [savingLevel, setSavingLevel] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
   const [participation, setParticipation] = useState<any>(null)
   const [selectedStudent, setSelectedStudent] = useState<string | null>(null)
   const [studentProgress, setStudentProgress] = useState<any>(null)
   const [loadingStudent, setLoadingStudent] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [storiesConfirmed, setStoriesConfirmed] = useState(false)
 
   useEffect(() => {
     if (!expId) return
@@ -40,9 +42,10 @@ export default function TeacherManage() {
     try {
       const { data } = await api.get(`/api/experiments/${expId}`)
       setTitle(data.title || '')
-      setLevel(data.level || data.cefr || '')
+      setLevel(data.level || data.cefr || 'B1')
       setExperimentStatus(data.status || 'draft')
       setAssignedCondition(data.assignedCondition || 'with-hints')
+      setStoriesConfirmed(data.storiesConfirmed || false)
       if (data.status === 'live') await fetchParticipation()
     } catch {
       toast.error('Failed to load experiment')
@@ -115,6 +118,20 @@ export default function TeacherManage() {
     }
   }
 
+  async function updateLevel(newLevel: typeof level) {
+    if (!expId) return
+    setSavingLevel(true)
+    try {
+      await api.patch(`/api/experiments/${expId}`, { level: newLevel })
+      setLevel(newLevel)
+      toast.success('Level updated')
+    } catch (e: any) {
+      toast.error(e?.response?.data?.error || 'Failed to update level')
+    } finally {
+      setSavingLevel(false)
+    }
+  }
+
   async function deleteExperiment() {
     if (!expId) return
     try {
@@ -159,20 +176,44 @@ export default function TeacherManage() {
             <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
               {title}
             </h1>
-            <p className="text-sm text-gray-600 mt-1">
-              Level: <span className="font-semibold">{level}</span> | Status:{' '}
-              <span
-                className={
-                  experimentStatus === 'live'
-                    ? 'text-green-600 font-semibold'
-                    : experimentStatus === 'draft'
-                    ? 'text-amber-600 font-semibold'
-                    : 'text-gray-600 font-semibold'
-                }
-              >
-                {experimentStatus}
+            <div className="flex items-center gap-4 mt-1">
+              {experimentStatus === 'draft' ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-600">Level:</span>
+                  <select
+                    value={level}
+                    onChange={(e) => updateLevel(e.target.value as typeof level)}
+                    disabled={savingLevel}
+                    className="px-2 py-1 border border-gray-300 rounded text-sm font-medium"
+                  >
+                    <option value="A1">A1</option>
+                    <option value="A2">A2</option>
+                    <option value="B1">B1</option>
+                    <option value="B2">B2</option>
+                    <option value="C1">C1</option>
+                    <option value="C2">C2</option>
+                  </select>
+                </div>
+              ) : (
+                <span className="text-sm text-gray-600">
+                  Level: <span className="font-semibold">{level}</span>
+                </span>
+              )}
+              <span className="text-sm text-gray-600">
+                Status:{' '}
+                <span
+                  className={
+                    experimentStatus === 'live'
+                      ? 'text-green-600 font-semibold'
+                      : experimentStatus === 'draft'
+                      ? 'text-amber-600 font-semibold'
+                      : 'text-gray-600 font-semibold'
+                  }
+                >
+                  {experimentStatus}
+                </span>
               </span>
-            </p>
+            </div>
           </div>
           <div className="flex gap-2 flex-wrap items-center justify-end">
             <Link
@@ -191,13 +232,25 @@ export default function TeacherManage() {
                   <option value="with-hints">With Hints</option>
                   <option value="without-hints">Without Hints</option>
                 </select>
-                <button
-                  className="px-6 py-2 bg-gradient-to-r from-green-500 to-green-600 text-white rounded-lg hover:shadow-lg font-semibold disabled:opacity-50 transition"
-                  onClick={launchExperiment}
-                  disabled={launchLoading}
-                >
-                  {launchLoading ? 'Launching...' : 'Launch'}
-                </button>
+                <div className="relative group">
+                  <button
+                    className={`px-6 py-2 rounded-lg font-semibold transition ${
+                      storiesConfirmed
+                        ? 'bg-gradient-to-r from-green-500 to-green-600 text-white hover:shadow-lg'
+                        : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                    } disabled:opacity-50`}
+                    onClick={launchExperiment}
+                    disabled={launchLoading || !storiesConfirmed}
+                  >
+                    {launchLoading ? 'Launching...' : 'Launch'}
+                  </button>
+                  {!storiesConfirmed && (
+                    <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                      Complete and confirm stories first
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
+                    </div>
+                  )}
+                </div>
               </>
             )}
             {experimentStatus === 'live' && (
@@ -342,7 +395,10 @@ export default function TeacherManage() {
       )}
 
       <div className="bg-red-50 border-2 border-red-300 rounded-2xl p-8 transition-colors">
-        <h3 className="text-lg font-bold text-red-900 mb-4">Danger Zone</h3>
+        <h3 className="text-lg font-bold text-red-900 mb-4">Experiment Management</h3>
+        <p className="text-sm text-red-800 mb-4">
+          Remove this experiment from your dashboard. This action cannot be undone.
+        </p>
         <button
           className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold transition"
           onClick={() => setShowDeleteConfirm(true)}
@@ -351,10 +407,18 @@ export default function TeacherManage() {
         </button>
         {showDeleteConfirm && (
           <div className="mt-4 p-4 bg-red-100 rounded-lg border-2 border-red-300">
-            <p className="mb-3 font-semibold text-red-900">Are you sure? This cannot be undone.</p>
+            <p className="mb-3 font-semibold text-red-900">Are you sure you want to delete this experiment?</p>
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-300 rounded-lg text-sm">
+              <p className="font-medium text-amber-900 mb-2">Important Notice (GDPR Compliance):</p>
+              <ul className="list-disc list-inside text-amber-800 space-y-1">
+                <li>Student data collected during this experiment will <strong>NOT</strong> be deleted.</li>
+                <li>Only the experiment configuration (stories, audio, words) will be removed.</li>
+                <li>To request deletion of collected student data, please contact the data protection officer at <strong>privacy@spellwise-education.de</strong></li>
+              </ul>
+            </div>
             <div className="flex gap-2">
               <button className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold" onClick={deleteExperiment}>
-                Yes, Delete
+                Yes, Delete Experiment
               </button>
               <button
                 className="px-4 py-2 border-2 border-gray-200 rounded-lg hover:bg-gray-50 font-semibold"

@@ -11,6 +11,7 @@ export interface Job {
   storyLabel?: 'story1' | 'story2';
   set?: 'set1' | 'set2';
   targetWords?: string[];
+  model?: 'openai' | 'claude';
   regenerate?: boolean;
   status: JobStatus;
   errorMessage?: string;
@@ -120,7 +121,7 @@ async function runJob(j: Job) {
             'Content-Type': 'application/json',
             'x-internal-job': config.internalJobSecret,
           },
-          body: JSON.stringify({ label, targetWords, set: j.set || 'set1' }),
+          body: JSON.stringify({ label, targetWords, set: j.set || 'set1', model: j.model }),
         })
       );
     } else if (j.type === 'generate_tts') {

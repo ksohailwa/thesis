@@ -5,13 +5,7 @@ import { config } from '../config';
 
 const authService = new AuthService();
 
-const SignupSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(6),
-  role: z.enum(['teacher', 'student']),
-});
-
-const LoginSchema = z.object({ email: z.string().email(), password: z.string().min(6) });
+const LoginSchema = z.object({ username: z.string().min(1), password: z.string().min(6) });
 const StudentSchema = z.object({
   username: z
     .string()
@@ -20,28 +14,12 @@ const StudentSchema = z.object({
   password: z.string().min(6),
 });
 
-export const signup = async (req: Request, res: Response) => {
-  const parsed = SignupSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  try {
-    const result = await authService.signup(
-      parsed.data.email,
-      parsed.data.password,
-      parsed.data.role
-    );
-    res.json(result);
-  } catch (e: any) {
-    if (e.message === 'Email already registered') return res.status(409).json({ error: e.message });
-    res.status(500).json({ error: e.message });
-  }
-};
-
 export const login = async (req: Request, res: Response) => {
   const parsed = LoginSchema.safeParse(req.body);
-  if (!parsed.success) return res.status(400).json({ error: 'Invalid email or password format' });
+  if (!parsed.success) return res.status(400).json({ error: 'Invalid username or password format' });
   try {
     const { accessToken, refreshToken, user } = await authService.login(
-      parsed.data.email,
+      parsed.data.username,
       parsed.data.password
     );
 
@@ -55,7 +33,6 @@ export const login = async (req: Request, res: Response) => {
       accessToken,
       refreshToken: config.allowRefreshTokenInResponse ? refreshToken : undefined,
       role: user.role,
-      email: user.email,
       username: user.username,
     });
   } catch (e: any) {
@@ -91,10 +68,6 @@ export const logout = (req: Request, res: Response) => {
   res.json({ ok: true });
 };
 
-export const demo = async (_req: Request, res: Response) => {
-  const result = await authService.demoLogin();
-  res.json(result);
-};
 
 export const studentSignup = async (req: Request, res: Response) => {
   const parsed = StudentSchema.safeParse(req.body);

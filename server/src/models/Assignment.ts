@@ -11,7 +11,10 @@ export interface IAssignment extends Document {
   story?: 'H' | 'N';
   storyOrder?: 'A-first' | 'B-first';
   hintsStory?: 'A' | 'B';
-  breakUntil?: Date;
+  breakUntil?: Date; // 5-minute break between Story 1 and Story 2
+  recallUnlockAt?: Date; // 12-hour minimum wait before recall test
+  story1CompletedAt?: Date;
+  story2CompletedAt?: Date;
   createdAt: Date;
 }
 
@@ -25,6 +28,9 @@ const AssignmentSchema = new Schema<IAssignment>({
   storyOrder: { type: String, enum: ['A-first', 'B-first'], required: false },
   hintsStory: { type: String, enum: ['A', 'B'], required: false },
   breakUntil: { type: Date, required: false },
+  recallUnlockAt: { type: Date, required: false },
+  story1CompletedAt: { type: Date, required: false },
+  story2CompletedAt: { type: Date, required: false },
   createdAt: { type: Date, default: () => new Date() },
 });
 

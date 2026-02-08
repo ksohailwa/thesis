@@ -1,7 +1,7 @@
 import { Link, useNavigate } from 'react-router-dom'
 import logo from '../assets/spellwise.png'
 import { useAuth } from '../store/auth'
-import { HelpCircle, Type, Minus, Plus, LogOut, LayoutDashboard, User, LogIn } from 'lucide-react'
+import { HelpCircle, Type, Minus, Plus, LogOut, LayoutDashboard, User } from 'lucide-react'
 
 interface AppHeaderProps {
   onHelp?: () => void
@@ -9,7 +9,7 @@ interface AppHeaderProps {
 }
 
 export default function AppHeader({ onHelp, onScale }: AppHeaderProps) {
-  const { role, clear, demo } = useAuth()
+  const { role, clear } = useAuth()
   const nav = useNavigate()
 
   return (
@@ -67,7 +67,7 @@ export default function AppHeader({ onHelp, onScale }: AppHeaderProps) {
           <div className="h-6 w-px bg-gray-200 hidden sm:block"></div>
 
           {/* User Section */}
-          {role ? (
+          {role && (
             <div className="flex items-center gap-3 pl-2">
               <button
                 onClick={() => nav(role === 'teacher' ? '/teacher' : '/student')}
@@ -77,7 +77,7 @@ export default function AppHeader({ onHelp, onScale }: AppHeaderProps) {
                 <LayoutDashboard size={18} className="group-hover:scale-110 transition-transform" />
                 <span className="hidden md:inline">Dashboard</span>
               </button>
-              
+
               <div className="flex items-center gap-2">
                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/30 transition-transform hover:scale-110" title={role}>
                     <User size={16} />
@@ -91,21 +91,10 @@ export default function AppHeader({ onHelp, onScale }: AppHeaderProps) {
                  </button>
               </div>
             </div>
-          ) : (
-            <Link to="/login" className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-medium hover:shadow-lg hover:shadow-blue-500/40 transition-all duration-200 shadow-md shadow-blue-500/30 hover:scale-105 active:scale-95">
-              <LogIn size={16} />
-              <span>Sign In</span>
-            </Link>
           )}
         </div>
       </div>
       
-      {/* Demo Banner */}
-      {demo && (
-        <div className="w-full text-center text-xs py-2 bg-gradient-to-r from-amber-100 to-orange-100 text-amber-800 border-t border-amber-200 animate-slide-up">
-          ⚠️ Demo Mode - progress not saved
-        </div>
-      )}
     </header>
   )
 }

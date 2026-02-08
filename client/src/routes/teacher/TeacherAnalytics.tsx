@@ -266,39 +266,74 @@ export default function TeacherAnalytics() {
         size="small"
       />
 
-      {/* Students Table */}
+      {/* Students Participation Table */}
       <div className="bg-white rounded-2xl shadow-lg p-6 border-2 border-gray-100">
-        <h2 className="text-xl font-bold text-gray-900 mb-4">Students</h2>
+        <h2 className="text-xl font-bold text-gray-900 mb-4">Student Participation</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Detailed breakdown of each student's participation across both experimental conditions.
+        </p>
         {summary.students.length === 0 ? (
           <p className="text-sm text-gray-500">No student activity yet.</p>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+            <table className="w-full border-collapse text-xs">
               <thead>
-                <tr className="border-b-2 border-gray-300 text-left text-sm text-gray-600">
-                  <th className="p-3">Student</th>
-                  <th className="p-3">Condition</th>
-                  <th className="p-3">Attempts</th>
-                  <th className="p-3">Accuracy</th>
-                  <th className="p-3">Hints</th>
-                  <th className="p-3">Definition Acc.</th>
-                  <th className="p-3">Recall Avg</th>
-                  <th className="p-3">Time (min)</th>
-                  <th className="p-3">Action</th>
+                <tr className="border-b-2 border-gray-300 text-left text-gray-600">
+                  <th className="p-2 font-semibold">ID</th>
+                  <th className="p-2 font-semibold">Username</th>
+                  <th className="p-2 font-semibold bg-blue-50">Phase 1</th>
+                  <th className="p-2 font-semibold bg-blue-50">Story</th>
+                  <th className="p-2 font-semibold bg-blue-50">Time</th>
+                  <th className="p-2 font-semibold bg-purple-50">Phase 2</th>
+                  <th className="p-2 font-semibold bg-purple-50">Story</th>
+                  <th className="p-2 font-semibold bg-purple-50">Time</th>
+                  <th className="p-2 font-semibold">Effort</th>
+                  <th className="p-2 font-semibold">Delayed</th>
+                  <th className="p-2 font-semibold">Score</th>
+                  <th className="p-2 font-semibold">Action</th>
                 </tr>
               </thead>
               <tbody>
                 {summary.students.map((s) => (
-                  <tr key={s.studentId} className="border-b hover:bg-gray-50 text-sm">
-                    <td className="p-3 font-medium text-gray-900">{s.username}</td>
-                    <td className="p-3 text-gray-600">{s.condition}</td>
-                    <td className="p-3 text-gray-600">{s.attempts}</td>
-                    <td className="p-3 text-gray-600">{s.accuracy}%</td>
-                    <td className="p-3 text-gray-600">{s.hints}</td>
-                    <td className="p-3 text-gray-600">{s.definitionAccuracy}%</td>
-                    <td className="p-3 text-gray-600">{s.recallAvg}</td>
-                    <td className="p-3 text-gray-600">{s.timeOnTaskMin ?? 0}</td>
-                    <td className="p-3">
+                  <tr key={s.studentId} className="border-b hover:bg-gray-50">
+                    <td className="p-2 font-mono text-gray-500">{s.studentId.slice(-6)}</td>
+                    <td className="p-2 font-medium text-gray-900">{s.username}</td>
+                    {/* Phase 1 */}
+                    <td className={`p-2 ${s.phase1Condition === 'treatment' ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-600'}`}>
+                      {s.phase1Condition === 'treatment' ? 'Treatment' : s.phase1Condition === 'control' ? 'Control' : '-'}
+                    </td>
+                    <td className="p-2 bg-blue-50 text-blue-700 font-semibold">
+                      {s.phase1Story || '-'}
+                    </td>
+                    <td className="p-2 bg-blue-50 text-gray-600">
+                      {s.phase1Story === 'A' ? s.timeStoryAMin : s.phase1Story === 'B' ? s.timeStoryBMin : '-'}m
+                    </td>
+                    {/* Phase 2 */}
+                    <td className={`p-2 ${s.phase2Condition === 'treatment' ? 'bg-green-50 text-green-700' : 'bg-gray-50 text-gray-600'}`}>
+                      {s.phase2Condition === 'treatment' ? 'Treatment' : s.phase2Condition === 'control' ? 'Control' : '-'}
+                    </td>
+                    <td className="p-2 bg-purple-50 text-purple-700 font-semibold">
+                      {s.phase2Story || '-'}
+                    </td>
+                    <td className="p-2 bg-purple-50 text-gray-600">
+                      {s.phase2Story === 'A' ? s.timeStoryAMin : s.phase2Story === 'B' ? s.timeStoryBMin : '-'}m
+                    </td>
+                    {/* Mental Effort */}
+                    <td className="p-2 text-gray-600">
+                      {s.avgMentalEffort !== null ? s.avgMentalEffort.toFixed(1) : '-'}
+                    </td>
+                    {/* Delayed Test */}
+                    <td className="p-2">
+                      {s.delayedTestCompleted ? (
+                        <span className="text-green-600 font-semibold">Yes</span>
+                      ) : (
+                        <span className="text-gray-400">No</span>
+                      )}
+                    </td>
+                    <td className="p-2 text-gray-600">
+                      {s.delayedTestScore !== null ? `${(s.delayedTestScore * 100).toFixed(0)}%` : '-'}
+                    </td>
+                    <td className="p-2">
                       <button className="text-blue-600 hover:underline" onClick={() => loadStudentDetail(s.studentId)}>
                         View
                       </button>
@@ -309,6 +344,26 @@ export default function TeacherAnalytics() {
             </table>
           </div>
         )}
+
+        {/* Legend */}
+        <div className="mt-4 flex flex-wrap gap-4 text-xs text-gray-500">
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-green-100 border border-green-300 rounded"></div>
+            <span>Treatment (with hints)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-gray-100 border border-gray-300 rounded"></div>
+            <span>Control (without hints)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-blue-100 border border-blue-300 rounded"></div>
+            <span>Phase 1 (first story)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 bg-purple-100 border border-purple-300 rounded"></div>
+            <span>Phase 2 (second story)</span>
+          </div>
+        </div>
       </div>
 
       {/* Events */}

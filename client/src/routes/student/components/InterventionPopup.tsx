@@ -174,6 +174,7 @@ export default function InterventionPopup({ onComplete }: Props) {
               word={targetWord}
               correctDefinition={wordMetadata.definition}
               distractorDefinitions={wordMetadata.distractorDefinitions}
+              exampleSentence={wordMetadata.exampleSentences?.[0]}
               onComplete={handleMCQComplete}
               onAttempt={handleMCQAttempt}
             />
@@ -182,6 +183,7 @@ export default function InterventionPopup({ onComplete }: Props) {
           {currentExercise === 2 && mcqCompleted && !jumbleCompleted && (
             <JumbleExercise
               word={targetWord}
+              audioUrl={wordMetadata.audioUrl}
               onComplete={handleJumbleComplete}
               onAttempt={handleJumbleAttempt}
             />
@@ -190,7 +192,8 @@ export default function InterventionPopup({ onComplete }: Props) {
           {currentExercise === 3 && jumbleCompleted && !sentenceCompleted && (
             <SentenceExercise
               targetWord={targetWord}
-              baseWord={selectedBaseWord || 'make'}
+              definition={wordMetadata.definition}
+              companionWords={wordMetadata.commonCollocations || ['always', 'often', 'really']}
               exampleSentences={wordMetadata.exampleSentences}
               onComplete={handleSentenceComplete}
               onAttempt={handleSentenceAttempt}

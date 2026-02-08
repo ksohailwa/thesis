@@ -17,9 +17,8 @@ export class AuthService {
     return { id: user._id };
   }
 
-  async login(email: string, password: string) {
-    const normalizedEmail = email.trim().toLowerCase();
-    const user = await User.findOne({ email: normalizedEmail });
+  async login(username: string, password: string) {
+    const user = await User.findOne({ username, role: 'teacher' });
     if (!user) {
       throw new Error('Invalid credentials');
     }
@@ -51,25 +50,6 @@ export class AuthService {
       logger.warn('Token refresh failed', { error: e });
       throw new Error('Invalid refresh');
     }
-  }
-
-  async demoLogin() {
-    const payload = {
-      sub: 'demo-student',
-      email: 'demo@spellwise.local',
-      username: 'demo-student',
-      role: 'student',
-      demo: true,
-    };
-    const accessToken = signAccessToken(payload, '2h');
-    logger.info('Demo login created');
-    return {
-      accessToken,
-      role: 'student',
-      email: payload.email,
-      username: payload.username,
-      demo: true,
-    };
   }
 
   async studentSignup(username: string, password: string) {

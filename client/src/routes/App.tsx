@@ -14,10 +14,7 @@ import RunFull from "./student/RunFull";
 import StudentTest from "./student/StudentTest";
 import StudentLogin from "./StudentLogin";
 import Toaster from "../components/Toaster";
-import Demo from "./Demo";
-import DemoLogin from "./DemoLogin";
 import Layout from "../components/Layout";
-// Home removed; default route redirects to /login
 
 function RequireRole({ role, children }: { role: 'teacher'|'student'; children: JSX.Element }) {
   const state = useAuth();
@@ -72,9 +69,8 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/student-login" element={<StudentLogin />} />
           <Route path="/student/login" element={<StudentLogin />} />
-          <Route path="/demo-login" element={<DemoLogin />} />
-          <Route path="/demo" element={<Demo />} />
           <Route path="/signup" element={<Signup />} />
+          <Route path="/student-signup" element={<Signup />} />
 
           <Route path="/teacher" element={<RequireRole role="teacher"><TeacherEmpty /></RequireRole>} />
           <Route path="/teacher/experiments" element={<RequireRole role="teacher"><TeacherEmpty /></RequireRole>} />

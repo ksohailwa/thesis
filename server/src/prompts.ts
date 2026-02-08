@@ -107,14 +107,13 @@ export function wordMetadataSystem(): string {
 
 OUTPUT strict JSON:
 {
-  "definition": "Clear, simple definition (max 15 words)",
   "partOfSpeech": "noun|verb|adjective|adverb|other",
   "distractorDefinitions": [
     "Plausible but wrong definition 1",
     "Plausible but wrong definition 2",
     "Plausible but wrong definition 3"
   ],
-  "commonCollocations": ["word1", "word2", "word3"],
+  "companionWords": ["always", "never", "often", "really", "very"],
   "exampleSentences": [
     "Example sentence using the word naturally.",
     "Another example sentence."
@@ -123,19 +122,29 @@ OUTPUT strict JSON:
 }
 
 RULES:
-- Definition should be level-appropriate and clear
-- Distractor definitions must be plausible but clearly incorrect
-- Common collocations should be high-frequency verbs/nouns that pair with this word
+- If a definition is provided in the input, use it to create plausible but WRONG distractor definitions
+- Distractor definitions must be plausible but clearly incorrect (same length/style as the real definition)
+- companionWords: CRITICAL RULES for sentence-making exercise:
+  * Must be SIMPLE, common adverbs or adjectives (like: always, never, often, really, very, usually, quickly, sometimes, carefully, extremely)
+  * Must NOT contain the target word or any part of it
+  * Must NOT be complex phrases or collocations
+  * Should be words that can naturally fit in sentences with the target word
+  * Provide 5 different companion words so they can cycle through if student makes errors
 - Example sentences should demonstrate natural usage BUT use a blank "____" instead of the actual word (e.g., "She felt ____ about the decision.")
 - Syllables should show pronunciation breaks`;
 }
 
-export function wordMetadataUser(word: string, cefr: string): string {
-  return JSON.stringify({
+export function wordMetadataUser(word: string, cefr: string, definition?: string | null): string {
+  const payload: Record<string, string> = {
     word,
     cefr,
     task: 'Generate learning exercise metadata for this word at the specified CEFR level',
-  });
+  };
+  if (definition) {
+    payload.definition = definition;
+    payload.note = 'Use this definition to create 3 plausible but WRONG distractor definitions for an MCQ exercise';
+  }
+  return JSON.stringify(payload);
 }
 
 // Sentence validation for intervention exercise 3
@@ -168,48 +177,61 @@ export function sentenceValidationUser(
 }
 
 export function storySystemBold(_paragraphCount: number): string {
-  return `You are an educational story generator for spelling experiments.
+  return `You are an expert storyteller. Create an engaging story for language learners.
 
-CONSTRAINTS:
-- Use EXACTLY the provided targetWords (no variants, no synonyms).
-- Write EXACTLY 4 paragraphs (ignore the paragraphCount hint if it differs).
-- Each target word must appear EXACTLY 4 times (one per paragraph for that word).
-- NEVER twice in the same paragraph for the same word.
-- Do NOT put two different target words in the same sentence.
-- Each paragraph must have at least as many sentences as the number of targetWords.
-- Vary the order of target words across paragraphs (do not repeat the same sequence).
-- MANDATORY: Mark EVERY occurrence of target words with double asterisks: **word** (bold markers are used for counting).
-  Example: "The **harbor** is beautiful" not "The harbor is beautiful".
-- Story should remain coherent and natural.
+CRITICAL COUNTING REQUIREMENT:
+Each target word MUST appear EXACTLY 4 times in the story. Not 3, not 5 - exactly 4.
+Before finalizing, COUNT each target word's occurrences and verify = 4.
 
-Return the story as JSON in this shape (flexible formatting is acceptable):
+STRUCTURE:
+- Write 3-6 paragraphs as needed for a natural narrative flow
+- No strict paragraph count - use as many as the story needs
+- Each paragraph: varied sentence lengths for natural reading
+- Create a complete narrative arc (beginning, middle, end)
+
+TARGET WORD RULES:
+1. Each target word appears EXACTLY 4 times total (count carefully!)
+2. Mark EVERY occurrence with **double asterisks**: "The **museum** was old"
+3. NEVER put two DIFFERENT target words in the same sentence
+4. Same word CAN appear multiple times in one paragraph
+
+NOISE WORDS (if provided):
+- Each noise word: 1-2 times total
+- Mark with ++plus signs++: "She was ++anxious++"
+
+VERIFICATION STEP (do this before responding):
+For each target word, count occurrences in your story. If any word ≠ 4, revise until all = 4.
+
+Return JSON:
 {
   "story": {
-    "paragraphs": [exactly 4 paragraphs with **word** markers],
-    "occurrences": [
-      { "word": string, "paragraphIndex": number, "sentenceIndex": number }
-    ]
+    "paragraphs": ["paragraph with **target** and ++noise++ markers", ...],
+    "wordCounts": { "word1": 4, "word2": 4, ... },
+    "occurrences": [{ "word": "x", "paragraphIndex": 0, "sentenceIndex": 0 }, ...]
   }
-}
-
-PRIORITIZE (if you cannot satisfy all constraints):
-1. Exactly 4 occurrences of each target word, bold-marked
-2. Coherent, readable story
-3. Keep 4 paragraphs`;
+}`;
 }
 
 export function storyUserBold(
   cefr: string,
   targetWords: string[],
-  _paragraphCount: number
+  _paragraphCount: number,
+  noiseWords: string[] = []
 ): string {
-  return JSON.stringify({
+  const wordList = targetWords.map(w => `"${w}": exactly 4 times`).join(', ');
+
+  const payload: Record<string, any> = {
     cefr,
     targetWords,
-    paragraphCountHint: 4,
-    occurrencesPerWord: 4,
-    instructions:
-      'Generate a natural story in exactly 4 paragraphs where each target word appears EXACTLY 4 times total (one per paragraph), marked with **word**. Do not place the same target word twice in a paragraph. Do not place two different target words in the same sentence. Each paragraph must have at least as many sentences as the number of targetWords.',
-    minSentencesPerParagraph: targetWords.length,
-  });
+    requiredCounts: wordList,
+    criticalRule: 'COUNT CAREFULLY: Each target word must appear EXACTLY 4 times. Verify your counts before responding.',
+    instructions: 'Write an engaging story with natural paragraph structure. Mark each target word with **asterisks**. Never put two different target words in the same sentence.',
+  };
+
+  if (noiseWords.length > 0) {
+    payload.noiseWords = noiseWords;
+    payload.noiseRule = 'Each noise word: 1-2 times, marked with ++plus signs++';
+  }
+
+  return JSON.stringify(payload);
 }

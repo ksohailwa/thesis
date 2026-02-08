@@ -58,8 +58,7 @@ export function hydrateStudentSession(): boolean {
       useAuth.getState().setAuth({
         accessToken: 'student-session',
         role: 'student',
-        email: 'student@local',
-        demo: true,
+        username: 'student',
       })
     }
     return true
@@ -87,8 +86,7 @@ export function hydrateStudentSession(): boolean {
   useAuth.getState().setAuth({
     accessToken: 'student-session',
     role: 'student',
-    email: 'student@local',
-    demo: true,
+    username: 'student',
   })
 
   return true

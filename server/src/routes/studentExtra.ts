@@ -249,24 +249,43 @@ router.post('/feedback', requireAuth, requireRole('student'), async (req: Authed
   });
 
   let breakUntil: string | undefined;
+  let recallUnlockAt: string | undefined;
+
   if (storyIndex === 0) {
+    // Story 1 complete - set 5-minute break before Story 2
     const nextBreak = new Date(Date.now() + 5 * 60 * 1000);
     breakUntil = nextBreak.toISOString();
     try {
       await Assignment.findOneAndUpdate(
         { experiment: experimentId, student: studentId },
-        { $set: { breakUntil: nextBreak } }
+        { $set: { breakUntil: nextBreak, story1CompletedAt: new Date() } }
       );
     } catch (err) {
       logger.warn('Failed to update breakUntil', {
         error: err instanceof Error ? err.message : String(err),
       });
     }
+  } else if (storyIndex === 1) {
+    // Story 2 complete - set 12-hour minimum wait before recall test
+    const recallUnlock = new Date(Date.now() + 12 * 60 * 60 * 1000); // 12 hours
+    recallUnlockAt = recallUnlock.toISOString();
+    try {
+      await Assignment.findOneAndUpdate(
+        { experiment: experimentId, student: studentId },
+        { $set: { recallUnlockAt: recallUnlock, story2CompletedAt: new Date() } }
+      );
+    } catch (err) {
+      logger.warn('Failed to update recallUnlockAt', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
+
   res.json({
     ok: true,
     message: 'Feedback received',
     breakUntil,
+    recallUnlockAt,
   });
 });
 

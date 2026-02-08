@@ -8,9 +8,8 @@ interface AuthState {
   accessToken: string | null;
   refreshToken?: string | null;
   role: Role;
-  email: string | null;
-  demo?: boolean;
-  setAuth: (a: { accessToken: string; refreshToken?: string | null; role: Exclude<Role, null>; email: string; demo?: boolean }) => void;
+  username: string | null;
+  setAuth: (a: { accessToken: string; refreshToken?: string | null; role: Exclude<Role, null>; username?: string }) => void;
   clear: () => void;
   hydrated: boolean;
   setHydrated: (ready: boolean) => void;
@@ -18,13 +17,12 @@ interface AuthState {
 
 // Legacy localStorage keys were used before Zustand persistence. This keeps logins alive after refresh.
 const loadLegacy = () => {
-  if (typeof window === 'undefined') return { accessToken: null, refreshToken: null as string | null, role: null as Role, email: null, demo: false };
+  if (typeof window === 'undefined') return { accessToken: null, refreshToken: null as string | null, role: null as Role, username: null };
   const legacy = {
     accessToken: localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN_KEY),
     refreshToken: localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN_KEY),
     role: (localStorage.getItem(STORAGE_KEYS.USER_ROLE_KEY) as Role) || null,
-    email: localStorage.getItem(STORAGE_KEYS.USER_EMAIL_KEY),
-    demo: localStorage.getItem(STORAGE_KEYS.DEMO_MODE_KEY) === '1',
+    username: localStorage.getItem(STORAGE_KEYS.USER_EMAIL_KEY), // legacy key reused
   };
   // Clear legacy tokens to avoid cross-tab collisions; new sessions live in sessionStorage.
   localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN_KEY);
@@ -43,8 +41,7 @@ export const useAuth = create<AuthState>()(
         accessToken: legacy.accessToken,
         refreshToken: legacy.refreshToken,
         role: legacy.role,
-        email: legacy.email,
-        demo: legacy.demo,
+        username: legacy.username,
         hydrated: false,
         setHydrated: (ready: boolean) => set({ hydrated: ready }),
         setAuth: (a) => {
@@ -52,8 +49,7 @@ export const useAuth = create<AuthState>()(
             accessToken: a.accessToken,
             refreshToken: a.refreshToken,
             role: a.role,
-            email: a.email,
-            demo: !!a.demo,
+            username: a.username || null,
           });
         },
         clear: () => {
@@ -65,7 +61,7 @@ export const useAuth = create<AuthState>()(
             localStorage.removeItem(STORAGE_KEYS.DEMO_MODE_KEY);
             sessionStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN_KEY);
           }
-          set({ accessToken: null, refreshToken: null, role: null, email: null, demo: false });
+          set({ accessToken: null, refreshToken: null, role: null, username: null });
         },
       };
     },
@@ -76,8 +72,7 @@ export const useAuth = create<AuthState>()(
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,
         role: state.role,
-        email: state.email,
-        demo: state.demo,
+        username: state.username,
       }),
       onRehydrateStorage: () => (state) => {
         // Ensure the app waits for hydration before gating routes.

@@ -24,6 +24,7 @@ router.post(
       storyLabel: z.enum(['story1', 'story2']).optional(),
       set: z.enum(['set1', 'set2']).optional(),
       targetWords: z.array(z.string()).min(1).max(10).optional(),
+      model: z.enum(['openai', 'claude']).optional(),
       regenerate: z.boolean().optional(),
     });
     const parsed = schema.safeParse(req.body);
@@ -35,6 +36,7 @@ router.post(
       storyLabel: parsed.data.storyLabel,
       set: parsed.data.set || 'set1',
       targetWords: parsed.data.targetWords,
+      model: parsed.data.model,
       regenerate: parsed.data.regenerate,
     });
     return res.json(createSuccessResponse({ id: job.id, status: job.status }));

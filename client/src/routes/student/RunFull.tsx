@@ -7,7 +7,7 @@ import { hydrateStudentSession } from '../../lib/studentSession'
 import { useIntervention, type WordMetadata } from '../../store/intervention'
 
 // Types and utilities
-import type { Blank, StoryPayload, BlankState, HintState, SentenceClip } from './types'
+import type { Blank, StoryPayload, BlankState, SentenceClip } from './types'
 import { splitSentences, parseParagraph, buildLetterFeedback } from './utils'
 
 // Sub-components
@@ -16,8 +16,7 @@ import Sidebar from './components/Sidebar'
 import StoryReader from './components/StoryReader'
 import FeedbackModal from './components/FeedbackModal'
 import Confetti from './components/Confetti'
-import DefinitionsView from './components/DefinitionsView'
-import DefinitionFeedbackView from './components/DefinitionFeedbackView'
+import MentalEffortView from './components/MentalEffortView'
 import BreakTimeView from './components/BreakTimeView'
 import BlankInput from './components/BlankInput'
 import CorrectAnswerModal from './components/CorrectAnswerModal'
@@ -73,7 +72,6 @@ function RunFull() {
   const [storyIndex, setStoryIndex] = useState(0)
   const [blanksState, setBlanksState] = useState<Record<string, BlankState>>({})
   const [locked, setLocked] = useState<Record<string, boolean>>({})
-  const [hints, setHints] = useState<Record<string, HintState>>({})
   const [attemptsByWord, setAttemptsByWord] = useState<Record<string, number>>({})
   const [timeByWordMs, setTimeByWordMs] = useState<Record<string, number>>({})
 
@@ -82,7 +80,6 @@ function RunFull() {
   const [maxStreak, setMaxStreak] = useState(0)
   const [showConfetti, setShowConfetti] = useState(false)
   const [showFeedback, setShowFeedback] = useState(false)
-  const [activeHintWord, setActiveHintWord] = useState<string | null>(null)
   const [feedbackData, setFeedbackData] = useState({
     difficulty: 3,
     enjoyment: 3,
@@ -95,7 +92,12 @@ function RunFull() {
   const [breakUntil, setBreakUntil] = useState<string | null>(() =>
     sessionStorage.getItem('exp.breakUntil')
   )
+  const [breakStartTime, setBreakStartTime] = useState<number>(() => {
+    const stored = sessionStorage.getItem('exp.breakStartTime')
+    return stored ? parseInt(stored, 10) : Date.now()
+  })
   const [now, setNow] = useState(Date.now())
+  const [storySubmitted, setStorySubmitted] = useState(false)
   const wordTimerRef = useRef<Record<string, number>>({})
 
   const audioRef = useRef<HTMLAudioElement>(null)
@@ -205,12 +207,6 @@ function RunFull() {
     [allBlanks, activeBlankKey]
   )
   const hintsEnabled = hintsByStory ? !!hintsByStory[currentStoryLabel] : condition === 'with-hints'
-  const hintsAllowed = hintsEnabled && (!activeBlank || activeBlank.occurrenceIndex < 5)
-  const hintsMessage = !hintsEnabled
-    ? 'Hints are disabled for this session.'
-    : activeBlank && activeBlank.occurrenceIndex >= 5
-      ? 'Hints disabled for the 5th occurrence.'
-      : ''
 
   const sentenceClips = useMemo(() => {
     const clips: SentenceClip[] = []
@@ -237,44 +233,23 @@ function RunFull() {
 
   const [currentParagraph, setCurrentParagraph] = useState(0)
   const [readMode, setReadMode] = useState(false)
-  const [showDefine, setShowDefine] = useState(false)
-  const [definitionDrafts, setDefinitionDrafts] = useState<Record<string, string>>({})
-  const [definitionResults, setDefinitionResults] = useState<
-    Array<{ word: string; correct: boolean | null; feedback: string }> | null
-  >(null)
-  const [showDefinitionFeedback, setShowDefinitionFeedback] = useState(false)
-  const [pendingDefinePara, setPendingDefinePara] = useState<number | null>(null)
-  const [definitionDoneByKey, setDefinitionDoneByKey] = useState<Record<string, boolean>>({})
+  const [showMentalEffort, setShowMentalEffort] = useState(false)
+  const [pendingEffortPara, setPendingEffortPara] = useState<number | null>(null)
+  const [effortDoneByKey, setEffortDoneByKey] = useState<Record<string, boolean>>({})
 
   // Control group: correct answer modal state
   const [correctAnswerModal, setCorrectAnswerModal] = useState<{
     word: string;
     definition: string;
     blankKey: string;
+    studentAttempt: string;
   } | null>(null)
 
   // Intervention store
   const interventionStore = useIntervention()
   const [pendingInterventionBlank, setPendingInterventionBlank] = useState<Blank | null>(null)
 
-  const definitionKey = (para: number) => `${storyIndex}-${para}`
-  const definitionWordsForPara = (para: number) => {
-    const targetOcc = (currentStory.occurrences || []).filter((o) => o.paragraphIndex === para)
-    const noiseOcc = ((currentStory as any).noiseOccurrences?.length
-      ? (currentStory as any).noiseOccurrences
-      : clientNoise
-    ).filter((o: any) => o.paragraphIndex === para)
-    const seen = new Set<string>()
-    const out: string[] = []
-    ;[...targetOcc, ...noiseOcc].forEach((o: any) => {
-      const w = (o.word || '').toString()
-      const key = w.toLowerCase()
-      if (!key || seen.has(key)) return
-      seen.add(key)
-      out.push(w)
-    })
-    return out
-  }
+  const effortKey = (para: number) => `${storyIndex}-${para}`
 
   const displayParagraphs = currentStory.paragraphs || []
   const displayStory = { ...currentStory, paragraphs: displayParagraphs }
@@ -300,19 +275,8 @@ function RunFull() {
     return () => clearInterval(id)
   }, [breakUntil])
 
-  useEffect(() => {
-    if (!breakUntil) return
-    if (Date.now() >= new Date(breakUntil).getTime()) {
-      sessionStorage.removeItem('exp.breakUntil')
-      setBreakUntil(null)
-    }
-  }, [breakUntil, now])
+  // Note: We no longer auto-clear breakUntil - user must click the button
 
-  useEffect(() => {
-    if (showDefine) {
-      setDefinitionDrafts({})
-    }
-  }, [showDefine, pendingDefinePara, currentStoryLabel])
 
   useEffect(() => {
     if (isStoryComplete) {
@@ -338,21 +302,18 @@ function RunFull() {
     softPause()
     setBlanksState({})
     setLocked({})
-    setHints({})
     setAttemptsByWord({})
     setTimeByWordMs({})
     wordTimerRef.current = {}
     setStreak(0)
     setActiveBlankKey(null)
-    setActiveHintWord(null)
     setCurrentSentenceId(null)
-    setShowDefine(false)
-    setDefinitionDrafts({})
-    setDefinitionResults(null)
-    setShowDefinitionFeedback(false)
-    setPendingDefinePara(null)
+    setShowMentalEffort(false)
+    setPendingEffortPara(null)
+    setEffortDoneByKey({})
     setShowFeedback(false)
     setShowConfetti(false)
+    setCurrentParagraph(0)
     window.scrollTo(0, 0)
     setStoryIndex(targetIndex)
   }
@@ -431,6 +392,28 @@ function RunFull() {
         setIsPlaying(false)
       }
       sentenceAudioRef.current!.onended = () => {
+        // Check if current sentence has any blanks (unsolved)
+        const sentenceBlanks = allBlanks.filter(
+          (b) => b.paragraphIndex === clip.paragraphIndex && b.sentenceIndex === clip.sentenceIndex
+        )
+        const hasUnsolvedBlank = sentenceBlanks.some((b) => !locked[b.key])
+
+        if (hasUnsolvedBlank) {
+          // Stop playback after this sentence - user needs to fill in the blank
+          setCurrentSentenceId(null)
+          setIsPlaying(false)
+          // Focus the first unsolved blank in this sentence
+          const firstUnsolved = sentenceBlanks.find((b) => !locked[b.key])
+          if (firstUnsolved) {
+            const el = document.getElementById(`blank-${firstUnsolved.key}-0`)
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+              setTimeout(() => el.focus(), 100)
+            }
+          }
+          return
+        }
+
         idx += 1
         playNext()
       }
@@ -537,7 +520,7 @@ function RunFull() {
       // Handle based on condition
       if (!hintsEnabled) {
         // Control group (without-hints): Show correct answer + definition
-        triggerControlGroupFeedback(blank)
+        triggerControlGroupFeedback(blank, val)
       } else {
         // With-hints group: Trigger intervention
         triggerIntervention(blank)
@@ -546,13 +529,14 @@ function RunFull() {
   }
 
   // Control group: Fetch definition and show correct answer modal
-  async function triggerControlGroupFeedback(blank: Blank) {
+  async function triggerControlGroupFeedback(blank: Blank, studentAttempt: string) {
     try {
       const { data } = await api.get(`/api/student/word-metadata/${expId}/${blank.word}`)
       setCorrectAnswerModal({
         word: blank.word,
         definition: data.definition || `Definition for ${blank.word}`,
         blankKey: blank.key,
+        studentAttempt,
       })
     } catch (e) {
       // Fallback if API fails
@@ -560,6 +544,7 @@ function RunFull() {
         word: blank.word,
         definition: `The correct spelling is "${blank.word}"`,
         blankKey: blank.key,
+        studentAttempt,
       })
     }
   }
@@ -643,36 +628,6 @@ function RunFull() {
     }
   }
 
-  async function getHint(blankOverride?: Blank) {
-    const active = blankOverride || allBlanks.find((b) => b.key === activeBlankKey)
-    const targetWord = active?.word || activeHintWord
-    if (!targetWord) return
-    if (active && active.occurrenceIndex >= 5) {
-      toast.error('Hints are disabled for the 5th occurrence.')
-      return
-    }
-    const used = hints[targetWord]?.used || 0
-    const fallbackHint = 'Focus on the spelling pattern and sound. Check vowels and length.'
-    try {
-      const { data } = await api.post('/api/student/hint', {
-        experimentId: expId,
-        targetWord: targetWord,
-        occurrenceIndex: active?.occurrenceIndex,
-        abCondition: hintsEnabled ? 'with-hints' : 'without-hints',
-        attemptCount: attemptsByWord[targetWord] || 0,
-        timeSpentMs: timeByWordMs[targetWord] || 0,
-        latestAttempt: active ? blanksState[active.key]?.value || '' : '',
-      })
-      setHints((prev) => ({
-        ...prev,
-        [targetWord]: { used: used + 1, text: data?.hint || fallbackHint },
-      }))
-    } catch (e) {
-      setHints((prev) => ({ ...prev, [targetWord]: { used: used + 1, text: fallbackHint } }))
-      toast.error('Hint service unavailable, showing a basic hint.')
-    }
-  }
-
   async function submitFeedback() {
     try {
       const feedbackRes = await api.post('/api/student/feedback', {
@@ -686,11 +641,18 @@ function RunFull() {
         sessionStorage.setItem('exp.story1Complete', 'true')
         const breakUntilValue =
           feedbackRes?.data?.breakUntil || new Date(Date.now() + 5 * 60 * 1000).toISOString()
+        const breakStart = Date.now()
         sessionStorage.setItem('exp.breakUntil', breakUntilValue)
+        sessionStorage.setItem('exp.breakStartTime', String(breakStart))
         setBreakUntil(breakUntilValue)
+        setBreakStartTime(breakStart)
         restartStory(1)
       } else {
         sessionStorage.setItem('exp.story2Complete', 'true')
+        // Save recall unlock time (12 hours from now)
+        const recallUnlockValue =
+          feedbackRes?.data?.recallUnlockAt || new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
+        sessionStorage.setItem('exp.recallUnlockAt', recallUnlockValue)
         setSubmitting(true)
         try {
           await api.post('/api/student/submit', {
@@ -699,7 +661,7 @@ function RunFull() {
             totalAttempts: 0,
           })
         } catch {}
-        toast.success('Stories complete! Moving to recall test...')
+        toast.success('Stories complete! Recall test will be available in 12 hours.')
         setTimeout(() => (window.location.href = '/student/test'), 1200)
       }
     } catch (e) {
@@ -708,47 +670,84 @@ function RunFull() {
     }
   }
 
-  async function submitDefinitions() {
+  async function submitMentalEffort(score: number) {
     try {
-      const targetPara = pendingDefinePara ?? currentParagraph
-      const definitionWords = definitionWordsForPara(targetPara)
-      if (definitionWords.length === 0) {
-        setDefinitionDoneByKey((prev) => ({ ...prev, [definitionKey(targetPara)]: true }))
-        setDefinitionDrafts({})
-        setShowDefine(false)
-        setPendingDefinePara(null)
-        setCurrentParagraph(targetPara)
-        return
-      }
-      const { data } = await api.post('/api/student/define', {
+      const targetPara = pendingEffortPara ?? currentParagraph
+      const completedPara = targetPara === 4 ? targetPara : targetPara - 1
+
+      // Submit mental effort to backend
+      await api.post('/api/student/effort', {
         experimentId: expId,
         storyLabel: currentStoryLabel,
-        paragraphIndex: targetPara,
-        answers: definitionWords.map((w) => ({ word: w, definition: definitionDrafts[w] || '' })),
+        paragraphIndex: completedPara,
+        score,
+        position: targetPara === 4 ? 'end' : 'mid',
       })
-      setDefinitionDoneByKey((prev) => ({ ...prev, [definitionKey(targetPara)]: true }))
-      setDefinitionDrafts({})
-      if (targetPara < 4) {
-        setShowDefine(false)
-        setPendingDefinePara(null)
+
+      // Save paragraph progress to server
+      await saveParagraphProgress(completedPara)
+
+      setEffortDoneByKey((prev) => ({ ...prev, [effortKey(targetPara)]: true }))
+      setShowMentalEffort(false)
+      setPendingEffortPara(null)
+      setStorySubmitted(true)
+
+      if (targetPara === 4) {
+        // Final paragraph - show feedback modal
+        setShowFeedback(true)
+      } else {
+        // Move to next paragraph
+        setStorySubmitted(false)
         setCurrentParagraph(targetPara)
-        return
       }
-      const results = Array.isArray(data?.results) ? data.results : []
-      setDefinitionResults(results)
-      setShowDefine(false)
-      setShowDefinitionFeedback(true)
     } catch {
-      toast.error('Could not submit definitions')
+      toast.error('Could not submit mental effort rating')
     }
   }
 
   // Break time calculation
   const breakRemainingMs = breakUntil ? new Date(breakUntil).getTime() - now : 0
-  const breakActive = storyIndex === 1 && !!breakUntil && breakRemainingMs > 0
+  const breakActive = storyIndex === 1 && !!breakUntil
   const breakSeconds = Math.max(0, Math.ceil(breakRemainingMs / 1000))
   const breakMin = Math.floor(breakSeconds / 60)
   const breakSec = breakSeconds % 60
+
+  // Save paragraph progress to server
+  async function saveParagraphProgress(paragraphIndex: number) {
+    try {
+      const paraBlanks = allBlanks.filter((b) => b.paragraphIndex === paragraphIndex)
+      const solvedParaBlanks = paraBlanks.filter((b) => locked[b.key])
+
+      await api.post('/api/student/paragraph-progress', {
+        experimentId: expId,
+        storyLabel: currentStoryLabel,
+        paragraphIndex,
+        totalBlanks: paraBlanks.length,
+        solvedBlanks: solvedParaBlanks.length,
+        completedAt: new Date().toISOString(),
+      })
+    } catch (e) {
+      logger.error('Failed to save paragraph progress', e)
+    }
+  }
+
+  // Log break time when starting story 2
+  async function handleStartStory2(actualBreakMs: number) {
+    try {
+      await api.post('/api/student/break-log', {
+        experimentId: expId,
+        actualBreakMs,
+        expectedBreakMs: 5 * 60 * 1000,
+        skippedEarly: actualBreakMs < 5 * 60 * 1000,
+      })
+    } catch (e) {
+      logger.error('Failed to log break time', e)
+    }
+
+    sessionStorage.removeItem('exp.breakUntil')
+    sessionStorage.removeItem('exp.breakStartTime')
+    setBreakUntil(null)
+  }
 
   // Render blank input using BlankInput component
   const renderBlankInput = (blank: Blank) => {
@@ -762,13 +761,12 @@ function RunFull() {
         blank={blank}
         state={state}
         isLocked={isLocked}
-        hintsEnabled={hintsEnabled}
+        hintsEnabled={false}
         feedbackEnabled={feedbackEnabled}
         onCheck={checkBlank}
-        onHint={getHint}
+        onHint={() => {}}
         onFocus={(b) => {
           setActiveBlankKey(b.key)
-          setActiveHintWord(b.word)
           startWordTimer(b.word)
         }}
         onBlur={(b) => stopWordTimer(b.word)}
@@ -784,27 +782,12 @@ function RunFull() {
   }
 
   // Conditional renders
-  if (showDefine) {
-    const targetPara = pendingDefinePara ?? currentParagraph
+  if (showMentalEffort) {
+    const targetPara = pendingEffortPara ?? currentParagraph
     return (
-      <DefinitionsView
-        targetParagraph={targetPara}
-        definitionWords={definitionWordsForPara(targetPara)}
-        definitionDrafts={definitionDrafts}
-        setDefinitionDrafts={setDefinitionDrafts}
-        onSubmit={submitDefinitions}
-      />
-    )
-  }
-
-  if (showDefinitionFeedback) {
-    return (
-      <DefinitionFeedbackView
-        results={definitionResults}
-        onContinue={() => {
-          setShowDefinitionFeedback(false)
-          setShowFeedback(true)
-        }}
+      <MentalEffortView
+        paragraphNumber={targetPara + 1}
+        onSubmit={submitMentalEffort}
       />
     )
   }
@@ -815,10 +798,8 @@ function RunFull() {
         breakMin={breakMin}
         breakSec={breakSec}
         breakRemainingMs={breakRemainingMs}
-        onStartStory2={() => {
-          sessionStorage.removeItem('exp.breakUntil')
-          setBreakUntil(null)
-        }}
+        breakStartTime={breakStartTime}
+        onStartStory2={handleStartStory2}
       />
     )
   }
@@ -863,11 +844,43 @@ function RunFull() {
             <button
               className="btn primary"
               onClick={() => {
+                // Check if all blanks in current paragraph are solved
+                const currentParaBlanks = allBlanks.filter((b) => b.paragraphIndex === currentParagraph)
+                const unsolvedBlanks = currentParaBlanks.filter((b) => !locked[b.key])
+
+                // If there are unsolved blanks, auto-check them one at a time
+                if (unsolvedBlanks.length > 0) {
+                  // Find the first unchecked blank and check it
+                  const firstUnchecked = unsolvedBlanks[0]
+                  const state = blanksState[firstUnchecked.key]
+                  const currentValue = state?.value?.trim() || ''
+
+                  // Check the blank with current value
+                  checkBlank(firstUnchecked, currentValue)
+
+                  // Show message about remaining words
+                  if (unsolvedBlanks.length === 1) {
+                    toast.error('Please spell this word correctly before continuing')
+                  } else {
+                    toast.error(`Please spell all ${unsolvedBlanks.length} remaining words correctly before continuing`)
+                  }
+
+                  // Focus the first unchecked blank
+                  const el = document.getElementById(`blank-${firstUnchecked.key}-0`)
+                  if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                    setTimeout(() => el.focus(), 100)
+                  }
+                  return
+                }
+
                 const next = currentParagraph + 1
                 if (next >= 5) return
-                if (next >= 1 && next <= 3 && !definitionDoneByKey[definitionKey(next)]) {
-                  setPendingDefinePara(next)
-                  setShowDefine(true)
+
+                // Show mental effort questionnaire before moving to next paragraph
+                if (!effortDoneByKey[effortKey(next)]) {
+                  setPendingEffortPara(next)
+                  setShowMentalEffort(true)
                   return
                 }
                 setCurrentParagraph(next)
@@ -878,14 +891,42 @@ function RunFull() {
             </button>
             {currentParagraph === 4 && (
               <button
-                className="btn primary"
+                className={`btn ${effortDoneByKey[effortKey(4)] ? 'bg-green-600 text-white cursor-not-allowed' : 'primary'}`}
                 onClick={() => {
-                  setPendingDefinePara(4)
-                  setShowDefine(true)
+                  if (effortDoneByKey[effortKey(4)]) return
+
+                  // Check if all blanks in current paragraph are solved
+                  const currentParaBlanks = allBlanks.filter((b) => b.paragraphIndex === currentParagraph)
+                  const unsolvedBlanks = currentParaBlanks.filter((b) => !locked[b.key])
+
+                  // If there are unsolved blanks, auto-check them
+                  if (unsolvedBlanks.length > 0) {
+                    const firstUnchecked = unsolvedBlanks[0]
+                    const state = blanksState[firstUnchecked.key]
+                    const currentValue = state?.value?.trim() || ''
+                    checkBlank(firstUnchecked, currentValue)
+
+                    if (unsolvedBlanks.length === 1) {
+                      toast.error('Please spell this word correctly before submitting')
+                    } else {
+                      toast.error(`Please spell all ${unsolvedBlanks.length} remaining words correctly before submitting`)
+                    }
+
+                    const el = document.getElementById(`blank-${firstUnchecked.key}-0`)
+                    if (el) {
+                      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                      setTimeout(() => el.focus(), 100)
+                    }
+                    return
+                  }
+
+                  // Show mental effort questionnaire before finishing story
+                  setPendingEffortPara(4)
+                  setShowMentalEffort(true)
                 }}
-                disabled={!isStoryComplete || !!definitionDoneByKey[definitionKey(4)]}
+                disabled={!!effortDoneByKey[effortKey(4)]}
               >
-                Submit story
+                {effortDoneByKey[effortKey(4)] ? 'Submitted' : 'Submit story'}
               </button>
             )}
           </div>
@@ -903,9 +944,9 @@ function RunFull() {
           isStoryComplete={isStoryComplete}
           onPlaySentence={playSentence}
           onShowFeedback={() => {
-            if (!definitionDoneByKey[definitionKey(4)]) {
-              setPendingDefinePara(4)
-              setShowDefine(true)
+            if (!effortDoneByKey[effortKey(4)]) {
+              setPendingEffortPara(4)
+              setShowMentalEffort(true)
             } else {
               setShowFeedback(true)
             }
@@ -918,16 +959,9 @@ function RunFull() {
 
         {!readMode && (
           <Sidebar
-            label={hintsEnabled ? 'H' : 'N'}
             streak={streak}
-            activeBlankKey={activeBlankKey}
-            activeHintWord={activeHintWord}
-            hints={hints}
-            hintsAllowed={hintsAllowed}
-            hintsMessage={hintsMessage}
             sentenceClips={visibleClips}
             currentSentenceId={currentSentenceId}
-            onGetHint={() => getHint()}
             onPlaySentence={playSentence}
           />
         )}
@@ -950,6 +984,7 @@ function RunFull() {
         <CorrectAnswerModal
           word={correctAnswerModal.word}
           definition={correctAnswerModal.definition}
+          studentAttempt={correctAnswerModal.studentAttempt}
           onContinue={handleControlGroupContinue}
         />
       )}

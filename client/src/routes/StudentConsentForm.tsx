@@ -11,7 +11,7 @@ export default function StudentConsent() {
   const [agreedConsent, setAgreedConsent] = useState(false)
   const [agreedPrivacy, setAgreedPrivacy] = useState(false)
   const [agreedDataStorage, setAgreedDataStorage] = useState(false)
-  const username = (auth.email || '').trim()
+  const username = (auth.username || '').trim()
   const consentKey = username ? `student-consent:${username.toLowerCase()}` : ''
 
   function handleContinue(forceAll = false) {
