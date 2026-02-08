@@ -8,7 +8,6 @@ SpellWise is a modern, AI-powered platform for spelling experiments and practice
 
 ### For Teachers
 - **AI-Powered Authoring:** Generate spelling experiments based on CEFR levels and specific topics.
-- **Smart Word Suggestions:** Receive AI-recommended target words tailored to the experiment's goals.
 - **Story Generation:** Automatically create contextually relevant stories in "Help" (practice) and "No Help" (test) versions.
 - **Text-to-Speech (TTS):** Generate high-quality audio for stories and target words using OpenAI's TTS.
 - **Analytics & Telemetry:** Track student progress, effort, and performance with detailed analytics.
