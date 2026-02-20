@@ -67,7 +67,7 @@ if (env !== 'development') {
   app.use(`${BASE_PATH}/api/auth/`, authLimiter);
 }
 
-// HTTP request logging (clean, readable format; skip noisy polling requests)
+// HTTP request logging (skip noisy polling, health checks, 304s, static files)
 app.use(
   morgan(
     (tokens, req, res) => {
@@ -79,7 +79,15 @@ app.use(
     },
     {
       stream: { write: (message: string) => logger.info(message.trim()) },
-      skip: (req) => req.method === 'GET' && req.url?.startsWith('/api/jobs/'),
+      skip: (req, res) => {
+        const url = req.url || '';
+        // Skip job polling (every 15s), health checks, 304 Not Modified
+        if (req.method === 'GET' && url.includes('/api/jobs/')) return true;
+        if (url.includes('/api/health')) return true;
+        if (url.includes('/static/')) return true;
+        if (res.statusCode === 304) return true;
+        return false;
+      },
     }
   )
 );
@@ -168,7 +176,6 @@ if (env === 'production') {
 
 // 404 handler for unknown API routes
 app.use((req, res) => {
-  logger.warn('Route not found', { method: req.method, path: req.path });
   res.status(404).json({ error: 'Route not found' });
 });
 

@@ -86,8 +86,8 @@ async function runWithRetry(doFetch: () => Promise<Response>, max = 3) {
       // Early stop on hard failures
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes('HTTP 401') || msg.includes('HTTP 403')) break;
-      const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
-      logger.warn(`Retrying (attempt ${attempt + 1})... waiting ${delay / 1000}s`);
+      const delay = Math.pow(2, attempt) * 1000;
+      if (attempt === max - 1) logger.warn(`Retry ${attempt + 1}/${max} failed: ${msg}`);
       await new Promise((r) => setTimeout(r, delay));
       attempt++;
     }
@@ -101,7 +101,8 @@ async function runJob(j: Job) {
   const friendly: Record<string, string> = { generate_story: 'Story generation', generate_tts: 'TTS audio', fetch_words: 'Word fetch' };
   logger.info(`${friendly[j.type] || j.type} started${j.storyLabel ? ` (${j.storyLabel})` : ''}...`);
   try {
-    const base = `http://localhost:${config.port}`;
+    const basePath = process.env.NODE_ENV === 'production' ? '/SpellWise' : '';
+    const base = `http://localhost:${config.port}${basePath}`;
     if (j.type === 'fetch_words') {
       await runWithRetry(() =>
         fetch(`${base}/api/experiments/${j.experimentId}/suggestions`, {
