@@ -61,7 +61,7 @@ function RunFull() {
         <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-lg text-center space-y-3">
           <h2 className="text-xl font-semibold text-gray-800">Session not found</h2>
           <p className="text-gray-600 text-sm">Please re-enter your join code to continue.</p>
-          <a href="/student" className="btn primary px-4 py-2 inline-flex justify-center">
+          <a href={`${import.meta.env.BASE_URL || '/'}student`} className="btn primary px-4 py-2 inline-flex justify-center">
             Go to join page
           </a>
         </div>
@@ -492,7 +492,7 @@ function RunFull() {
       setMaxStreak((m) => Math.max(m, streak + 1))
       focusNextBlank(blank.key)
       api
-        .post('/api/student/attempt', {
+        .post('api/student/attempt', {
           experimentId: expId,
           word: blank.word,
           attempt: val,
@@ -507,7 +507,7 @@ function RunFull() {
 
       // Log the incorrect attempt
       api
-        .post('/api/student/attempt', {
+        .post('api/student/attempt', {
           experimentId: expId,
           word: blank.word,
           attempt: val,
@@ -531,7 +531,7 @@ function RunFull() {
   // Control group: Fetch definition and show correct answer modal
   async function triggerControlGroupFeedback(blank: Blank, studentAttempt: string) {
     try {
-      const { data } = await api.get(`/api/student/word-metadata/${expId}/${blank.word}`)
+      const { data } = await api.get(`api/student/word-metadata/${expId}/${blank.word}`)
       setCorrectAnswerModal({
         word: blank.word,
         definition: data.definition || `Definition for ${blank.word}`,
@@ -573,10 +573,10 @@ function RunFull() {
   async function triggerIntervention(blank: Blank) {
     try {
       // Fetch word metadata
-      const { data: metadata } = await api.get(`/api/student/word-metadata/${expId}/${blank.word}`)
+      const { data: metadata } = await api.get(`api/student/word-metadata/${expId}/${blank.word}`)
 
       // Start intervention session
-      const { data: interventionData } = await api.post('/api/student/intervention/start', {
+      const { data: interventionData } = await api.post('api/student/intervention/start', {
         experimentId: expId,
         storyLabel: currentStoryLabel,
         targetWord: blank.word,
@@ -630,7 +630,7 @@ function RunFull() {
 
   async function submitFeedback() {
     try {
-      const feedbackRes = await api.post('/api/student/feedback', {
+      const feedbackRes = await api.post('api/student/feedback', {
         experimentId: expId,
         storyKey: currentStoryLabel,
         condition: hintsEnabled ? 'with-hints' : 'without-hints',
@@ -655,14 +655,15 @@ function RunFull() {
         sessionStorage.setItem('exp.recallUnlockAt', recallUnlockValue)
         setSubmitting(true)
         try {
-          await api.post('/api/student/submit', {
+          await api.post('api/student/submit', {
             experimentId: expId,
             totalCorrect: solvedCount,
             totalAttempts: 0,
           })
         } catch {}
         toast.success('Stories complete! Recall test will be available in 12 hours.')
-        setTimeout(() => (window.location.href = '/student/test'), 1200)
+        const basePath = import.meta.env.BASE_URL || '/'
+        setTimeout(() => (window.location.href = `${basePath}student/test`), 1200)
       }
     } catch (e) {
       toast.error('Failed to save progress')
@@ -676,7 +677,7 @@ function RunFull() {
       const completedPara = targetPara === 4 ? targetPara : targetPara - 1
 
       // Submit mental effort to backend
-      await api.post('/api/student/effort', {
+      await api.post('api/student/effort', {
         experimentId: expId,
         storyLabel: currentStoryLabel,
         paragraphIndex: completedPara,
@@ -718,7 +719,7 @@ function RunFull() {
       const paraBlanks = allBlanks.filter((b) => b.paragraphIndex === paragraphIndex)
       const solvedParaBlanks = paraBlanks.filter((b) => locked[b.key])
 
-      await api.post('/api/student/paragraph-progress', {
+      await api.post('api/student/paragraph-progress', {
         experimentId: expId,
         storyLabel: currentStoryLabel,
         paragraphIndex,
@@ -734,7 +735,7 @@ function RunFull() {
   // Log break time when starting story 2
   async function handleStartStory2(actualBreakMs: number) {
     try {
-      await api.post('/api/student/break-log', {
+      await api.post('api/student/break-log', {
         experimentId: expId,
         actualBreakMs,
         expectedBreakMs: 5 * 60 * 1000,

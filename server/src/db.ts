@@ -17,13 +17,10 @@ export async function connectDB(retries = 5, delay = 5000) {
         socketTimeoutMS: 45000,
       });
 
-      logger.info('MongoDB connected', {
-        uri: config.mongoUri.replace(/\/\/.*@/, '//*****@'),
-        attempt: attempt + 1,
-      });
+      logger.info(`Database connected (${config.mongoUri.replace(/\/\/.*@/, '//*****@')})`);
 
       mongoose.connection.on('error', (err) => {
-        logger.error('MongoDB connection error', { error: err });
+        logger.error(`Database error: ${err}`);
       });
 
       mongoose.connection.on('disconnected', () => {
@@ -37,10 +34,7 @@ export async function connectDB(retries = 5, delay = 5000) {
       return;
     } catch (e) {
       attempt++;
-      logger.error(`MongoDB connection attempt ${attempt}/${retries} failed`, {
-        error: e,
-        nextRetryIn: attempt < retries ? `${delay}ms` : 'No more retries',
-      });
+      logger.error(`Database connection attempt ${attempt}/${retries} failed — ${attempt < retries ? `retrying in ${delay / 1000}s` : 'giving up'}`);
 
       if (attempt >= retries) {
         logger.error('MongoDB connection failed after all retries; continuing without DB');

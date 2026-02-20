@@ -41,7 +41,7 @@ export default function InterventionPopup({ onComplete }: Props) {
 
     setIsSubmitting(true);
     try {
-      await api.post('/api/student/intervention/complete', { interventionId });
+      await api.post('api/student/intervention/complete', { interventionId });
       finishIntervention();
       onComplete();
     } catch (error) {
@@ -59,7 +59,7 @@ export default function InterventionPopup({ onComplete }: Props) {
     if (!interventionId || !wordMetadata) return;
 
     try {
-      await api.post('/api/student/intervention/mcq', {
+      await api.post('api/student/intervention/mcq', {
         interventionId,
         selectedAnswer,
         correctAnswer: wordMetadata.definition,
@@ -78,7 +78,7 @@ export default function InterventionPopup({ onComplete }: Props) {
     if (!interventionId || !targetWord) return;
 
     try {
-      await api.post('/api/student/intervention/jumble', {
+      await api.post('api/student/intervention/jumble', {
         interventionId,
         arrangement,
         targetWord,
@@ -97,7 +97,7 @@ export default function InterventionPopup({ onComplete }: Props) {
     if (!interventionId || !targetWord || !selectedBaseWord) return;
 
     try {
-      await api.post('/api/student/intervention/sentence', {
+      await api.post('api/student/intervention/sentence', {
         interventionId,
         sentence,
         targetWord,

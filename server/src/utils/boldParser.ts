@@ -29,7 +29,11 @@ export function parseBoldMarkers(rawParagraphs: string[]): ParseResult {
   const occurrences: ParsedOccurrence[] = [];
   const noiseOccurrences: ParsedOccurrence[] = [];
 
-  rawParagraphs.forEach((rawPara, paraIdx) => {
+  rawParagraphs.forEach((rawParaInput, paraIdx) => {
+    // Coerce non-string elements to strings
+    const rawPara = typeof rawParaInput === 'string' ? rawParaInput : String(rawParaInput ?? '');
+    if (!rawPara) return;
+
     // Find all markers (both target **word** and noise ++word++)
     const markers: MarkerMatch[] = [];
 

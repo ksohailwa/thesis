@@ -29,45 +29,13 @@ export function wordPoolUser(cefr: string, story?: string, exclude: string[] = [
   return JSON.stringify({ levels: range, story, exclude });
 }
 
+// Legacy functions - kept for backwards compatibility but not used
 export function storySystem(_paragraphHint?: number): string {
-  return `You are an educational story generator.
-
-CONSTRAINTS (strict):
-- Use EXACTLY the provided 4 targetWords (no variants).
-- Write EXACTLY 4 paragraphs. Paragraph length is flexible but keep the story natural.
-- Each target word must appear EXACTLY 4 times total.
-- Do NOT place the same target word more than once in a paragraph (max 1 per paragraph for that word).
-- Do NOT put two different target words in the same sentence.
-- Each paragraph must have at least as many sentences as the number of targetWords.
-- Vary target-word ordering across paragraphs so the sequence is not repeated.
-
-Return STRICT JSON (no prose) in this shape:
-{
-  "language": "English",
-  "cefr": "{{cefr}}",
-  "targetWords": string[],
-  "story": {
-    "paragraphs": string[4],
-    "occurrences": [
-      { "word": string, "paragraphIndex": 0..3, "sentenceIndex": 0..N }
-    ]
-  },
-  "validation": {
-    "perWord": [{ "word": string, "count": 4, "sameSentenceDetected": false, "sameParagraphDetected": false }],
-    "totalOccurrences": 16
-  }
-}`;
+  return storySystemBold(_paragraphHint || 0);
 }
 
-export function storyUser(cefr: string, targetWords: string[], topic: string): string {
-  return JSON.stringify({
-    cefr,
-    targetWords,
-    topic,
-    paragraphs: 4,
-    occurrencesPerWord: 4,
-    minSentencesPerParagraph: targetWords.length,
-  });
+export function storyUser(cefr: string, targetWords: string[], _topic: string): string {
+  return storyUserBold(cefr, targetWords, 0, []);
 }
 
 export function hintSystem(): string {
@@ -177,39 +145,27 @@ export function sentenceValidationUser(
 }
 
 export function storySystemBold(_paragraphCount: number): string {
-  return `You are an expert storyteller. Create an engaging story for language learners.
+  return `You are an expert storyteller. Write an engaging story for language learners.
 
-CRITICAL COUNTING REQUIREMENT:
-Each target word MUST appear EXACTLY 4 times in the story. Not 3, not 5 - exactly 4.
-Before finalizing, COUNT each target word's occurrences and verify = 4.
+STRICT WORD COUNT RULES (MUST follow exactly):
+- Each TARGET word must appear AT LEAST 4 times in the story. 4, 5, or 6 times is fine — but never fewer than 4.
+- Each NOISE word must appear exactly 1 or 2 times in the story.
+- Spread words naturally across paragraphs. Do NOT cluster all occurrences in one paragraph.
 
-STRUCTURE:
-- Write 3-6 paragraphs as needed for a natural narrative flow
-- No strict paragraph count - use as many as the story needs
-- Each paragraph: varied sentence lengths for natural reading
-- Create a complete narrative arc (beginning, middle, end)
+MARKING FORMAT:
+- Mark every target word occurrence with **double asterisks**: "She visited the **museum** yesterday"
+- Mark every noise word occurrence with ++plus signs++: "He felt ++anxious++ about it"
+- You MUST mark every single occurrence. Unmarked occurrences will not be counted.
 
-TARGET WORD RULES:
-1. Each target word appears EXACTLY 4 times total (count carefully!)
-2. Mark EVERY occurrence with **double asterisks**: "The **museum** was old"
-3. NEVER put two DIFFERENT target words in the same sentence
-4. Same word CAN appear multiple times in one paragraph
+STORY GUIDELINES:
+- Write 8-10 paragraphs. Use more paragraphs to fit all words naturally.
+- Keep the language at the specified CEFR level.
+- The story should be coherent, engaging, and read naturally despite the word requirements.
 
-NOISE WORDS (if provided):
-- Each noise word: 1-2 times total
-- Mark with ++plus signs++: "She was ++anxious++"
+BEFORE RETURNING: Count each target word to verify it appears at least 4 times. If any word has fewer than 4 occurrences, add more sentences.
 
-VERIFICATION STEP (do this before responding):
-For each target word, count occurrences in your story. If any word ≠ 4, revise until all = 4.
-
-Return JSON:
-{
-  "story": {
-    "paragraphs": ["paragraph with **target** and ++noise++ markers", ...],
-    "wordCounts": { "word1": 4, "word2": 4, ... },
-    "occurrences": [{ "word": "x", "paragraphIndex": 0, "sentenceIndex": 0 }, ...]
-  }
-}`;
+Return ONLY valid JSON (no markdown fences, no extra text):
+{"story":{"paragraphs":["First paragraph with **marked** words...","Second paragraph..."]}}`;
 }
 
 export function storyUserBold(
@@ -218,20 +174,18 @@ export function storyUserBold(
   _paragraphCount: number,
   noiseWords: string[] = []
 ): string {
-  const wordList = targetWords.map(w => `"${w}": exactly 4 times`).join(', ');
+  const targetList = targetWords.map(w => `"${w}" → at least 4 times`).join(', ');
+  const noiseList = noiseWords.length > 0
+    ? noiseWords.map(w => `"${w}" → 1-2 times`).join(', ')
+    : 'none';
 
-  const payload: Record<string, any> = {
-    cefr,
-    targetWords,
-    requiredCounts: wordList,
-    criticalRule: 'COUNT CAREFULLY: Each target word must appear EXACTLY 4 times. Verify your counts before responding.',
-    instructions: 'Write an engaging story with natural paragraph structure. Mark each target word with **asterisks**. Never put two different target words in the same sentence.',
-  };
+  return `CEFR level: ${cefr}
 
-  if (noiseWords.length > 0) {
-    payload.noiseWords = noiseWords;
-    payload.noiseRule = 'Each noise word: 1-2 times, marked with ++plus signs++';
-  }
+TARGET words (each must appear AT LEAST 4 times, marked with **asterisks**):
+${targetList}
 
-  return JSON.stringify(payload);
+NOISE words (each must appear 1-2 times, marked with ++plus signs++):
+${noiseList}
+
+Write the story now. Remember: every target word AT LEAST 4 times.`;
 }

@@ -70,28 +70,14 @@ export function validateStories(
 
   // Helper to check target word rules per story
   const checkTargetWords = (name: 'A' | 'B', occ: Occurrence[]) => {
-    // Rule 1: Each target word must appear exactly 4 times total in the whole story
+    // Rule: Each target word must appear at least 4 times total in the whole story
     for (const w of targetWords) {
       const c = countWord(occ, w);
-      if (c !== 4) {
-        violations.push(`Story ${name}: target word "${w}" must appear exactly 4 times (got ${c}).`);
+      if (c < 4) {
+        violations.push(`Story ${name}: target word "${w}" must appear at least 4 times (got ${c}).`);
       }
     }
-
-    // Rule 2: No two different target words in the same sentence
-    const byPos: Record<string, string[]> = {};
-    occ.forEach((o) => {
-      const key = `${o.paragraphIndex}:${o.sentenceIndex}`;
-      (byPos[key] ||= []).push(o.word.toLowerCase());
-    });
-    for (const [key, words] of Object.entries(byPos)) {
-      const unique = Array.from(new Set(words));
-      if (unique.length > 1) {
-        violations.push(
-          `Story ${name}: multiple different target words in the same sentence at position ${key}.`
-        );
-      }
-    }
+    // Multiple target words in same sentence is allowed
     // No distribution requirements - words can appear anywhere in the story
   };
 
@@ -164,26 +150,14 @@ export function validateSingleStory(
   const occ = (story?.targetOccurrences || []) as Occurrence[];
   const noiseOcc = (story?.noiseOccurrences || []) as Occurrence[];
 
-  // Target words: exactly 4 times each
+  // Target words: at least 4 times each
   for (const w of targetWords) {
     const c = countWord(occ, w);
-    if (c !== 4) {
-      violations.push(`Target word "${w}" must appear exactly 4 times (got ${c}).`);
+    if (c < 4) {
+      violations.push(`Target word "${w}" must appear at least 4 times (got ${c}).`);
     }
   }
-
-  // No two different target words in the same sentence
-  const byPos: Record<string, string[]> = {};
-  occ.forEach((o) => {
-    const key = `${o.paragraphIndex}:${o.sentenceIndex}`;
-    (byPos[key] ||= []).push(o.word.toLowerCase());
-  });
-  for (const [key, words] of Object.entries(byPos)) {
-    const unique = Array.from(new Set(words));
-    if (unique.length > 1) {
-      violations.push(`Multiple target words in same sentence at position ${key}.`);
-    }
-  }
+  // Multiple target words in same sentence is allowed
 
   // Noise words: 1-2 times each, max 2 per story
   for (const w of noiseWords) {

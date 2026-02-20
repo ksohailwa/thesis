@@ -34,7 +34,7 @@ services:
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-change-this-secret}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-change-this-refresh-secret}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
-      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3000/SpellWise}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:4000}
     ports:
       - "${APP_PORT:-4000}:4000"
     volumes:

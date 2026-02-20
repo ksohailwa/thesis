@@ -1,6 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Router, Response } from 'express';
 import { z } from 'zod';
+import { jsonrepair } from 'jsonrepair';
 import { requireAuth, requireRole, AuthedRequest } from '../middleware/auth';
 import { requireExperimentOwnership } from '../middleware/ownership';
 import { Experiment } from '../models/Experiment';
@@ -13,8 +14,6 @@ import { WordMetadata } from '../models/WordMetadata';
 import { getOpenAI, generateSentenceTTS } from '../utils/openai';
 import { getAnthropic, ANTHROPIC_MODEL } from '../utils/anthropic';
 import {
-  storySystem,
-  storyUser,
   storySystemBold,
   storyUserBold,
   wordMetadataSystem,
@@ -28,6 +27,29 @@ import { getWordsForLevel, getWordDefinition } from '../data/wordLists';
 
 const router = Router();
 const OPENAI_CHAT_MODEL = process.env.OPENAI_MODEL || 'gpt-5.2-2025-12-11';
+
+/** Scan paragraphs for word occurrences by matching actual text (not relying on bold markers) */
+function computeOccurrences(paragraphs: string[], storyWords: string[]) {
+  const occurrences: any[] = [];
+  const wordSet = new Set(storyWords.map(w => w.toLowerCase()));
+
+  paragraphs.forEach((para, pIdx) => {
+    const sentences = para.split(/(?<=[.!?])\s+/).filter(Boolean);
+    sentences.forEach((sent, sIdx) => {
+      const words = sent.match(/\b[a-zA-Z]+\b/g) || [];
+      words.forEach((word) => {
+        if (wordSet.has(word.toLowerCase())) {
+          occurrences.push({
+            word: storyWords.find(w => w.toLowerCase() === word.toLowerCase()) || word,
+            paragraphIndex: pIdx,
+            sentenceIndex: sIdx,
+          });
+        }
+      });
+    });
+  });
+  return occurrences;
+}
 
 function makeCode(n = 6) {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -67,7 +89,7 @@ async function generateWordMetadataForExperiment(
     // Check if metadata already exists
     const existing = await WordMetadata.findOne({
       experiment: experimentId,
-      word: { $regex: new RegExp(`^${word}$`, 'i') },
+      word: { $regex: new RegExp(`^${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
     });
 
     if (existing) continue;
@@ -92,14 +114,34 @@ async function generateWordMetadataForExperiment(
       // Use static definition if available, otherwise use LLM-generated one
       const finalDefinition = staticDefinition || data.definition || `Definition for ${word}`;
 
+      // Generate distractors from static word list if LLM doesn't provide them
+      let distractors = data.distractorDefinitions || [];
+      if (distractors.length < 3) {
+        const { getAllWords } = await import('../data/wordLists');
+        const allWords = getAllWords();
+        const moreDistractors = allWords
+          .filter(w => w.word.toLowerCase() !== word.toLowerCase() && w.meaning !== finalDefinition)
+          .map(w => w.meaning)
+          .sort(() => Math.random() - 0.5)
+          .slice(0, 3 - distractors.length);
+        distractors = [...distractors, ...moreDistractors];
+      }
+
+      // Get example sentences from static word list if available
+      const { getWordItem } = await import('../data/wordLists');
+      const staticWordItem = getWordItem(word);
+      const exampleSentences = staticWordItem
+        ? [staticWordItem.sentence1, staticWordItem.sentence2].filter(Boolean)
+        : (data.exampleSentences || []);
+
       await WordMetadata.create({
         experiment: experimentId,
         word: word.toLowerCase(),
         definition: finalDefinition,
         partOfSpeech: data.partOfSpeech || '',
-        distractorDefinitions: data.distractorDefinitions || [],
+        distractorDefinitions: distractors,
         commonCollocations: data.commonCollocations || ['make', 'have', 'get'],
-        exampleSentences: data.exampleSentences || [],
+        exampleSentences,
         syllables: data.syllables || [],
       });
 
@@ -409,7 +451,7 @@ async function handleWordSuggestions(req: AuthedRequest, res: Response) {
 router.post('/:id/suggestions', requireAuth, requireRole('teacher'), handleWordSuggestions);
 router.post('/:id/word-suggestions', requireAuth, requireRole('teacher'), handleWordSuggestions);
 
-// Generate 2 stories (A/B) with each selected word appearing exactly 4x, never twice in the same sentence.
+// Generate 2 stories (A/B) with each selected word appearing multiple times (target for 4x each).
 router.post(
   '/:id/generate-stories',
   requireAuth,
@@ -470,29 +512,6 @@ router.post(
       return true;
     };
 
-    // Compute occurrences by scanning paragraphs for target words
-    const computeOccurrences = (paragraphs: string[], storyWords: string[]) => {
-      const occurrences: any[] = [];
-      const wordSet = new Set(storyWords.map(w => w.toLowerCase()));
-
-      paragraphs.forEach((para, pIdx) => {
-        const sentences = para.split(/(?<=[.!?])\s+/).filter(Boolean);
-        sentences.forEach((sent, sIdx) => {
-          const words = sent.match(/\b[a-zA-Z]+\b/g) || [];
-          words.forEach((word) => {
-            if (wordSet.has(word.toLowerCase())) {
-              occurrences.push({
-                word: storyWords.find(w => w.toLowerCase() === word.toLowerCase()) || word,
-                paragraphIndex: pIdx,
-                sentenceIndex: sIdx,
-              });
-            }
-          });
-        });
-      });
-      return occurrences;
-    };
-
     async function genOne(label: 'H' | 'N', storyWords: string[]) {
       if (storyWords.length === 0) {
         // Create an empty placeholder story if no words
@@ -514,18 +533,18 @@ router.post(
       let paragraphs: string[] = [];
       let occ: any[] = [];
       let localNoiseOcc: any[] = [];
-      const paragraphCount = 4;
+      // No fixed paragraph count - let LLM generate 3-6 naturally
       const cefrLevel = (parsed.data?.cefr as any) || (exp.cefr as any) || (exp.level as any) || 'B1';
 
       // Use Claude if selected and available
       if (selectedModel === 'claude' && claude) {
         try {
-          const systemPrompt = storySystemBold(paragraphCount);
-          const userPrompt = storyUserBold(cefrLevel, storyWords, paragraphCount, noiseWords);
+          const systemPrompt = storySystemBold(0); // 0 means flexible paragraph count
+          const userPrompt = storyUserBold(cefrLevel, storyWords, 0, noiseWords);
 
           const r = await claude.messages.create({
             model: ANTHROPIC_MODEL,
-            max_tokens: 4096,
+            max_tokens: 8192,
             messages: [
               {
                 role: 'user',
@@ -538,10 +557,12 @@ router.post(
           const text = textBlock?.text || '{}';
           const jsonMatch = text.match(/\{[\s\S]*\}/);
           const jsonText = jsonMatch ? jsonMatch[0] : '{}';
-          const data = JSON.parse(jsonText);
+          let data: any;
+          try { data = JSON.parse(jsonText); } catch { try { data = JSON.parse(jsonrepair(jsonText)); } catch { data = {}; } }
 
-          const rawParas = Array.isArray(data?.story?.paragraphs) ? data.story.paragraphs : [];
-          const limitedParas = rawParas.slice(0, paragraphCount);
+          const rawParas = (Array.isArray(data?.story?.paragraphs) ? data.story.paragraphs : []).filter((p: any) => typeof p === 'string' && p.trim());
+          // Allow flexible paragraph count (up to 10 for safety)
+          const limitedParas = rawParas.slice(0, 10);
 
           if (limitedParas.length > 0) {
             const parsedResult = parseBoldMarkers(limitedParas);
@@ -550,12 +571,7 @@ router.post(
             localNoiseOcc = parsedResult.noiseOccurrences;
           }
         } catch (e) {
-          logger.error('Story generation Claude error', {
-            error: (e as any)?.message,
-            status: (e as any)?.status,
-            code: (e as any)?.code,
-            model: ANTHROPIC_MODEL,
-          });
+          logger.error(`Story generation failed (Claude): ${(e as any)?.message}`);
         }
       } else if (selectedModel === 'claude' && !claude) {
         logger.warn('Claude client not available - no ANTHROPIC_API_KEY set');
@@ -569,17 +585,18 @@ router.post(
             response_format: { type: 'json_object' },
             temperature: 0.8,
             messages: [
-              { role: 'system', content: storySystemBold(paragraphCount) },
+              { role: 'system', content: storySystemBold(0) }, // 0 = flexible paragraph count
               {
                 role: 'user',
-                content: storyUserBold(cefrLevel, storyWords, paragraphCount, noiseWords),
+                content: storyUserBold(cefrLevel, storyWords, 0, noiseWords),
               },
             ],
           });
           const text = r.choices?.[0]?.message?.content || '{}';
           const data = JSON.parse(text);
-          const rawParas = Array.isArray(data?.story?.paragraphs) ? data.story.paragraphs : [];
-          const limitedParas = rawParas.slice(0, paragraphCount);
+          const rawParas = (Array.isArray(data?.story?.paragraphs) ? data.story.paragraphs : []).filter((p: any) => typeof p === 'string' && p.trim());
+          // Allow flexible paragraph count (up to 10 for safety)
+          const limitedParas = rawParas.slice(0, 10);
 
           if (limitedParas.length > 0) {
             const parsedResult = parseBoldMarkers(limitedParas);
@@ -588,41 +605,28 @@ router.post(
             localNoiseOcc = parsedResult.noiseOccurrences;
           }
         } catch (e) {
-          logger.error('Story generation OpenAI error', {
-            error: (e as any)?.message,
-            status: (e as any)?.status,
-            code: (e as any)?.code,
-            model: OPENAI_CHAT_MODEL,
-          });
+          logger.error(`Story generation failed (OpenAI): ${(e as any)?.message}`);
         }
       } else if (!oa && selectedModel === 'openai') {
         logger.warn('OpenAI client not available - no API key?');
       }
 
       // If we got paragraphs but no/incomplete occurrences, compute them
-      if (paragraphs.length === paragraphCount && !validateStoryCounts(storyWords, paragraphCount, occ)) {
+      if (paragraphs.length >= 1 && !validateStoryCounts(storyWords, paragraphs.length, occ)) {
         logger.info('Computing occurrences from paragraphs (LLM did not return valid occurrences)');
         occ = computeOccurrences(paragraphs, storyWords);
       }
 
       const valid =
-        paragraphs.length === paragraphCount &&
-        validateStoryCounts(storyWords, paragraphCount, occ);
+        paragraphs.length >= 1 &&
+        validateStoryCounts(storyWords, paragraphs.length, occ);
       if (!valid) {
-        logger.info('Using fallback story', {
-          paragraphsLength: paragraphs.length,
-          expectedParagraphs: paragraphCount,
-          wordsCount: storyWords.length,
-          occurrenceCount: occ.length,
-        });
+        logger.warn(`Word counts not met — using fallback story (${storyWords.length} words, ${occ.length} occurrences found)`);
         const fallback = generateFallbackStory(storyWords);
         paragraphs = fallback.paragraphs;
         occ = fallback.occurrences;
       } else {
-        logger.info('Story validated successfully', {
-          paragraphsLength: paragraphs.length,
-          occurrenceCount: occ.length,
-        });
+        logger.info(`Story validated — ${paragraphs.length} paragraphs, ${occ.length} word occurrences`);
       }
       const map = label === 'H' ? 'A' : 'B';
       const filter = {
@@ -680,7 +684,8 @@ router.post(
     const savedWords = (exp.stories as any)?.[storyKey]?.targetWords || exp.targetWords || [];
     const words = (parsed.data.targetWords || savedWords || []).slice(0, 5);
     const noiseWords: string[] = parsed.data.noiseWords || (exp as any).noiseWords || [];
-    const paragraphCount = 4;
+    // Flexible paragraph count for LLM, but fallback uses 4
+    const fallbackParagraphCount = 4;
 
     const selectedModel = parsed.data.model || 'openai';
     const oa = getOpenAI();
@@ -691,7 +696,7 @@ router.post(
     let noise: any[] = [];
     const buildFallback = (storyWords: string[]) => {
       const sentencesPerParagraph = Math.max(4, storyWords.length);
-      const baseSentences: string[][] = Array.from({ length: paragraphCount }, (_, p) =>
+      const baseSentences: string[][] = Array.from({ length: fallbackParagraphCount }, (_, p) =>
         Array.from(
           { length: sentencesPerParagraph },
           (_, s) => `Paragraph ${p + 1}, sentence ${s + 1}.`
@@ -700,7 +705,7 @@ router.post(
       const occLocal: any[] = [];
       const shuffle = (arr: string[]) => arr.sort(() => Math.random() - 0.5);
       let lastOrder: string[] | null = null;
-      for (let pIdx = 0; pIdx < paragraphCount; pIdx++) {
+      for (let pIdx = 0; pIdx < fallbackParagraphCount; pIdx++) {
         let order = shuffle([...storyWords]);
         if (lastOrder && order.join('|') === lastOrder.join('|')) {
           order = order.slice(1).concat(order[0]);
@@ -726,8 +731,8 @@ router.post(
 
     if (selectedModel === 'claude' && claude) {
       try {
-        const systemPrompt = storySystemBold(paragraphCount);
-        const userPrompt = storyUserBold(cefrLevel, words, paragraphCount, noiseWords);
+        const systemPrompt = storySystemBold(0); // 0 = flexible paragraph count
+        const userPrompt = storyUserBold(cefrLevel, words, 0, noiseWords);
 
         const r = await claude.messages.create({
           model: ANTHROPIC_MODEL,
@@ -744,10 +749,12 @@ router.post(
         const text = textBlock?.text || '{}';
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         const jsonText = jsonMatch ? jsonMatch[0] : '{}';
-        const data = JSON.parse(jsonText);
+        let data: any;
+        try { data = JSON.parse(jsonText); } catch { try { data = JSON.parse(jsonrepair(jsonText)); } catch { data = {}; } }
 
-        const rawParas = Array.isArray(data?.story?.paragraphs) ? data.story.paragraphs : [];
-        const limitedParas = rawParas.slice(0, paragraphCount);
+        const rawParas = (Array.isArray(data?.story?.paragraphs) ? data.story.paragraphs : []).filter((p: any) => typeof p === 'string' && p.trim());
+        // Allow flexible paragraph count (up to 10 for safety)
+        const limitedParas = rawParas.slice(0, 10);
 
         if (limitedParas.length > 0) {
           const parsed = parseBoldMarkers(limitedParas);
@@ -756,7 +763,7 @@ router.post(
           noiseOcc = parsed.noiseOccurrences;
         }
       } catch (e) {
-        logger.error('Story generation Claude error', { error: (e as any)?.message });
+        logger.error(`Story generation failed (Claude): ${(e as any)?.message}`);
       }
     }
 
@@ -767,17 +774,18 @@ router.post(
           response_format: { type: 'json_object' },
           temperature: 0.8,
           messages: [
-            { role: 'system', content: storySystemBold(paragraphCount) },
+            { role: 'system', content: storySystemBold(0) }, // 0 = flexible paragraph count
             {
               role: 'user',
-              content: storyUserBold(cefrLevel, words, paragraphCount, noiseWords),
+              content: storyUserBold(cefrLevel, words, 0, noiseWords),
             },
           ],
         });
         const text = r.choices?.[0]?.message?.content || '{}';
         const data = JSON.parse(text);
-        const rawParas = Array.isArray(data?.story?.paragraphs) ? data.story.paragraphs : [];
-        const limitedParas = rawParas.slice(0, paragraphCount);
+        const rawParas = (Array.isArray(data?.story?.paragraphs) ? data.story.paragraphs : []).filter((p: any) => typeof p === 'string' && p.trim());
+        // Allow flexible paragraph count (up to 10 for safety)
+        const limitedParas = rawParas.slice(0, 10);
 
         if (limitedParas.length > 0) {
           const parsedResult = parseBoldMarkers(limitedParas);
@@ -787,26 +795,22 @@ router.post(
 
           // Log if no occurrences found
           if (parsedResult.occurrences.length === 0) {
-            logger.warn('No bold markers found in LLM response', {
-              experimentId: req.params.id,
-              rawParas: limitedParas.slice(0, 2),
-              label: parsed.data.label,
-            });
+            logger.warn('No word markers found in AI response — will scan text directly');
           }
         }
       } catch (e) {
-        logger.warn('Story generation failed; using fallback', { error: (e as any)?.message });
+        logger.warn(`Story generation failed (OpenAI): ${(e as any)?.message}`);
       }
     }
     // Fallback to local generator if LLM failed
     if (!paragraphs.length) {
       const baseParas = Array.from(
-        { length: paragraphCount },
+        { length: fallbackParagraphCount },
         (_, p) => `${exp.title || 'Story'} - paragraph ${p + 1}.`
       );
       const occLocal: any[] = [];
       for (const w of words) {
-        for (let pIdx = 0; pIdx < paragraphCount; pIdx++) {
+        for (let pIdx = 0; pIdx < fallbackParagraphCount; pIdx++) {
           const before = baseParas[pIdx];
           const insertion = ` ${w}`;
           const charStart = before.length;
@@ -823,7 +827,7 @@ router.post(
       const out = { ok: true, violations: [] as string[] };
       if (occList.length > 0) {
         for (const w of words) {
-          const c = occList.filter((o: any) => o.word === w).length;
+          const c = occList.filter((o: any) => o.word.toLowerCase() === w.toLowerCase()).length;
           if (c < 4) {
             out.ok = false;
             out.violations.push(`Word "${w}" must appear at least 4 times (got ${c}).`);
@@ -847,22 +851,23 @@ router.post(
           });
         }
 
-        // Check no two target words in same sentence
-        const byPos: Record<string, string[]> = {};
-        occList.forEach((o: any) => {
-          const key = `${o.paragraphIndex}:${o.sentenceIndex}`;
-          (byPos[key] ||= []).push(o.word);
-        });
-        for (const [key, wordList] of Object.entries(byPos)) {
-          const unique = Array.from(new Set(wordList));
-          if (unique.length > 1) {
-            out.ok = false;
-            out.violations.push(`Multiple target words in same sentence at ${key}.`);
-          }
-        }
+        // Multiple target words in same sentence is allowed
       }
       return out;
     };
+
+    // If bold markers didn't capture enough occurrences, scan the text directly
+    if (paragraphs.length > 0) {
+      const markerValid = words.every((w: string) =>
+        occ.filter((o: any) => o.word.toLowerCase() === w.toLowerCase()).length >= 4
+      );
+      if (!markerValid) {
+        logger.info('Bold markers incomplete - scanning paragraphs for word occurrences');
+        const scanned = computeOccurrences(paragraphs, words);
+        // Merge: use scanned occurrences (they count all actual word appearances)
+        occ = scanned;
+      }
+    }
 
     // Validate only single story being generated (not cross-story check yet)
     if (paragraphs.length > 0) {
@@ -877,20 +882,19 @@ router.post(
             messages: [
               {
                 role: 'system',
-                content:
-                  storySystemBold(paragraphCount) +
-                  '\nSTRICT: Do not repeat a target word within a paragraph. Only one target word per sentence.',
+                content: storySystemBold(0), // 0 = flexible paragraph count
               },
               {
                 role: 'user',
-                content: storyUserBold(exp.cefr || exp.level || 'B1', words, paragraphCount),
+                content: storyUserBold(exp.cefr || exp.level || 'B1', words, 0, noiseWords),
               },
             ],
           });
           const text = r.choices?.[0]?.message?.content || '{}';
           const data = JSON.parse(text);
-          const rawParas = Array.isArray(data?.story?.paragraphs) ? data.story.paragraphs : [];
-          const limitedParas = rawParas.slice(0, paragraphCount);
+          const rawParas = (Array.isArray(data?.story?.paragraphs) ? data.story.paragraphs : []).filter((p: any) => typeof p === 'string' && p.trim());
+          // Allow flexible paragraph count (up to 10 for safety)
+          const limitedParas = rawParas.slice(0, 10);
           if (limitedParas.length > 0) {
             const parsedRetry = parseBoldMarkers(limitedParas);
             const retryValidation = validateStory(parsedRetry.occurrences);
@@ -906,29 +910,20 @@ router.post(
       }
 
       if (!singleStoryValidation.ok) {
-        logger.warn('Story validation failed - using fallback', {
-          experimentId: req.params.id,
-          label: map,
-          violations: singleStoryValidation.violations,
-        });
+        logger.warn(`Story ${map} validation failed — using fallback. Issues: ${singleStoryValidation.violations.join('; ')}`);
         const fallback = buildFallback(words);
         paragraphs = fallback.paragraphs;
         occ = fallback.occ;
       } else if (occ.length === 0 && paragraphs.length > 0) {
-        logger.warn('No word occurrences found in story - using fallback', {
-          experimentId: req.params.id,
-          label: map,
-          paragraphCount: paragraphs.length,
-          wordCount: words.length,
-        });
+        logger.warn(`Story ${map}: no word occurrences found — using fallback`);
         const fallback = buildFallback(words);
         paragraphs = fallback.paragraphs;
         occ = fallback.occ;
       }
     }
 
-    // Derive noise words AFTER story text is finalized (1 noise word per paragraph)
-    if (paragraphs.length === 4) {
+    // Derive noise words AFTER story text is finalized (dispersed across paragraphs)
+    if (paragraphs.length >= 1) {
       const targetSet = new Set(words.map((w: string) => w.toLowerCase()));
 
       // Helper to map char positions to sentenceIndex
@@ -1289,6 +1284,39 @@ router.post(
         results.push({ word: w, audioUrl: rel, generated: true });
       } catch (e: any) {
         results.push({ word: w, audioUrl: null, error: e?.message || 'TTS failed' });
+      }
+    }
+
+    return res.json({ items: results });
+  }
+);
+
+// Get existing word TTS files (for loading on page refresh)
+router.get(
+  '/:id/word-tts',
+  requireAuth,
+  requireRole('teacher'),
+  async (req, res) => {
+    const exp = await Experiment.findById(req.params.id);
+    if (!exp) return res.status(404).json({ error: 'Not found' });
+
+    const words = collectSetWords(exp, 'set1').filter(Boolean);
+    if (!words.length) return res.json({ items: [] });
+
+    const fs = await import('fs');
+    const path = await import('path');
+    const outDir = path.join(process.cwd(), 'static', 'audio', String(exp._id), 'words');
+
+    const results: any[] = [];
+    for (const w of words) {
+      const safe = safeWordFile(w);
+      const outPath = path.join(outDir, `${safe}.mp3`);
+      const rel = `/static/audio/${exp._id}/words/${safe}.mp3`;
+
+      if (fs.existsSync(outPath)) {
+        results.push({ word: w, audioUrl: rel });
+      } else {
+        results.push({ word: w, audioUrl: null });
       }
     }
 

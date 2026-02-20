@@ -58,7 +58,7 @@ export default function StudentTest() {
   useEffect(() => {
     if (!assignmentId || !isReady) return
     setLoading(true)
-    api.post('/api/student/recall-list', { assignmentId })
+    api.post('api/student/recall-list', { assignmentId })
       .then(({ data }) => {
         const list = Array.isArray(data?.items) ? data.items : []
         setItems(list)
@@ -127,7 +127,7 @@ export default function StudentTest() {
 
     setSubmitting(true)
     try {
-      const { data } = await api.post('/api/student/recall-attempt', { assignmentId, items: payload })
+      const { data } = await api.post('api/student/recall-attempt', { assignmentId, items: payload })
       setScores(data?.scores || [])
       setAverages({
         spellingAverage: data?.spellingAverage || 0,
@@ -148,7 +148,7 @@ export default function StudentTest() {
         <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-lg text-center space-y-3">
           <h2 className="text-xl font-semibold text-gray-800">Session not found</h2>
           <p className="text-gray-600 text-sm">Please re-enter your join code to continue.</p>
-          <a href="/student" className="btn primary px-4 py-2 inline-flex justify-center">Go to join page</a>
+          <a href={`${import.meta.env.BASE_URL || '/'}student`} className="btn primary px-4 py-2 inline-flex justify-center">Go to join page</a>
         </div>
       </div>
     )
@@ -213,7 +213,7 @@ export default function StudentTest() {
             )}
 
             {(!story1Done || !story2Done) && (
-              <a href="/student/run" className="w-full btn primary py-3 inline-flex justify-center">
+              <a href={`${import.meta.env.BASE_URL || '/'}student/run`} className="w-full btn primary py-3 inline-flex justify-center">
                 Continue Stories
               </a>
             )}
@@ -312,7 +312,7 @@ export default function StudentTest() {
           </div>
 
           <div className="text-center">
-            <a href="/student" className="btn primary px-6 py-3 inline-flex justify-center">
+            <a href={`${import.meta.env.BASE_URL || '/'}student`} className="btn primary px-6 py-3 inline-flex justify-center">
               Return to Home
             </a>
           </div>

@@ -35,7 +35,8 @@ export function enqueue(job: Omit<Job, 'id' | 'status' | 'createdAt' | 'updatedA
     ...job,
   } as Job;
   jobs.push(j);
-  logger.info('Job enqueued', { jobId: j.id, type: j.type, experimentId: j.experimentId });
+  const friendly: Record<string, string> = { generate_story: 'Story generation', generate_tts: 'TTS audio', fetch_words: 'Word fetch' };
+  logger.info(`${friendly[j.type] || j.type} queued${j.storyLabel ? ` (${j.storyLabel})` : ''}`);
   tick();
   return j;
 }
@@ -86,7 +87,7 @@ async function runWithRetry(doFetch: () => Promise<Response>, max = 3) {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes('HTTP 401') || msg.includes('HTTP 403')) break;
       const delay = Math.pow(2, attempt) * 1000; // 1s, 2s, 4s
-      logger.warn('Job retry attempt', { attempt: attempt + 1, delay, error: msg });
+      logger.warn(`Retrying (attempt ${attempt + 1})... waiting ${delay / 1000}s`);
       await new Promise((r) => setTimeout(r, delay));
       attempt++;
     }
@@ -97,7 +98,8 @@ async function runWithRetry(doFetch: () => Promise<Response>, max = 3) {
 async function runJob(j: Job) {
   j.status = 'running';
   j.updatedAt = Date.now();
-  logger.info('Job started', { jobId: j.id, type: j.type });
+  const friendly: Record<string, string> = { generate_story: 'Story generation', generate_tts: 'TTS audio', fetch_words: 'Word fetch' };
+  logger.info(`${friendly[j.type] || j.type} started${j.storyLabel ? ` (${j.storyLabel})` : ''}...`);
   try {
     const base = `http://localhost:${config.port}`;
     if (j.type === 'fetch_words') {
@@ -139,12 +141,13 @@ async function runJob(j: Job) {
     }
     j.status = 'success';
     j.updatedAt = Date.now();
-    logger.info('Job completed', { jobId: j.id, type: j.type });
+    const elapsed = Math.round((Date.now() - j.createdAt) / 1000);
+    logger.info(`${friendly[j.type] || j.type} completed${j.storyLabel ? ` (${j.storyLabel})` : ''} in ${elapsed}s`);
   } catch (e: unknown) {
     j.status = 'error';
     j.errorMessage = e instanceof Error ? e.message : String(e);
     j.updatedAt = Date.now();
-    logger.error('Job failed', { jobId: j.id, type: j.type, error: j.errorMessage });
+    logger.error(`${friendly[j.type] || j.type} failed${j.storyLabel ? ` (${j.storyLabel})` : ''}: ${j.errorMessage}`);
   }
 }
 

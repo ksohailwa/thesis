@@ -1,9 +1,13 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { BookOpen, CheckCircle2, Loader2, Lock, RefreshCw, Unlock, Volume2, AlertCircle } from 'lucide-react'
 import api from '../../lib/api'
 import { toast } from '../../store/toasts'
 
-type Props = { experimentId: string; compact?: boolean }
+type Props = {
+  experimentId: string
+  compact?: boolean
+  onStoriesConfirmed?: (confirmed: boolean) => void
+}
 type ExperimentStatus = 'draft' | 'live' | 'closed' | 'archived'
 
 type WordItem = {
@@ -66,6 +70,35 @@ function highlightParagraph(text: string, targetWords: string[], noiseWords: str
     if (noiseSet.has(lower)) return <span key={idx} className="font-semibold text-orange-600 bg-orange-50 px-0.5 rounded">{part}</span>
     return <React.Fragment key={idx}>{part}</React.Fragment>
   })
+}
+
+function countWordsInParagraphs(paragraphs: string[], words: string[]): Record<string, number> {
+  const counts: Record<string, number> = {}
+  words.forEach(w => { counts[w.toLowerCase()] = 0 })
+
+  const text = paragraphs.join(' ').toLowerCase()
+  words.forEach(word => {
+    const pattern = new RegExp(`\\b${escapeRegExp(word.toLowerCase())}\\b`, 'gi')
+    const matches = text.match(pattern)
+    counts[word.toLowerCase()] = matches ? matches.length : 0
+  })
+
+  return counts
+}
+
+function WordCountBadge({ word, count, variant, expected }: { word: string; count: number; variant: 'target' | 'noise'; expected: number }) {
+  const isGood = variant === 'target' ? count >= expected : (count >= 1 && count <= 2)
+  const colors = {
+    target: isGood ? 'bg-blue-100 text-blue-700 border-blue-300' : 'bg-red-100 text-red-700 border-red-300',
+    noise: isGood ? 'bg-orange-100 text-orange-700 border-orange-300' : 'bg-red-100 text-red-700 border-red-300',
+  }
+
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium border ${colors[variant]}`}>
+      {word}: <strong>{count}</strong>
+      {!isGood && <AlertCircle className="w-3 h-3" />}
+    </span>
+  )
 }
 
 function SectionHeader({ title, subtitle }: { title: string; subtitle?: string }) {
@@ -194,7 +227,7 @@ function LevelSection({
   )
 }
 
-export default function StoryManager({ experimentId }: Props) {
+export default function StoryManager({ experimentId, onStoriesConfirmed }: Props) {
   const base = import.meta.env.VITE_API_BASE_URL || ''
 
   // Word pool
@@ -212,6 +245,9 @@ export default function StoryManager({ experimentId }: Props) {
   // Job polling
   const [activeStoryJob, setActiveStoryJob] = useState<string | null>(null)
   const [activeTtsJob, setActiveTtsJob] = useState<string | null>(null)
+
+  // Pending story2 job data (to chain after story1 completes)
+  const pendingStory2 = useRef<{ targetWords: string[]; noiseWords: string[]; model: string } | null>(null)
 
   // Model selection for story generation
   const [selectedModel, setSelectedModel] = useState<'openai' | 'claude'>('openai')
@@ -274,7 +310,7 @@ export default function StoryManager({ experimentId }: Props) {
   useEffect(() => {
     if (!experimentId) return
     setLoadingInitial(true)
-    api.get(`/api/experiments/${experimentId}`)
+    api.get(`api/experiments/${experimentId}`)
       .then(({ data }) => {
         setExperimentStatus(data?.status || 'draft')
         setStoriesConfirmed(data?.storiesConfirmed || false)
@@ -287,20 +323,50 @@ export default function StoryManager({ experimentId }: Props) {
       .finally(() => setLoadingInitial(false))
   }, [experimentId])
 
-  // Job polling effect for stories
+  // Job polling effect for stories (chains story2 after story1)
   useEffect(() => {
     let interval: any
     if (activeStoryJob) {
       interval = setInterval(async () => {
         try {
-          const { data } = await api.get(`/api/jobs/${activeStoryJob}`)
+          const { data } = await api.get(`api/jobs/${activeStoryJob}`)
           if (data?.data?.status === 'success') {
             setActiveStoryJob(null)
-            setStoriesStatus('success')
-            toast.success('Stories generated successfully!')
-            await Promise.all([fetchStoryPreview(1), fetchStoryPreview(2)])
+
+            // If story2 is pending, submit it now
+            if (pendingStory2.current) {
+              const { targetWords, noiseWords, model } = pendingStory2.current
+              pendingStory2.current = null
+              try {
+                const res = await api.post('api/jobs', {
+                  type: 'generate_story',
+                  experimentId,
+                  storyLabel: 'story2',
+                  targetWords,
+                  noiseWords,
+                  model
+                })
+                const jobId = res.data?.data?.id
+                if (jobId) {
+                  setActiveStoryJob(jobId)
+                  toast.success('Story 1 done! Generating Story 2...')
+                } else {
+                  setStoriesStatus('error')
+                  toast.error('Failed to queue Story 2')
+                }
+              } catch {
+                setStoriesStatus('error')
+                toast.error('Failed to start Story 2 generation')
+              }
+            } else {
+              // Both stories done
+              setStoriesStatus('success')
+              toast.success('Stories generated successfully!')
+              await Promise.all([fetchStoryPreview(1), fetchStoryPreview(2)])
+            }
           } else if (data?.data?.status === 'error') {
             setActiveStoryJob(null)
+            pendingStory2.current = null
             setStoriesStatus('error')
             toast.error(data?.data?.errorMessage || 'Failed to generate stories')
           }
@@ -318,9 +384,9 @@ export default function StoryManager({ experimentId }: Props) {
     if (activeTtsJob) {
       interval = setInterval(async () => {
         try {
-          const { data } = await api.get(`/api/jobs/${activeTtsJob}`)
+          const { data } = await api.get(`api/jobs/${activeTtsJob}`)
           if (data?.data?.status === 'success') {
-            const { data: statusData } = await api.get(`/api/jobs/experiment/${experimentId}/status`)
+            const { data: statusData } = await api.get(`api/jobs/experiment/${experimentId}/status`)
             const s = statusData?.data
             if (s?.tts1 === 'success' && s?.tts2 === 'success') {
               setActiveTtsJob(null)
@@ -344,8 +410,14 @@ export default function StoryManager({ experimentId }: Props) {
   // Fetch story previews
   async function fetchStoryPreview(storyNum: 1 | 2) {
     try {
-      const { data } = await api.get(`/api/experiments/${experimentId}/story/${storyNum}`)
-      const resolveUrl = (u?: string) => u ? (u.startsWith('http') ? u : `${base}${u}`) : ''
+      const { data } = await api.get(`api/experiments/${experimentId}/story/${storyNum}`)
+      const resolveUrl = (u?: string) => {
+        if (!u) return ''
+        const baseUrl = u.startsWith('http') ? u : `${base}${u}`
+        // Add cache buster to force browser to reload audio
+        const separator = baseUrl.includes('?') ? '&' : '?'
+        return `${baseUrl}${separator}t=${Date.now()}`
+      }
       const preview: StoryPreview = {
         paragraphs: data?.paragraphs || [],
         sentences: data?.sentences || [],
@@ -360,18 +432,35 @@ export default function StoryManager({ experimentId }: Props) {
     }
   }
 
-  // Fetch both previews on mount
+  // Fetch existing word TTS items
+  async function fetchWordTts() {
+    try {
+      const { data } = await api.get(`api/experiments/${experimentId}/word-tts`)
+      if (Array.isArray(data?.items)) {
+        // Only set if there are items with audio URLs
+        const itemsWithAudio = data.items.filter((item: any) => item.audioUrl)
+        if (itemsWithAudio.length > 0) {
+          setWordTtsItems(data.items)
+        }
+      }
+    } catch {
+      // Word TTS not generated yet - ignore
+    }
+  }
+
+  // Fetch both previews and word TTS on mount
   useEffect(() => {
     if (!experimentId || loadingInitial) return
     fetchStoryPreview(1)
     fetchStoryPreview(2)
+    fetchWordTts()
   }, [experimentId, loadingInitial])
 
   // Fetch word pool
   async function fetchPool() {
     setLoadingPool(true)
     try {
-      const { data } = await api.post(`/api/experiments/${experimentId}/word-suggestions`, { story: 'story1' })
+      const { data } = await api.post(`api/experiments/${experimentId}/word-suggestions`, { story: 'story1' })
       if (data?.grouped) {
         setGroupedWords(data.grouped)
       }
@@ -423,43 +512,40 @@ export default function StoryManager({ experimentId }: Props) {
     setStoriesStatus('generating')
     try {
       // Save word selection and generate stories
-      await api.post(`/api/experiments/${experimentId}/story-words`, {
+      await api.post(`api/experiments/${experimentId}/story-words`, {
         story: 'story1',
         targetWords: story1TargetWords,
         noiseWords: allNoiseWords,
       })
-      await api.post(`/api/experiments/${experimentId}/story-words`, {
+      await api.post(`api/experiments/${experimentId}/story-words`, {
         story: 'story2',
         targetWords: story2TargetWords,
         noiseWords: allNoiseWords,
       })
 
       // Save full word selection for later retrieval
-      await api.post(`/api/experiments/${experimentId}/word-selection`, {
+      await api.post(`api/experiments/${experimentId}/word-selection`, {
         wordSelection: selection,
       })
 
-      // Generate stories as jobs
-      const [res1, res2] = await Promise.all([
-        api.post('/api/jobs', {
-          type: 'generate_story',
-          experimentId,
-          storyLabel: 'story1',
-          targetWords: story1TargetWords,
-          noiseWords: allNoiseWords,
-          model: selectedModel
-        }),
-        api.post('/api/jobs', {
-          type: 'generate_story',
-          experimentId,
-          storyLabel: 'story2',
-          targetWords: story2TargetWords,
-          noiseWords: allNoiseWords,
-          model: selectedModel
-        }),
-      ])
+      // Store story2 as pending — it will be submitted after story1 completes
+      pendingStory2.current = {
+        targetWords: story2TargetWords,
+        noiseWords: allNoiseWords,
+        model: selectedModel
+      }
 
-      const jobId = res2.data?.data?.id || res1.data?.data?.id
+      // Submit only story1 now
+      const res1 = await api.post('api/jobs', {
+        type: 'generate_story',
+        experimentId,
+        storyLabel: 'story1',
+        targetWords: story1TargetWords,
+        noiseWords: allNoiseWords,
+        model: selectedModel
+      })
+
+      const jobId = res1.data?.data?.id
       if (jobId) {
         setActiveStoryJob(jobId)
         toast.success('Story generation started...')
@@ -483,8 +569,8 @@ export default function StoryManager({ experimentId }: Props) {
     setTtsStatus('generating')
     try {
       const [res1, res2] = await Promise.all([
-        api.post('/api/jobs', { type: 'generate_tts', experimentId, storyLabel: 'story1', targetWords: story1TargetWords }),
-        api.post('/api/jobs', { type: 'generate_tts', experimentId, storyLabel: 'story2', targetWords: story2TargetWords }),
+        api.post('api/jobs', { type: 'generate_tts', experimentId, storyLabel: 'story1', targetWords: story1TargetWords }),
+        api.post('api/jobs', { type: 'generate_tts', experimentId, storyLabel: 'story2', targetWords: story2TargetWords }),
       ])
 
       const jobId = res2.data?.data?.id || res1.data?.data?.id
@@ -505,7 +591,7 @@ export default function StoryManager({ experimentId }: Props) {
   async function generateWordTts(regenerate = false) {
     setWordTtsLoading(true)
     try {
-      const { data } = await api.post(`/api/experiments/${experimentId}/word-tts`, { regenerate })
+      const { data } = await api.post(`api/experiments/${experimentId}/word-tts`, { regenerate })
       setWordTtsItems(Array.isArray(data?.items) ? data.items : [])
       toast.success('Word audio ready')
     } catch (e: any) {
@@ -520,11 +606,14 @@ export default function StoryManager({ experimentId }: Props) {
   async function toggleConfirmStories() {
     setConfirmLoading(true)
     try {
-      const { data } = await api.post(`/api/experiments/${experimentId}/confirm-stories`, {
+      const { data } = await api.post(`api/experiments/${experimentId}/confirm-stories`, {
         confirmed: !storiesConfirmed
       })
-      setStoriesConfirmed(data?.storiesConfirmed || false)
-      if (data?.storiesConfirmed) {
+      const newConfirmedStatus = data?.storiesConfirmed || false
+      setStoriesConfirmed(newConfirmedStatus)
+      // Notify parent component of the change
+      onStoriesConfirmed?.(newConfirmedStatus)
+      if (newConfirmedStatus) {
         toast.success('Stories confirmed and locked!')
       } else {
         toast.success('Stories unlocked for editing')
@@ -816,9 +905,13 @@ export default function StoryManager({ experimentId }: Props) {
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
             <SectionHeader title="Generate Stories" subtitle="Create both stories with the selected words" />
 
+            {/* Generating state */}
             {storiesStatus === 'generating' && (
               <div className="flex items-center gap-3 p-4 bg-blue-50 border border-blue-200 rounded-lg animate-pulse">
-                <Loader2 className="w-5 h-5 text-blue-600 animate-spin" />
+                <div className="relative">
+                  <div className="w-8 h-8 border-4 border-blue-200 rounded-full"></div>
+                  <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin absolute top-0 left-0"></div>
+                </div>
                 <div>
                   <div className="font-medium text-blue-800">Generating both stories...</div>
                   <div className="text-xs text-blue-600">This may take a minute. Please wait.</div>
@@ -826,12 +919,35 @@ export default function StoryManager({ experimentId }: Props) {
               </div>
             )}
 
+            {/* Just completed state */}
             {storiesStatus === 'success' && storiesReady && (
               <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
                 <CheckCircle2 className="w-5 h-5 text-green-600" />
                 <div>
                   <div className="font-medium text-green-800">Stories generated successfully!</div>
                   <div className="text-xs text-green-600">Both stories are ready. You can preview them below.</div>
+                </div>
+              </div>
+            )}
+
+            {/* Error state */}
+            {storiesStatus === 'error' && (
+              <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <AlertCircle className="w-5 h-5 text-red-600" />
+                <div>
+                  <div className="font-medium text-red-800">Story generation failed</div>
+                  <div className="text-xs text-red-600">Please try again or select different words.</div>
+                </div>
+              </div>
+            )}
+
+            {/* Not generated yet state */}
+            {storiesStatus === 'idle' && !storiesReady && canGenerate && (
+              <div className="flex items-center gap-3 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                <BookOpen className="w-5 h-5 text-gray-400" />
+                <div>
+                  <div className="font-medium text-gray-700">Stories not generated yet</div>
+                  <div className="text-xs text-gray-500">Select your AI model and click the button below.</div>
                 </div>
               </div>
             )}
@@ -859,16 +975,19 @@ export default function StoryManager({ experimentId }: Props) {
             <button
               onClick={generateStories}
               disabled={!canGenerate || storiesStatus === 'generating' || isLocked}
-              className={`w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-medium transition ${
+              className={`w-full inline-flex items-center justify-center gap-3 px-4 py-3 rounded-lg font-medium transition ${
                 storiesStatus === 'generating'
-                  ? 'bg-blue-100 text-blue-600 cursor-wait'
+                  ? 'bg-blue-600 text-white animate-pulse'
                   : isLocked
                   ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                   : 'bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-100 disabled:text-gray-400'
               }`}
             >
               {storiesStatus === 'generating' ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
+                <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
               ) : isLocked ? (
                 <Lock className="w-5 h-5" />
               ) : storiesReady ? (
@@ -876,14 +995,19 @@ export default function StoryManager({ experimentId }: Props) {
               ) : (
                 <BookOpen className="w-5 h-5" />
               )}
-              {storiesStatus === 'generating' ? 'Generating...' : isLocked ? 'Stories Locked' : storiesReady ? 'Regenerate Both Stories' : 'Generate Both Stories'}
+              {storiesStatus === 'generating' ? 'Generating Stories...' : isLocked ? 'Stories Locked' : storiesReady ? 'Regenerate Both Stories' : 'Generate Both Stories'}
             </button>
 
             {/* Story Previews */}
             {storiesReady && (
               <div className="grid md:grid-cols-2 gap-4 mt-4">
                 <div className="p-4 rounded-xl bg-blue-50/50 border border-blue-200 space-y-3">
-                  <div className="font-semibold text-blue-800">Story 1 (with hints)</div>
+                  <div className="flex items-center justify-between">
+                    <div className="font-semibold text-blue-800">Story 1 (with hints)</div>
+                    <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
+                      {story1Preview?.paragraphs.length || 0} paragraphs
+                    </span>
+                  </div>
                   <div className="text-xs text-blue-600">Target: {story1TargetWords.join(', ')}</div>
                   <div className="text-sm text-gray-700 space-y-2 max-h-60 overflow-y-auto">
                     {story1Preview?.paragraphs.map((p, idx) => (
@@ -892,10 +1016,33 @@ export default function StoryManager({ experimentId }: Props) {
                       </p>
                     ))}
                   </div>
+                  {/* Word Counts */}
+                  {story1Preview?.paragraphs && (
+                    <div className="pt-3 border-t border-blue-200 space-y-2">
+                      <div className="text-xs font-medium text-blue-700">Word Counts:</div>
+                      <div className="flex flex-wrap gap-1">
+                        {story1TargetWords.map(word => {
+                          const counts = countWordsInParagraphs(story1Preview.paragraphs, [word])
+                          return <WordCountBadge key={word} word={word} count={counts[word.toLowerCase()]} variant="target" expected={4} />
+                        })}
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {allNoiseWords.map(word => {
+                          const counts = countWordsInParagraphs(story1Preview.paragraphs, [word])
+                          return <WordCountBadge key={word} word={word} count={counts[word.toLowerCase()]} variant="noise" expected={1} />
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="p-4 rounded-xl bg-purple-50/50 border border-purple-200 space-y-3">
-                  <div className="font-semibold text-purple-800">Story 2 (without hints)</div>
+                  <div className="flex items-center justify-between">
+                    <div className="font-semibold text-purple-800">Story 2 (without hints)</div>
+                    <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
+                      {story2Preview?.paragraphs.length || 0} paragraphs
+                    </span>
+                  </div>
                   <div className="text-xs text-purple-600">Target: {story2TargetWords.join(', ')}</div>
                   <div className="text-sm text-gray-700 space-y-2 max-h-60 overflow-y-auto">
                     {story2Preview?.paragraphs.map((p, idx) => (
@@ -904,6 +1051,24 @@ export default function StoryManager({ experimentId }: Props) {
                       </p>
                     ))}
                   </div>
+                  {/* Word Counts */}
+                  {story2Preview?.paragraphs && (
+                    <div className="pt-3 border-t border-purple-200 space-y-2">
+                      <div className="text-xs font-medium text-purple-700">Word Counts:</div>
+                      <div className="flex flex-wrap gap-1">
+                        {story2TargetWords.map(word => {
+                          const counts = countWordsInParagraphs(story2Preview.paragraphs, [word])
+                          return <WordCountBadge key={word} word={word} count={counts[word.toLowerCase()]} variant="target" expected={4} />
+                        })}
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {allNoiseWords.map(word => {
+                          const counts = countWordsInParagraphs(story2Preview.paragraphs, [word])
+                          return <WordCountBadge key={word} word={word} count={counts[word.toLowerCase()]} variant="noise" expected={1} />
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -913,9 +1078,13 @@ export default function StoryManager({ experimentId }: Props) {
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
             <SectionHeader title="Generate Story Audio" subtitle="Create TTS audio for both stories" />
 
+            {/* Generating state */}
             {ttsStatus === 'generating' && (
               <div className="flex items-center gap-3 p-4 bg-emerald-50 border border-emerald-200 rounded-lg animate-pulse">
-                <Loader2 className="w-5 h-5 text-emerald-600 animate-spin" />
+                <div className="relative">
+                  <div className="w-8 h-8 border-4 border-emerald-200 rounded-full"></div>
+                  <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin absolute top-0 left-0"></div>
+                </div>
                 <div>
                   <div className="font-medium text-emerald-800">Generating TTS audio...</div>
                   <div className="text-xs text-emerald-600">Converting stories to speech. This may take a moment.</div>
@@ -923,12 +1092,35 @@ export default function StoryManager({ experimentId }: Props) {
               </div>
             )}
 
-            {(story1Preview?.ttsAudioUrl || story2Preview?.ttsAudioUrl) && (
+            {/* Just completed state */}
+            {ttsStatus === 'success' && ttsReady && (
               <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
                 <CheckCircle2 className="w-5 h-5 text-green-600" />
                 <div>
-                  <div className="font-medium text-green-800">TTS audio ready!</div>
-                  <div className="text-xs text-green-600">Audio has been generated for the stories.</div>
+                  <div className="font-medium text-green-800">TTS audio generated successfully!</div>
+                  <div className="text-xs text-green-600">Audio is ready for both stories.</div>
+                </div>
+              </div>
+            )}
+
+            {/* Error state */}
+            {ttsStatus === 'error' && (
+              <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-200 rounded-lg">
+                <AlertCircle className="w-5 h-5 text-red-600" />
+                <div>
+                  <div className="font-medium text-red-800">TTS generation failed</div>
+                  <div className="text-xs text-red-600">Please try again.</div>
+                </div>
+              </div>
+            )}
+
+            {/* Not generated yet state */}
+            {ttsStatus === 'idle' && !ttsReady && storiesReady && (
+              <div className="flex items-center gap-3 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                <Volume2 className="w-5 h-5 text-gray-400" />
+                <div>
+                  <div className="font-medium text-gray-700">Story audio not generated</div>
+                  <div className="text-xs text-gray-500">Click the button below to generate TTS audio.</div>
                 </div>
               </div>
             )}
@@ -936,24 +1128,42 @@ export default function StoryManager({ experimentId }: Props) {
             <button
               onClick={generateTts}
               disabled={!storiesReady || ttsStatus === 'generating' || isLocked}
-              className={`w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-medium transition ${
+              className={`w-full inline-flex items-center justify-center gap-3 px-4 py-3 rounded-lg font-medium transition ${
                 ttsStatus === 'generating'
-                  ? 'bg-emerald-100 text-emerald-600 cursor-wait'
+                  ? 'bg-emerald-600 text-white animate-pulse'
                   : isLocked
                   ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                   : 'bg-emerald-600 text-white hover:bg-emerald-700 disabled:bg-gray-100 disabled:text-gray-400'
               }`}
             >
-              {ttsStatus === 'generating' ? <Loader2 className="w-5 h-5 animate-spin" /> : isLocked ? <Lock className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-              {ttsStatus === 'generating' ? 'Generating...' : isLocked ? 'TTS Locked' : 'Generate TTS for Both Stories'}
+              {ttsStatus === 'generating' ? (
+                <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              ) : isLocked ? (
+                <Lock className="w-5 h-5" />
+              ) : ttsReady ? (
+                <RefreshCw className="w-5 h-5" />
+              ) : (
+                <Volume2 className="w-5 h-5" />
+              )}
+              {ttsStatus === 'generating'
+                ? 'Generating Audio...'
+                : isLocked
+                ? 'TTS Locked'
+                : ttsReady
+                ? 'Regenerate Story Audio'
+                : 'Generate Story Audio'}
             </button>
 
-            {(story1Preview?.ttsAudioUrl || story2Preview?.ttsAudioUrl) && (
+            {/* Audio players */}
+            {ttsReady && (
               <div className="grid md:grid-cols-2 gap-4">
                 {story1Preview?.ttsAudioUrl && (
                   <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
                     <div className="text-sm font-medium text-blue-800 mb-2">Story 1 Audio</div>
-                    <audio controls className="w-full">
+                    <audio key={story1Preview.ttsAudioUrl} controls className="w-full">
                       <source src={story1Preview.ttsAudioUrl} type="audio/mpeg" />
                     </audio>
                   </div>
@@ -961,7 +1171,7 @@ export default function StoryManager({ experimentId }: Props) {
                 {story2Preview?.ttsAudioUrl && (
                   <div className="p-3 rounded-lg bg-purple-50 border border-purple-200">
                     <div className="text-sm font-medium text-purple-800 mb-2">Story 2 Audio</div>
-                    <audio controls className="w-full">
+                    <audio key={story2Preview.ttsAudioUrl} controls className="w-full">
                       <source src={story2Preview.ttsAudioUrl} type="audio/mpeg" />
                     </audio>
                   </div>
@@ -974,9 +1184,13 @@ export default function StoryManager({ experimentId }: Props) {
           <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 space-y-4">
             <SectionHeader title="Word Audio (Recall Test)" subtitle="Individual word pronunciations for the final test" />
 
+            {/* Generating state */}
             {wordTtsLoading && (
               <div className="flex items-center gap-3 p-4 bg-indigo-50 border border-indigo-200 rounded-lg animate-pulse">
-                <Loader2 className="w-5 h-5 text-indigo-600 animate-spin" />
+                <div className="relative">
+                  <div className="w-8 h-8 border-4 border-indigo-200 rounded-full"></div>
+                  <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin absolute top-0 left-0"></div>
+                </div>
                 <div>
                   <div className="font-medium text-indigo-800">Generating word audio...</div>
                   <div className="text-xs text-indigo-600">Creating pronunciation files. Please wait.</div>
@@ -984,57 +1198,72 @@ export default function StoryManager({ experimentId }: Props) {
               </div>
             )}
 
-            {!wordTtsLoading && wordTtsItems.length > 0 && wordTtsItems.every(item => item.audioUrl) && (
-              <div className="flex items-center gap-3 p-4 bg-green-50 border border-green-200 rounded-lg">
-                <CheckCircle2 className="w-5 h-5 text-green-600" />
+            {/* Not generated yet state */}
+            {!wordTtsLoading && !wordTtsReady && storiesReady && (
+              <div className="flex items-center gap-3 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+                <Volume2 className="w-5 h-5 text-gray-400" />
                 <div>
-                  <div className="font-medium text-green-800">Word audio ready!</div>
-                  <div className="text-xs text-green-600">All {wordTtsItems.length} word pronunciations generated.</div>
+                  <div className="font-medium text-gray-700">Word audio not generated</div>
+                  <div className="text-xs text-gray-500">Click the button below to generate pronunciations for all target words.</div>
                 </div>
               </div>
             )}
 
-            <div className="flex gap-2">
-              <button
-                onClick={() => generateWordTts(false)}
-                disabled={wordTtsLoading || isLocked}
-                className={`flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 rounded-lg font-medium transition ${
-                  wordTtsLoading
-                    ? 'bg-indigo-100 text-indigo-600 cursor-wait'
-                    : isLocked
-                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    : 'bg-indigo-600 text-white hover:bg-indigo-700'
-                }`}
-              >
-                {wordTtsLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : isLocked ? <Lock className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-                {wordTtsLoading ? 'Generating...' : isLocked ? 'Word Audio Locked' : 'Generate Word Audio'}
-              </button>
-              <button
-                onClick={() => generateWordTts(true)}
-                disabled={wordTtsLoading || isLocked}
-                className="px-4 py-3 border border-indigo-200 text-indigo-700 rounded-lg hover:bg-indigo-50 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
+            <button
+              onClick={() => generateWordTts(false)}
+              disabled={wordTtsLoading || isLocked || !storiesReady}
+              className={`w-full inline-flex items-center justify-center gap-3 px-4 py-3 rounded-lg font-medium transition ${
+                wordTtsLoading
+                  ? 'bg-indigo-600 text-white animate-pulse'
+                  : isLocked
+                  ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                  : 'bg-indigo-600 text-white hover:bg-indigo-700 disabled:bg-gray-100 disabled:text-gray-400'
+              }`}
+            >
+              {wordTtsLoading ? (
+                <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+              ) : isLocked ? (
+                <Lock className="w-5 h-5" />
+              ) : wordTtsReady ? (
                 <RefreshCw className="w-5 h-5" />
-              </button>
-            </div>
+              ) : (
+                <Volume2 className="w-5 h-5" />
+              )}
+              {wordTtsLoading
+                ? 'Generating Word Audio...'
+                : isLocked
+                ? 'Word Audio Locked'
+                : wordTtsReady
+                ? 'Regenerate Word Audio'
+                : 'Generate Word Audio'}
+            </button>
 
             {wordTtsItems.length > 0 && (
               <div className="grid md:grid-cols-2 gap-3">
-                {wordTtsItems.map((item) => (
-                  <div key={item.word} className={`p-3 rounded-lg border ${item.audioUrl ? 'bg-white border-gray-200' : 'bg-red-50 border-red-200'}`}>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-gray-800">{item.word}</span>
-                      {item.audioUrl && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                {wordTtsItems.map((item) => {
+                  const audioUrl = item.audioUrl
+                    ? (item.audioUrl.startsWith('http') ? item.audioUrl : `${base}${item.audioUrl}`)
+                    : ''
+                  const audioUrlWithCache = audioUrl ? `${audioUrl}${audioUrl.includes('?') ? '&' : '?'}t=${Date.now()}` : ''
+                  return (
+                    <div key={item.word} className={`p-3 rounded-lg border ${item.audioUrl ? 'bg-white border-gray-200' : 'bg-red-50 border-red-200'}`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-medium text-gray-800">{item.word}</span>
+                        {item.audioUrl && <CheckCircle2 className="w-4 h-4 text-green-500" />}
+                      </div>
+                      {item.audioUrl ? (
+                        <audio key={audioUrlWithCache} controls className="w-full">
+                          <source src={audioUrlWithCache} type="audio/mpeg" />
+                        </audio>
+                      ) : (
+                        <div className="text-xs text-red-600">{item.error || 'Audio failed'}</div>
+                      )}
                     </div>
-                    {item.audioUrl ? (
-                      <audio controls className="w-full">
-                        <source src={item.audioUrl.startsWith('http') ? item.audioUrl : `${base}${item.audioUrl}`} type="audio/mpeg" />
-                      </audio>
-                    ) : (
-                      <div className="text-xs text-red-600">{item.error || 'Audio failed'}</div>
-                    )}
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>

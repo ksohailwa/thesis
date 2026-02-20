@@ -218,44 +218,44 @@ export const ROUTES = {
 
 export const API_ENDPOINTS = {
   // Auth
-  LOGIN: '/api/auth/login',
-  SIGNUP: '/api/auth/signup',
-  REFRESH: '/api/auth/refresh',
-  LOGOUT: '/api/auth/logout',
-  DEMO: '/api/auth/demo',
-  DEMO_LOGIN: '/api/demo/login',
+  LOGIN: 'api/auth/login',
+  SIGNUP: 'api/auth/signup',
+  REFRESH: 'api/auth/refresh',
+  LOGOUT: 'api/auth/logout',
+  DEMO: 'api/auth/demo',
+  DEMO_LOGIN: 'api/demo/login',
 
   // Experiments
-  EXPERIMENTS_LIST: '/api/experiments',
-  EXPERIMENT_GET: (id: string) => `/api/experiments/${id}`,
-  EXPERIMENT_CREATE: '/api/experiments',
-  EXPERIMENT_UPDATE: (id: string) => `/api/experiments/${id}`,
-  EXPERIMENT_LAUNCH: (id: string) => `/api/experiments/${id}/launch`,
-  EXPERIMENT_STATUS: (id: string) => `/api/experiments/${id}/status`,
+  EXPERIMENTS_LIST: 'api/experiments',
+  EXPERIMENT_GET: (id: string) => `api/experiments/${id}`,
+  EXPERIMENT_CREATE: 'api/experiments',
+  EXPERIMENT_UPDATE: (id: string) => `api/experiments/${id}`,
+  EXPERIMENT_LAUNCH: (id: string) => `api/experiments/${id}/launch`,
+  EXPERIMENT_STATUS: (id: string) => `api/experiments/${id}/status`,
 
   // Stories & Generation
-  SUGGESTIONS: (id: string) => `/api/experiments/${id}/suggestions`,
-  TARGET_WORDS: (id: string) => `/api/experiments/${id}/target-words`,
-  GENERATE_STORIES: (id: string) => `/api/experiments/${id}/generate-stories`,
-  GENERATE_STORY: (id: string) => `/api/experiments/${id}/generate-story`,
-  STORY_PREVIEW: (id: string, label: string) => `/api/experiments/${id}/story/${label}`,
+  SUGGESTIONS: (id: string) => `api/experiments/${id}/suggestions`,
+  TARGET_WORDS: (id: string) => `api/experiments/${id}/target-words`,
+  GENERATE_STORIES: (id: string) => `api/experiments/${id}/generate-stories`,
+  GENERATE_STORY: (id: string) => `api/experiments/${id}/generate-story`,
+  STORY_PREVIEW: (id: string, label: string) => `api/experiments/${id}/story/${label}`,
 
   // TTS
-  GENERATE_TTS: (id: string) => `/api/experiments/${id}/tts`,
+  GENERATE_TTS: (id: string) => `api/experiments/${id}/tts`,
 
   // Student
-  STUDENT_JOIN: '/api/student/join',
-  STUDENT_ATTEMPT: '/api/student/attempt',
-  STUDENT_HINT: '/api/student/hint',
-  STUDENT_EVENTS: '/api/student/events',
+  STUDENT_JOIN: 'api/student/join',
+  STUDENT_ATTEMPT: 'api/student/attempt',
+  STUDENT_HINT: 'api/student/hint',
+  STUDENT_EVENTS: 'api/student/events',
 
   // Analytics
-  ANALYTICS_OVERVIEW: (id: string) => `/api/analytics/experiment/${id}`,
-  ANALYTICS_STUDENTS: (id: string) => `/api/analytics/experiment/${id}/students`,
-  ANALYTICS_EVENTS: (id: string) => `/api/analytics/experiment/${id}/events`,
+  ANALYTICS_OVERVIEW: (id: string) => `api/analytics/experiment/${id}`,
+  ANALYTICS_STUDENTS: (id: string) => `api/analytics/experiment/${id}/students`,
+  ANALYTICS_EVENTS: (id: string) => `api/analytics/experiment/${id}/events`,
 
   // Health
-  HEALTH: '/api/health',
+  HEALTH: 'api/health',
 };
 
 // ============================================================================

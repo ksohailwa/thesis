@@ -26,7 +26,7 @@ export default function Signup() {
     if (password !== confirmPassword) return setError('Passwords do not match')
     setBusy(true)
     try {
-      await api.post('/api/auth/student/signup', { username: un, password })
+      await api.post('api/auth/student/signup', { username: un, password })
       nav('/student-login')
     } catch (e: any) {
       setError(toMessage(e?.response?.data?.error) || 'Signup failed. Please try again.')

@@ -16,12 +16,17 @@ const queryClient = new QueryClient({
   },
 })
 
+// Base path must match Vite's base config for SPA routing to work on refresh
+const basePath = import.meta.env.BASE_URL || '/spellwise/'
+// Remove trailing slash for basename
+const basename = basePath.endsWith('/') ? basePath.slice(0, -1) : basePath
+
 const root = document.getElementById('root')!
 createRoot(root).render(
   <React.StrictMode>
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
-        <BrowserRouter>
+        <BrowserRouter basename={basename}>
           <App />
         </BrowserRouter>
       </QueryClientProvider>

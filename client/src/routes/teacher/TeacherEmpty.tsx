@@ -29,7 +29,7 @@ export default function TeacherHome() {
 
   async function loadExperiments() {
     try {
-      const { data } = await api.get('/api/experiments')
+      const { data } = await api.get('api/experiments')
       setExperiments(Array.isArray(data) ? data : [])
     } catch (e) {
       logger.error('Failed to load experiments', e)
@@ -45,7 +45,7 @@ export default function TeacherHome() {
     }
     setCreating(true)
     try {
-      const { data } = await api.post('/api/experiments', { title: title.trim() })
+      const { data } = await api.post('api/experiments', { title: title.trim() })
       const expId = data?.id || data?._id
       if (expId) nav(`/teacher/experiments/${expId}`)
       setTitle('')

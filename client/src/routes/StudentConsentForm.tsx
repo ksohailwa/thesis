@@ -24,7 +24,7 @@ export default function StudentConsent() {
       nav('/student-login')
       return
     }
-    api.post('/api/student/consent', { version: 'v1' })
+    api.post('api/student/consent', { version: 'v1' })
       .then(() => {
         localStorage.setItem(consentKey, 'true')
         localStorage.setItem(`${consentKey}:date`, new Date().toISOString())

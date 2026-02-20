@@ -36,7 +36,7 @@ api.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`
     }
     const refresh = state.refreshToken || stored.refreshToken || localStorage.getItem('refreshToken')
-    if (refresh && config.url?.includes('/api/auth/refresh')) {
+    if (refresh && config.url?.includes('api/auth/refresh')) {
       config.headers['x-refresh'] = refresh
     }
     return config
@@ -55,7 +55,7 @@ api.interceptors.response.use(
 
     const originalRequest = error.config || {}
     // Skip refresh loop for the refresh endpoint itself
-    if (originalRequest.url?.includes('/api/auth/refresh')) {
+    if (originalRequest.url?.includes('api/auth/refresh')) {
       return Promise.reject(error)
     }
     if (error.response?.status === 401 && !originalRequest._retry) {
@@ -68,7 +68,7 @@ api.interceptors.response.use(
         return Promise.reject(error)
       }
       try {
-        const { data } = await api.post('/api/auth/refresh', undefined, {
+        const { data } = await api.post('api/auth/refresh', undefined, {
           headers: { 'x-refresh': refresh },
         })
         if (data?.accessToken) {
@@ -94,7 +94,8 @@ api.interceptors.response.use(
         localStorage.removeItem('demo')
         localStorage.removeItem('refreshToken')
         if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-          window.location.href = '/login'
+          const base = import.meta.env.BASE_URL || '/'
+          window.location.href = `${base}login`
         }
         return Promise.reject(refreshError)
       }

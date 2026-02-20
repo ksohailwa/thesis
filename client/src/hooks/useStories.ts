@@ -16,7 +16,7 @@ export const useStories = () => {
   return useQuery({
     queryKey: ['stories'],
     queryFn: async () => {
-      const { data } = await api.get('/api/stories');
+      const { data } = await api.get('api/stories');
       return data as Story[];
     },
   });
@@ -26,7 +26,7 @@ export const useStory = (id: string) => {
   return useQuery({
     queryKey: ['story', id],
     queryFn: async () => {
-      const { data } = await api.get(`/api/stories/${id}`);
+      const { data } = await api.get(`api/stories/${id}`);
       return data as Story;
     },
     enabled: !!id,

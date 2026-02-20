@@ -12,8 +12,19 @@ const logger = winston.createLogger({
       : winston.format.combine(
           winston.format.colorize(),
           winston.format.printf(({ level, message, timestamp, ...meta }) => {
-            const metaStr = Object.keys(meta).length ? JSON.stringify(meta, null, 2) : '';
-            return `${timestamp} [${level}]: ${message} ${metaStr}`;
+            // Clean, single-line output for dev
+            const time = (timestamp as string).slice(11, 19); // HH:MM:SS only
+            const keys = Object.keys(meta);
+            if (!keys.length) return `${time} [${level}] ${message}`;
+            // Show only key values inline, skip large objects
+            const parts = keys
+              .filter((k) => typeof meta[k] !== 'object' || Array.isArray(meta[k]))
+              .map((k) => {
+                const v = meta[k];
+                if (Array.isArray(v)) return `${k}=${v.length > 3 ? `[${v.slice(0, 3).join(', ')}... +${v.length - 3}]` : `[${v.join(', ')}]`}`;
+                return `${k}=${v}`;
+              });
+            return `${time} [${level}] ${message}${parts.length ? '  ' + parts.join(' | ') : ''}`;
           })
         )
   ),

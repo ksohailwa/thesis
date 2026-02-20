@@ -24,8 +24,9 @@ RUN mkdir -p /app/server/static/audio
 RUN npm run build --workspace=@spellwise/shared
 RUN npm run build --workspace=@spellwise/server
 
-# Build client with root base path for Docker
-ENV VITE_BASE_PATH=/
+# Build client with /SpellWise/ base path for Docker
+ENV VITE_BASE_PATH=/SpellWise/
+ENV VITE_API_BASE_URL=/SpellWise
 RUN npm run build --workspace=@spellwise/client
 
 # Stage 2: Production server
@@ -59,6 +60,6 @@ ENV PORT=4000
 EXPOSE 4000
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:4000/health || exit 1
+  CMD curl -f http://localhost:4000/SpellWise/api/health || exit 1
 
 CMD ["node", "server/dist/index.js"]

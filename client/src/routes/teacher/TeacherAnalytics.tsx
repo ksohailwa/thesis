@@ -63,7 +63,7 @@ export default function TeacherAnalytics() {
   async function loadSummary(id: string) {
     setLoading(true)
     try {
-      const { data } = await api.get(`/api/analytics/experiment/${id}/summary${buildQuery()}`)
+      const { data } = await api.get(`api/analytics/experiment/${id}/summary${buildQuery()}`)
       setSummary(data)
     } catch {
       toast.error('Failed to load analytics')
@@ -75,7 +75,7 @@ export default function TeacherAnalytics() {
   async function loadExperimentsSummary() {
     setLoadingExperiments(true)
     try {
-      const { data } = await api.get('/api/analytics/experiments/summary')
+      const { data } = await api.get('api/analytics/experiments/summary')
       setExperiments(Array.isArray(data?.experiments) ? data.experiments : [])
     } catch {
       setExperiments([])
@@ -106,7 +106,7 @@ export default function TeacherAnalytics() {
     setLoadingStudent(true)
     try {
       const { data } = await api.get(
-        `/api/analytics/experiment/${expId}/student/${studentId}${buildQuery()}`
+        `api/analytics/experiment/${expId}/student/${studentId}${buildQuery()}`
       )
       setStudentDetail(data)
     } catch {
@@ -123,7 +123,7 @@ export default function TeacherAnalytics() {
     try {
       const qs = buildQuery()
       const suffix = qs ? `${qs}&limit=${eventsLimit}&offset=${nextOffset}` : `?limit=${eventsLimit}&offset=${nextOffset}`
-      const { data } = await api.get(`/api/analytics/experiment/${expId}/events${suffix}`)
+      const { data } = await api.get(`api/analytics/experiment/${expId}/events${suffix}`)
       setEvents((prev) => (nextOffset === 0 ? data.events || [] : [...prev, ...(data.events || [])]))
       setEventsTotal(data.total || 0)
       setEventsOffset(nextOffset)
@@ -172,7 +172,7 @@ export default function TeacherAnalytics() {
                 className="px-4 py-2 border-2 border-gray-200 rounded-lg text-sm font-semibold hover:border-gray-300 transition"
                 onClick={() =>
                   downloadCsv(
-                    `/api/analytics/experiment/${summary.experiment._id}/csv?type=${type}${buildQuery().replace('?', '&')}`,
+                    `api/analytics/experiment/${summary.experiment._id}/csv?type=${type}${buildQuery().replace('?', '&')}`,
                     `experiment_${summary.experiment._id}_${type}.csv`
                   )
                 }
@@ -186,7 +186,7 @@ export default function TeacherAnalytics() {
               className="px-4 py-2 border-2 border-gray-200 rounded-lg text-sm font-semibold hover:border-gray-300 transition"
               onClick={() =>
                 downloadCsv(
-                  `/api/analytics/experiment/${summary.experiment._id}/events/csv${buildQuery()}`,
+                  `api/analytics/experiment/${summary.experiment._id}/events/csv${buildQuery()}`,
                   `experiment_${summary.experiment._id}_events.csv`
                 )
               }
@@ -643,7 +643,7 @@ export default function TeacherAnalytics() {
           <h2 className="text-xl font-bold text-gray-900">All Experiments Summary</h2>
           <button
             className="px-4 py-2 border-2 border-gray-200 rounded-lg text-sm font-semibold hover:border-gray-300 transition"
-            onClick={() => downloadCsv('/api/analytics/experiments/csv', 'experiments_summary.csv')}
+            onClick={() => downloadCsv('api/analytics/experiments/csv', 'experiments_summary.csv')}
           >
             <span className="inline-flex items-center gap-2">
               <Download size={16} /> Export CSV

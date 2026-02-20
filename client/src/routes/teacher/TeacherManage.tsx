@@ -40,7 +40,7 @@ export default function TeacherManage() {
     if (!expId) return
     setLoading(true)
     try {
-      const { data } = await api.get(`/api/experiments/${expId}`)
+      const { data } = await api.get(`api/experiments/${expId}`)
       setTitle(data.title || '')
       setLevel(data.level || data.cefr || 'B1')
       setExperimentStatus(data.status || 'draft')
@@ -59,7 +59,7 @@ export default function TeacherManage() {
     if (!participationEnabled) return
     if (!expId) return
     try {
-      const { data } = await api.get(`/api/experiments/${expId}/participation`)
+      const { data } = await api.get(`api/experiments/${expId}/participation`)
       setParticipation(data)
     } catch (e: any) {
       // Endpoint may not exist in some setups; ignore 404 to avoid noisy errors
@@ -75,7 +75,7 @@ export default function TeacherManage() {
     setLaunchLoading(true)
     setStatusMessage('')
     try {
-      const { data } = await api.post(`/api/experiments/${expId}/launch`, { condition: assignedCondition })
+      const { data } = await api.post(`api/experiments/${expId}/launch`, { condition: assignedCondition })
       setExperimentStatus(data?.status || 'live')
       setStatusMessage(`Experiment launched! Join code: ${data.code}`)
       toast.success(`Experiment launched! Code: ${data.code}`)
@@ -92,7 +92,7 @@ export default function TeacherManage() {
   async function closeExperiment() {
     if (!expId) return
     try {
-      await api.post(`/api/experiments/${expId}/status`, { status: 'closed' })
+      await api.post(`api/experiments/${expId}/status`, { status: 'closed' })
       setExperimentStatus('closed')
       setStatusMessage('Experiment closed')
       toast.success('Experiment closed')
@@ -106,7 +106,7 @@ export default function TeacherManage() {
   async function reopenExperiment() {
     if (!expId) return
     try {
-      await api.post(`/api/experiments/${expId}/status`, { status: 'live' })
+      await api.post(`api/experiments/${expId}/status`, { status: 'live' })
       setExperimentStatus('live')
       setStatusMessage('Experiment re-opened and set to live')
       toast.success('Experiment re-opened')
@@ -122,7 +122,7 @@ export default function TeacherManage() {
     if (!expId) return
     setSavingLevel(true)
     try {
-      await api.patch(`/api/experiments/${expId}`, { level: newLevel })
+      await api.patch(`api/experiments/${expId}`, { level: newLevel })
       setLevel(newLevel)
       toast.success('Level updated')
     } catch (e: any) {
@@ -135,7 +135,7 @@ export default function TeacherManage() {
   async function deleteExperiment() {
     if (!expId) return
     try {
-      await api.delete(`/api/experiments/${expId}`)
+      await api.delete(`api/experiments/${expId}`)
       toast.success('Experiment deleted')
       nav('/teacher')
     } catch (e: any) {
@@ -150,7 +150,7 @@ export default function TeacherManage() {
     setLoadingStudent(true)
     setSelectedStudent(studentId)
     try {
-      const { data } = await api.get(`/api/experiments/${expId}/student/${studentId}`)
+      const { data } = await api.get(`api/experiments/${expId}/student/${studentId}`)
       setStudentProgress(data)
     } catch {
       toast.error('Failed to load student progress')
@@ -291,7 +291,11 @@ export default function TeacherManage() {
       </div>
 
       <div className="bg-white rounded-2xl shadow-lg p-8 border-2 border-gray-100 transition-colors">
-        <StoryManager experimentId={expId || ''} compact={false} />
+        <StoryManager
+          experimentId={expId || ''}
+          compact={false}
+          onStoriesConfirmed={(confirmed) => setStoriesConfirmed(confirmed)}
+        />
       </div>
 
       {experimentStatus === 'live' && participation && (

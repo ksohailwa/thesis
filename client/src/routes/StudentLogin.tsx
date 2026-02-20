@@ -23,7 +23,7 @@ export default function StudentLogin() {
       const pw = (password || '').trim()
       if (!un) { setError('Enter a username'); setBusy(false); return }
       if (pw.length < 6) { setError('Password must be at least 6 characters'); setBusy(false); return }
-      const { data } = await api.post('/api/auth/student/login', { username: un, password: pw })
+      const { data } = await api.post('api/auth/student/login', { username: un, password: pw })
       setAuth({ accessToken: data.accessToken, refreshToken: data.refreshToken || null, role: data.role, username: data.username })
       if (data?.newUser || !data?.consented) {
         nav('/student/consent')

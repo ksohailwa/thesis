@@ -16,7 +16,7 @@ export default function TeacherCreate() {
     setBusy(true);
     try {
       const payload = { title: title.trim(), description: '', level, maxTargetWords: 10 };
-      const { data } = await api.post('/api/experiments', payload);
+      const { data } = await api.post('api/experiments', payload);
       toast.success('Experiment created');
       const newId = data?.id || data?._id;
       if (newId) nav(`/teacher/experiments/${newId}`);

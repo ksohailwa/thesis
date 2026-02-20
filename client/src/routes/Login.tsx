@@ -26,7 +26,7 @@ export default function Login() {
     if (pw.length < 6) return setError('Password must be at least 6 characters')
     setBusy(true)
     try {
-      const { data } = await api.post('/api/auth/login', { username: un, password: pw })
+      const { data } = await api.post('api/auth/login', { username: un, password: pw })
       setAuth({
         accessToken: data.accessToken,
         refreshToken: data.refreshToken || null,

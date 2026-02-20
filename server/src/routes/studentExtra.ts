@@ -210,8 +210,8 @@ router.post('/feedback', requireAuth, requireRole('student'), async (req: Authed
     storyIndex: z.number().int().min(0).max(1).optional(),
     difficulty: z.number().int().min(1).max(5).optional(),
     enjoyment: z.number().int().min(1).max(5).optional(),
-    comment: z.string().optional(),
-    effort: z.string().optional(),
+    comment: z.string().max(2000).optional(),
+    effort: z.string().max(500).optional(),
   });
   const parsed = schema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });

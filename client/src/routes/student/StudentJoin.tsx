@@ -24,7 +24,7 @@ export default function StudentJoin() {
     setLoading(true)
     setError('')
     try {
-      const { data } = await api.post('/api/student/join', { code: trimmedCode })
+      const { data } = await api.post('api/student/join', { code: trimmedCode })
       sessionStorage.clear()
       sessionStorage.setItem('assignmentId', data.assignmentId || '')
       if (data.experimentId) sessionStorage.setItem('exp.experimentId', data.experimentId)

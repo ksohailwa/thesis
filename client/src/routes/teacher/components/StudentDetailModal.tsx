@@ -52,7 +52,7 @@ export default function StudentDetailModal({
                 className="px-3 py-2 border-2 border-gray-200 rounded-lg text-xs font-semibold hover:border-gray-300 transition"
                 onClick={() =>
                   onDownloadCsv(
-                    `/api/analytics/experiment/${experimentId}/student/${selectedStudentId}/csv?type=summary${buildQuery().replace('?', '&')}`,
+                    `api/analytics/experiment/${experimentId}/student/${selectedStudentId}/csv?type=summary${buildQuery().replace('?', '&')}`,
                     `experiment_${experimentId}_student_${selectedStudentId}_summary.csv`
                   )
                 }
@@ -63,7 +63,7 @@ export default function StudentDetailModal({
                 className="px-3 py-2 border-2 border-gray-200 rounded-lg text-xs font-semibold hover:border-gray-300 transition"
                 onClick={() =>
                   onDownloadCsv(
-                    `/api/analytics/experiment/${experimentId}/student/${selectedStudentId}/csv?type=words${buildQuery().replace('?', '&')}`,
+                    `api/analytics/experiment/${experimentId}/student/${selectedStudentId}/csv?type=words${buildQuery().replace('?', '&')}`,
                     `experiment_${experimentId}_student_${selectedStudentId}_words.csv`
                   )
                 }
@@ -74,7 +74,7 @@ export default function StudentDetailModal({
                 className="px-3 py-2 border-2 border-gray-200 rounded-lg text-xs font-semibold hover:border-gray-300 transition"
                 onClick={() =>
                   onDownloadCsv(
-                    `/api/analytics/experiment/${experimentId}/student/${selectedStudentId}/csv?type=timeline${buildQuery().replace('?', '&')}`,
+                    `api/analytics/experiment/${experimentId}/student/${selectedStudentId}/csv?type=timeline${buildQuery().replace('?', '&')}`,
                     `experiment_${experimentId}_student_${selectedStudentId}_timeline.csv`
                   )
                 }

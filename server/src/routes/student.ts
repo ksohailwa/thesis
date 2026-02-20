@@ -655,7 +655,7 @@ router.post('/attempt', requireAuth, requireRole('student'), async (req: AuthedR
 });
 
 // Evaluate short definitions for target words (adaptive, tolerant)
-router.post('/define', async (req: AuthedRequest, res) => {
+router.post('/define', requireAuth, requireRole('student'), async (req: AuthedRequest, res) => {
   const schema = z.object({
     experimentId: z.string(),
     storyLabel: z.enum(['A', 'B', '1', '2', 'story1', 'story2']).optional(),
@@ -856,7 +856,7 @@ Student attempt: "${latestAttempt.slice(0, 60)}".`;
         max_tokens: 60,
       });
       const rawHint = completion.choices?.[0]?.message?.content?.trim() || 'Think of the context.';
-      const safeHint = rawHint.replace(new RegExp(targetWord, 'ig'), 'this word');
+      const safeHint = rawHint.replace(new RegExp(targetWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'ig'), 'this word');
       return res.json({
         hint: safeHint,
         stage,
@@ -1272,6 +1272,10 @@ router.post(
 
     const { default: fs } = await import('fs');
     const { default: path } = await import('path');
+    const { getWordDefinition, getAllWords } = await import('../data/wordLists');
+
+    // Pre-fetch all words for distractor generation
+    const allStaticWords = getAllWords();
 
     const items = words.map((word) => {
       const safe = safeWordFile(word);
@@ -1286,14 +1290,26 @@ router.post(
       );
       const available = fs.existsSync(abs);
 
-      // Get metadata for this word
+      // Get metadata for this word - first try WordMetadata, then fall back to static word list
       const metadata = metadataByWord.get(word.toLowerCase());
-      const correctDefinition = metadata?.definition || `Definition for ${word}`;
-      const distractors = metadata?.distractorDefinitions || [
-        'An unrelated concept',
-        'Something completely different',
-        'A different meaning entirely',
-      ];
+      let correctDefinition = metadata?.definition;
+
+      // Fall back to static word list if no definition in WordMetadata
+      if (!correctDefinition) {
+        correctDefinition = getWordDefinition(word) || `Definition for ${word}`;
+      }
+
+      // Get distractors - use WordMetadata first, then generate from other words
+      let distractors = metadata?.distractorDefinitions || [];
+      if (distractors.length < 3) {
+        // Get definitions from other words as distractors
+        const otherDefinitions = allStaticWords
+          .filter(w => w.word.toLowerCase() !== word.toLowerCase() && w.meaning !== correctDefinition)
+          .map(w => w.meaning)
+          .sort(() => Math.random() - 0.5)
+          .slice(0, 3 - distractors.length);
+        distractors = [...distractors, ...otherDefinitions];
+      }
 
       // Shuffle options (correct + distractors)
       const allOptions = [correctDefinition, ...distractors.slice(0, 3)];
@@ -1412,13 +1428,27 @@ router.get(
     // Try to find existing metadata
     let metadata = await WordMetadata.findOne({
       experiment: experimentId,
-      word: { $regex: new RegExp(`^${word}$`, 'i') },
+      word: { $regex: new RegExp(`^${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
     });
 
     // If not found, generate it
     if (!metadata) {
       const exp = await Experiment.findById(experimentId);
       if (!exp) return res.status(404).json({ error: 'Experiment not found' });
+
+      // Import static word list for fallback definitions
+      const { getWordItem, getAllWords } = await import('../data/wordLists');
+      const staticWordItem = getWordItem(word);
+      const allStaticWords = getAllWords();
+
+      // Generate distractor definitions from other words
+      const generateDistractors = (correctDef: string) => {
+        return allStaticWords
+          .filter(w => w.word.toLowerCase() !== word.toLowerCase() && w.meaning !== correctDef)
+          .map(w => w.meaning)
+          .sort(() => Math.random() - 0.5)
+          .slice(0, 3);
+      };
 
       const oa = getOpenAI();
       if (oa) {
@@ -1440,47 +1470,47 @@ router.get(
             'always', 'never', 'often', 'really', 'very'
           ];
 
+          // Prefer static definition, then LLM definition
+          const definition = staticWordItem?.meaning || data.definition || `Definition for ${word}`;
+          const distractors = data.distractorDefinitions?.length > 0
+            ? data.distractorDefinitions
+            : generateDistractors(definition);
+
           metadata = await WordMetadata.create({
             experiment: experimentId,
             word: word.toLowerCase(),
-            definition: data.definition || `Definition for ${word}`,
+            definition,
             partOfSpeech: data.partOfSpeech || '',
-            distractorDefinitions: data.distractorDefinitions || [],
+            distractorDefinitions: distractors,
             commonCollocations: companions,
-            exampleSentences: data.exampleSentences || [],
+            exampleSentences: staticWordItem ? [staticWordItem.sentence1, staticWordItem.sentence2].filter(Boolean) : (data.exampleSentences || []),
             syllables: data.syllables || [],
           });
         } catch (e) {
-          // Fallback if LLM fails
+          // Fallback if LLM fails - use static word list
+          const definition = staticWordItem?.meaning || `Definition for ${word}`;
           metadata = await WordMetadata.create({
             experiment: experimentId,
             word: word.toLowerCase(),
-            definition: `A word meaning related to ${word}`,
+            definition,
             partOfSpeech: '',
-            distractorDefinitions: [
-              'Something completely different',
-              'An unrelated concept',
-              'A different meaning entirely',
-            ],
+            distractorDefinitions: generateDistractors(definition),
             commonCollocations: ['always', 'never', 'often', 'really', 'very'],
-            exampleSentences: [],
+            exampleSentences: staticWordItem ? [staticWordItem.sentence1, staticWordItem.sentence2].filter(Boolean) : [],
             syllables: [],
           });
         }
       } else {
-        // No OpenAI - use fallback
+        // No OpenAI - use static word list
+        const definition = staticWordItem?.meaning || `Definition for ${word}`;
         metadata = await WordMetadata.create({
           experiment: experimentId,
           word: word.toLowerCase(),
-          definition: `A word meaning related to ${word}`,
+          definition,
           partOfSpeech: '',
-          distractorDefinitions: [
-            'Something completely different',
-            'An unrelated concept',
-            'A different meaning entirely',
-          ],
+          distractorDefinitions: generateDistractors(definition),
           commonCollocations: ['always', 'never', 'often', 'really', 'very'],
-          exampleSentences: [],
+          exampleSentences: staticWordItem ? [staticWordItem.sentence1, staticWordItem.sentence2].filter(Boolean) : [],
           syllables: [],
         });
       }

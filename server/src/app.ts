@@ -24,6 +24,9 @@ import jobsRouter from './routes/jobs';
 import { setupSwagger } from './swagger';
 
 const env = process.env.NODE_ENV || 'development';
+// Base path for production deployment (e.g., /SpellWise)
+const BASE_PATH = env === 'production' ? '/SpellWise' : '';
+
 const configValidation = validateConfig();
 if (!configValidation.ok) {
   logger.error('Configuration errors', { errors: configValidation.errors });
@@ -61,17 +64,27 @@ const authLimiter = rateLimit({
 });
 
 if (env !== 'development') {
-  app.use('/api/auth/', authLimiter);
+  app.use(`${BASE_PATH}/api/auth/`, authLimiter);
 }
 
-// HTTP request logging
+// HTTP request logging (clean, readable format; skip noisy polling requests)
 app.use(
-  morgan('combined', {
-    stream: { write: (message: string) => logger.info(message.trim()) },
-  })
+  morgan(
+    (tokens, req, res) => {
+      const method = tokens.method(req, res);
+      const url = tokens.url(req, res);
+      const status = tokens.status(req, res);
+      const time = tokens['response-time'](req, res);
+      return `${method} ${url} → ${status} (${Math.round(Number(time))}ms)`;
+    },
+    {
+      stream: { write: (message: string) => logger.info(message.trim()) },
+      skip: (req) => req.method === 'GET' && req.url?.startsWith('/api/jobs/'),
+    }
+  )
 );
 
-app.get('/api/health', (_req, res) => {
+app.get(`${BASE_PATH}/api/health`, (_req, res) => {
   const dbState = mongoose.connection.readyState;
   const dbStatus =
     ['disconnected', 'connected', 'connecting', 'disconnecting'][dbState] || 'unknown';
@@ -102,16 +115,16 @@ app.get('/api/health', (_req, res) => {
   res.status(health.ok ? 200 : 503).json(health);
 });
 
-app.use('/api/auth', authRouter);
-app.use('/api/stories', storiesRouter);
-app.use('/api/experiments', experimentsRouter);
-app.use('/api/simple', simpleRouter);
-app.use('/api/student', studentRouter);
-app.use('/api/student', studentExtraRouter);
-app.use('/api/analytics', analyticsRouter);
-app.use('/api', demoRouter);
-app.use('/api', demoLoginRouter);
-app.use('/api/jobs', jobsRouter);
+app.use(`${BASE_PATH}/api/auth`, authRouter);
+app.use(`${BASE_PATH}/api/stories`, storiesRouter);
+app.use(`${BASE_PATH}/api/experiments`, experimentsRouter);
+app.use(`${BASE_PATH}/api/simple`, simpleRouter);
+app.use(`${BASE_PATH}/api/student`, studentRouter);
+app.use(`${BASE_PATH}/api/student`, studentExtraRouter);
+app.use(`${BASE_PATH}/api/analytics`, analyticsRouter);
+app.use(`${BASE_PATH}/api`, demoRouter);
+app.use(`${BASE_PATH}/api`, demoLoginRouter);
+app.use(`${BASE_PATH}/api/jobs`, jobsRouter);
 
 // API Documentation
 setupSwagger(app);
@@ -121,7 +134,7 @@ const audioDir = path.join(process.cwd(), 'static', 'audio');
 const staticDir = path.join(process.cwd(), 'static');
 
 app.use(
-  '/static/audio',
+  `${BASE_PATH}/static/audio`,
   (req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', 'Range');
@@ -131,20 +144,25 @@ app.use(
   },
   express.static(audioDir, { acceptRanges: true, fallthrough: true })
 );
-app.use('/static', express.static(staticDir));
+app.use(`${BASE_PATH}/static`, express.static(staticDir));
 
 // Serve client build in production
 const clientDir = path.join(process.cwd(), 'server', 'static', 'client');
 if (env === 'production') {
-  app.use(express.static(clientDir));
+  app.use(`${BASE_PATH}`, express.static(clientDir));
 
   // SPA fallback - serve index.html for client-side routes
-  app.get('*', (req, res, next) => {
-    // Skip API routes
-    if (req.path.startsWith('/api') || req.path.startsWith('/static')) {
+  app.get(`${BASE_PATH}/*`, (req, res, next) => {
+    // Skip API and static routes
+    if (req.path.includes('/api') || req.path.includes('/static')) {
       return next();
     }
     res.sendFile(path.join(clientDir, 'index.html'));
+  });
+
+  // Redirect root to /SpellWise/
+  app.get('/', (_req, res) => {
+    res.redirect(`${BASE_PATH}/`);
   });
 }
 

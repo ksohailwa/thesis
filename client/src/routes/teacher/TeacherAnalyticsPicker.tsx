@@ -12,7 +12,7 @@ export default function TeacherAnalyticsPicker() {
   useEffect(() => {
     async function loadExperiments() {
       try {
-        const { data } = await api.get('/api/experiments')
+        const { data } = await api.get('api/experiments')
         setExperiments(Array.isArray(data) ? data : [])
       } catch (e) {
         logger.error('Failed to load experiments', e)

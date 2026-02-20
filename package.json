@@ -10,7 +10,8 @@
   "scripts": {
     "dev": "concurrently \"npm run dev --workspace=@spellwise/client\" \"npm run dev --workspace=@spellwise/server\"",
     "build": "npm run build --workspaces",
-    "lint": "npm run lint --workspaces"
+    "lint": "npm run lint --workspaces",
+    "teacher": "pwsh -File teacher.ps1"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

@@ -13,7 +13,7 @@ export default function EffortPrompt({ open, onClose, sessionId, taskType, posit
     setSaving(true);
     setError('');
     try {
-      await api.post('/api/effort', { sessionId, taskType, position, score });
+      await api.post('api/effort', { sessionId, taskType, position, score });
       onClose();
     } catch (e: any) {
       setError(e?.response?.data?.error || 'Failed to save');
