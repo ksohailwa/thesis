@@ -35,3 +35,4 @@ coverage/
 
 # Root-level env file (critical - never commit)
 /.env
+nul
