@@ -1,4 +1,4 @@
-Stage and commit all changes with a user-friendly commit message.
+Stage, commit, and push all changes with a user-friendly commit message.
 
 ## Instructions
 
@@ -12,6 +12,5 @@ Stage and commit all changes with a user-friendly commit message.
    - Optionally includes bullet points for multiple changes
    - Does NOT include any Claude/AI attribution or footer
 6. Commit the changes
-7. Show the final status
-
-Do NOT push to remote unless explicitly asked.
+7. Push to remote
+8. Show the final status
