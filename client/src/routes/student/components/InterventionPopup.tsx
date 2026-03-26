@@ -189,12 +189,13 @@ export default function InterventionPopup({ onComplete }: Props) {
             />
           )}
 
-          {currentExercise === 3 && jumbleCompleted && !sentenceCompleted && (
+          {currentExercise === 3 && jumbleCompleted && !sentenceCompleted && interventionId && (
             <SentenceExercise
               targetWord={targetWord}
               definition={wordMetadata.definition}
               companionWords={wordMetadata.commonCollocations || ['always', 'often', 'really']}
               exampleSentences={wordMetadata.exampleSentences}
+              interventionId={interventionId}
               onComplete={handleSentenceComplete}
               onAttempt={handleSentenceAttempt}
             />

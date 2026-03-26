@@ -29,7 +29,7 @@ function countWord(occ: Occurrence[], word: string): number {
  * Validate stories with flexible word distribution rules:
  *
  * TARGET WORDS:
- * - Each target word must appear exactly 4 times per story
+ * - Each target word must appear 2-4 times per story
  * - Target words can be distributed freely across paragraphs (not forced 1 per paragraph)
  * - Two different target words cannot appear in the same sentence
  *
@@ -70,11 +70,13 @@ export function validateStories(
 
   // Helper to check target word rules per story
   const checkTargetWords = (name: 'A' | 'B', occ: Occurrence[]) => {
-    // Rule: Each target word must appear at least 4 times total in the whole story
+    // Rule: Each target word must appear 2-4 times total in the whole story
     for (const w of targetWords) {
       const c = countWord(occ, w);
-      if (c < 4) {
-        violations.push(`Story ${name}: target word "${w}" must appear at least 4 times (got ${c}).`);
+      if (c < 2) {
+        violations.push(`Story ${name}: target word "${w}" must appear at least 2 times (got ${c}).`);
+      } else if (c > 4) {
+        warnings.push(`Story ${name}: target word "${w}" appears ${c} times (recommended 2-4).`);
       }
     }
     // Multiple target words in same sentence is allowed
@@ -150,11 +152,13 @@ export function validateSingleStory(
   const occ = (story?.targetOccurrences || []) as Occurrence[];
   const noiseOcc = (story?.noiseOccurrences || []) as Occurrence[];
 
-  // Target words: at least 4 times each
+  // Target words: 2-4 times each
   for (const w of targetWords) {
     const c = countWord(occ, w);
-    if (c < 4) {
-      violations.push(`Target word "${w}" must appear at least 4 times (got ${c}).`);
+    if (c < 2) {
+      violations.push(`Target word "${w}" must appear at least 2 times (got ${c}).`);
+    } else if (c > 4) {
+      warnings.push(`Target word "${w}" appears ${c} times (recommended 2-4).`);
     }
   }
   // Multiple target words in same sentence is allowed

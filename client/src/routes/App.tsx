@@ -19,7 +19,11 @@ import Layout from "../components/Layout";
 function RequireRole({ role, children }: { role: 'teacher'|'student'; children: JSX.Element }) {
   const state = useAuth();
   if (!state.hydrated) return <div className="py-6 text-center text-sm text-gray-500">Checking session...</div>;
-  if (state.role !== role) return <Navigate to="/login" replace />;
+  if (state.role !== role) {
+    // Redirect to appropriate login page based on required role
+    const loginPath = role === 'student' ? '/student-login' : '/login';
+    return <Navigate to={loginPath} replace />;
+  }
   return children;
 }
 

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { Types } from 'mongoose';
+import logger from '../utils/logger';
 import { requireAuth, requireRole, AuthedRequest } from '../middleware/auth';
 import { ClassSession } from '../models/ClassSession';
 import { StoryTemplate } from '../models/StoryTemplate';
@@ -22,8 +23,6 @@ import { clearAnalyticsCache } from '../utils/analyticsCache';
 import { WordMetadata } from '../models/WordMetadata';
 import { InterventionAttempt } from '../models/InterventionAttempt';
 import {
-  wordMetadataSystem,
-  wordMetadataUser,
   sentenceValidationSystem,
   sentenceValidationUser,
 } from '../prompts';
@@ -1294,9 +1293,22 @@ router.post(
       const metadata = metadataByWord.get(word.toLowerCase());
       let correctDefinition = metadata?.definition;
 
-      // Fall back to static word list if no definition in WordMetadata
-      if (!correctDefinition) {
-        correctDefinition = getWordDefinition(word) || `Definition for ${word}`;
+      // Check if stored definition is a placeholder or generic LLM output
+      const lowerDef = correctDefinition?.toLowerCase() || '';
+      const isPlaceholder =
+        correctDefinition?.startsWith('Definition for ') ||
+        lowerDef.startsWith('meaning of ') ||
+        lowerDef.startsWith('the meaning of ') ||
+        lowerDef.includes('definition of ' + word.toLowerCase()) ||
+        lowerDef === word.toLowerCase() ||
+        lowerDef.length < 10;
+
+      // ALWAYS check static word list first - it's the source of truth
+      const staticDef = getWordDefinition(word);
+      if (staticDef) {
+        correctDefinition = staticDef;
+      } else if (!correctDefinition || isPlaceholder) {
+        correctDefinition = `Definition for ${word}`;
       }
 
       // Get distractors - use WordMetadata first, then generate from other words
@@ -1431,89 +1443,35 @@ router.get(
       word: { $regex: new RegExp(`^${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
     });
 
-    // If not found, generate it
+    // If not found, create from static word list (no LLM calls)
     if (!metadata) {
-      const exp = await Experiment.findById(experimentId);
-      if (!exp) return res.status(404).json({ error: 'Experiment not found' });
-
-      // Import static word list for fallback definitions
+      // Import static word list
       const { getWordItem, getAllWords } = await import('../data/wordLists');
       const staticWordItem = getWordItem(word);
       const allStaticWords = getAllWords();
 
-      // Generate distractor definitions from other words
-      const generateDistractors = (correctDef: string) => {
-        return allStaticWords
-          .filter(w => w.word.toLowerCase() !== word.toLowerCase() && w.meaning !== correctDef)
-          .map(w => w.meaning)
-          .sort(() => Math.random() - 0.5)
-          .slice(0, 3);
-      };
-
-      const oa = getOpenAI();
-      if (oa) {
-        try {
-          const r = await oa.chat.completions.create({
-            model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-            response_format: { type: 'json_object' },
-            temperature: 0.3,
-            messages: [
-              { role: 'system', content: wordMetadataSystem() },
-              { role: 'user', content: wordMetadataUser(word, exp.cefr || exp.level || 'B1') },
-            ],
-          });
-          const txt = r.choices?.[0]?.message?.content || '{}';
-          const data = JSON.parse(txt);
-
-          // Use companionWords from new prompt, fallback to commonCollocations, then defaults
-          const companions = data.companionWords || data.commonCollocations || [
-            'always', 'never', 'often', 'really', 'very'
-          ];
-
-          // Prefer static definition, then LLM definition
-          const definition = staticWordItem?.meaning || data.definition || `Definition for ${word}`;
-          const distractors = data.distractorDefinitions?.length > 0
-            ? data.distractorDefinitions
-            : generateDistractors(definition);
-
-          metadata = await WordMetadata.create({
-            experiment: experimentId,
-            word: word.toLowerCase(),
-            definition,
-            partOfSpeech: data.partOfSpeech || '',
-            distractorDefinitions: distractors,
-            commonCollocations: companions,
-            exampleSentences: staticWordItem ? [staticWordItem.sentence1, staticWordItem.sentence2].filter(Boolean) : (data.exampleSentences || []),
-            syllables: data.syllables || [],
-          });
-        } catch (e) {
-          // Fallback if LLM fails - use static word list
-          const definition = staticWordItem?.meaning || `Definition for ${word}`;
-          metadata = await WordMetadata.create({
-            experiment: experimentId,
-            word: word.toLowerCase(),
-            definition,
-            partOfSpeech: '',
-            distractorDefinitions: generateDistractors(definition),
-            commonCollocations: ['always', 'never', 'often', 'really', 'very'],
-            exampleSentences: staticWordItem ? [staticWordItem.sentence1, staticWordItem.sentence2].filter(Boolean) : [],
-            syllables: [],
-          });
-        }
-      } else {
-        // No OpenAI - use static word list
-        const definition = staticWordItem?.meaning || `Definition for ${word}`;
-        metadata = await WordMetadata.create({
-          experiment: experimentId,
-          word: word.toLowerCase(),
-          definition,
-          partOfSpeech: '',
-          distractorDefinitions: generateDistractors(definition),
-          commonCollocations: ['always', 'never', 'often', 'really', 'very'],
-          exampleSentences: staticWordItem ? [staticWordItem.sentence1, staticWordItem.sentence2].filter(Boolean) : [],
-          syllables: [],
-        });
+      if (!staticWordItem) {
+        logger.warn(`Word "${word}" not found in static word list`);
       }
+
+      // Generate distractor definitions from other words in the static list
+      const definition = staticWordItem?.meaning || `Definition for ${word}`;
+      const distractors = allStaticWords
+        .filter(w => w.word.toLowerCase() !== word.toLowerCase() && w.meaning !== definition)
+        .map(w => w.meaning)
+        .sort(() => Math.random() - 0.5)
+        .slice(0, 3);
+
+      metadata = await WordMetadata.create({
+        experiment: experimentId,
+        word: word.toLowerCase(),
+        definition,
+        partOfSpeech: '',
+        distractorDefinitions: distractors,
+        commonCollocations: ['always', 'never', 'often', 'really', 'very'],
+        exampleSentences: staticWordItem ? [staticWordItem.sentence1, staticWordItem.sentence2].filter(Boolean) : [],
+        syllables: [],
+      });
     }
 
     // Build audio URL for the word (if TTS was generated)

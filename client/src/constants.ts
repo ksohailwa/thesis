@@ -28,11 +28,11 @@ export const API = {
 
 export const STORY = {
   // Standard story structure
-  PARAGRAPH_COUNT: 5,
+  PARAGRAPH_COUNT: { min: 4, max: 5 },
 
   // Target words
   MAX_TARGET_WORDS: 5,
-  TARGET_WORD_OCCURRENCES: 5, // Each word appears 5 times
+  TARGET_WORD_OCCURRENCES: { min: 2, max: 4 }, // Each word appears 2-4 times
 
   // Pagination
   DEMO_RECENT_LIMIT: 5,

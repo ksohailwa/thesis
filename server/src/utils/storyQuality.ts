@@ -54,9 +54,13 @@ export function analyzeStoryQuality(
   let distribution = 100;
   targetWords.forEach((w) => {
     const count = occCounts.get(w) || 0;
-    if (count !== 4) {
+    if (count < 2) {
       distribution -= 25;
-      issues.push(`Word "${w}" appears ${count} times (expected 4)`);
+      issues.push(`Word "${w}" appears ${count} times (minimum 2 required)`);
+    } else if (count > 4) {
+      // Soft penalty for exceeding 4, but not a major issue
+      distribution -= 10;
+      issues.push(`Word "${w}" appears ${count} times (recommended 2-4)`);
     }
   });
 

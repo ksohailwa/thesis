@@ -29,15 +29,6 @@ export function wordPoolUser(cefr: string, story?: string, exclude: string[] = [
   return JSON.stringify({ levels: range, story, exclude });
 }
 
-// Legacy functions - kept for backwards compatibility but not used
-export function storySystem(_paragraphHint?: number): string {
-  return storySystemBold(_paragraphHint || 0);
-}
-
-export function storyUser(cefr: string, targetWords: string[], _topic: string): string {
-  return storyUserBold(cefr, targetWords, 0, []);
-}
-
 export function hintSystem(): string {
   return `You are a supportive spelling coach.
 
@@ -75,6 +66,7 @@ export function wordMetadataSystem(): string {
 
 OUTPUT strict JSON:
 {
+  "definition": "The correct definition of the word",
   "partOfSpeech": "noun|verb|adjective|adverb|other",
   "distractorDefinitions": [
     "Plausible but wrong definition 1",
@@ -90,7 +82,8 @@ OUTPUT strict JSON:
 }
 
 RULES:
-- If a definition is provided in the input, use it to create plausible but WRONG distractor definitions
+- ALWAYS provide a clear, concise definition of the word appropriate for the CEFR level
+- If a definition is provided in the input, use it as the "definition" field and create plausible but WRONG distractor definitions
 - Distractor definitions must be plausible but clearly incorrect (same length/style as the real definition)
 - companionWords: CRITICAL RULES for sentence-making exercise:
   * Must be SIMPLE, common adverbs or adjectives (like: always, never, often, really, very, usually, quickly, sometimes, carefully, extremely)
@@ -117,22 +110,36 @@ export function wordMetadataUser(word: string, cefr: string, definition?: string
 
 // Sentence validation for intervention exercise 3
 export function sentenceValidationSystem(): string {
-  return `You are a lenient grammar checker for language learners.
+  return `You are a LENIENT sentence validator for language learners. Your job is to ENCOURAGE students, not reject valid sentences.
 
-TASK: Check if the student's sentence correctly uses BOTH the target word and base word.
+TASK: Check if the student wrote a real sentence using BOTH the target word and guide word.
 
-RULES (lenient):
-- Accept minor grammar errors (articles, prepositions)
-- Accept different word forms (run/running, happy/happily)
-- Focus on whether the meaning makes sense
-- Both words must be present (or their common forms)
+ACCEPT these as VALID:
+- "His words make me laugh anxiously" ✓ (has subject, verb, both words)
+- "I always feel anxious before tests" ✓ (complete thought)
+- "She speaks very quickly" ✓ (simple but complete)
+- "The movie was really exciting" ✓ (has meaning)
+- Any sentence that a native speaker would understand
+
+ONLY REJECT if:
+- It's just random words: "always anxious the very"
+- Missing a verb entirely: "The anxious always dog"
+- Fewer than 5 words total
+- Doesn't include both required words
+
+BE GENEROUS:
+- Accept varied sentence structures (not just subject-verb-object)
+- Accept creative or unusual but grammatical sentences
+- Accept minor grammar mistakes from language learners
+- If in doubt, ACCEPT the sentence
 
 OUTPUT strict JSON:
 {
   "isValid": boolean,
   "usedTargetWord": boolean,
   "usedBaseWord": boolean,
-  "feedback": "Brief, encouraging feedback (max 20 words)"
+  "wordCount": number,
+  "feedback": "Brief encouraging feedback (max 20 words)"
 }`;
 }
 
@@ -148,21 +155,21 @@ export function storySystemBold(_paragraphCount: number): string {
   return `You are an expert storyteller. Write an engaging story for language learners.
 
 STRICT WORD COUNT RULES (MUST follow exactly):
-- Each TARGET word must appear AT LEAST 4 times in the story. 4, 5, or 6 times is fine — but never fewer than 4.
+- Each TARGET word must appear 2-4 times in the story. You have flexibility in this range.
 - Each NOISE word must appear exactly 1 or 2 times in the story.
 - Spread words naturally across paragraphs. Do NOT cluster all occurrences in one paragraph.
 
 MARKING FORMAT:
-- Mark every target word occurrence with **double asterisks**: "She visited the **museum** yesterday"
-- Mark every noise word occurrence with ++plus signs++: "He felt ++anxious++ about it"
-- You MUST mark every single occurrence. Unmarked occurrences will not be counted.
+- Mark EVERY occurrence of target words with **double asterisks**: "She visited the **museum** yesterday"
+- Mark EVERY occurrence of noise words with ++plus signs++: "He felt ++anxious++ about it"
+- CRITICAL: You MUST mark EVERY SINGLE occurrence of target and noise words. Even if a word appears more times than required, ALL occurrences must be marked. Unmarked occurrences will break the exercise.
 
 STORY GUIDELINES:
-- Write 8-10 paragraphs. Use more paragraphs to fit all words naturally.
+- Write 4-5 paragraphs. Keep it concise but engaging.
 - Keep the language at the specified CEFR level.
 - The story should be coherent, engaging, and read naturally despite the word requirements.
 
-BEFORE RETURNING: Count each target word to verify it appears at least 4 times. If any word has fewer than 4 occurrences, add more sentences.
+BEFORE RETURNING: Scan the entire story and ensure EVERY occurrence of every target and noise word is marked with the appropriate markers.
 
 Return ONLY valid JSON (no markdown fences, no extra text):
 {"story":{"paragraphs":["First paragraph with **marked** words...","Second paragraph..."]}}`;
@@ -174,18 +181,18 @@ export function storyUserBold(
   _paragraphCount: number,
   noiseWords: string[] = []
 ): string {
-  const targetList = targetWords.map(w => `"${w}" → at least 4 times`).join(', ');
+  const targetList = targetWords.map(w => `"${w}" → 2-4 times`).join(', ');
   const noiseList = noiseWords.length > 0
     ? noiseWords.map(w => `"${w}" → 1-2 times`).join(', ')
     : 'none';
 
   return `CEFR level: ${cefr}
 
-TARGET words (each must appear AT LEAST 4 times, marked with **asterisks**):
+TARGET words (each must appear 2-4 times, marked with **asterisks**):
 ${targetList}
 
 NOISE words (each must appear 1-2 times, marked with ++plus signs++):
 ${noiseList}
 
-Write the story now. Remember: every target word AT LEAST 4 times.`;
+Write the story now. CRITICAL: Mark EVERY occurrence of target and noise words - even if a word appears more times than the range, ALL occurrences must be marked.`;
 }

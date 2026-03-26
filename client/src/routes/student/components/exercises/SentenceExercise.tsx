@@ -1,14 +1,18 @@
 import { useState, useMemo } from 'react';
 import { PenLine, CheckCircle, XCircle, Lightbulb, RefreshCw } from 'lucide-react';
+import api from '../../../../lib/api';
 
 type Props = {
   targetWord: string;
   definition: string;
   companionWords: string[];
   exampleSentences: string[];
+  interventionId: string;
   onComplete: () => void;
   onAttempt: (sentence: string, isValid: boolean, feedback: string) => void;
 };
+
+const MIN_WORD_COUNT = 5;
 
 // Simple companion words that work with most target words
 const DEFAULT_COMPANION_WORDS = [
@@ -21,6 +25,7 @@ export default function SentenceExercise({
   definition,
   companionWords,
   exampleSentences,
+  interventionId,
   onComplete,
   onAttempt,
 }: Props) {
@@ -83,63 +88,89 @@ export default function SentenceExercise({
   };
 
   const handleCheck = async () => {
-    if (sentence.trim().length < 5) return;
+    const trimmedSentence = sentence.trim();
+    if (trimmedSentence.length < 5) return;
 
-    setIsChecking(true);
+    // Pre-validation: count unique words
+    const words = trimmedSentence.toLowerCase().split(/\s+/).filter(Boolean);
+    const uniqueWords = new Set(words.map(w => w.replace(/[^a-z]/gi, '')).filter(w => w.length > 0));
 
-    try {
-      const lower = sentence.toLowerCase();
-      const hasCompanion = lower.includes(currentCompanionWord.toLowerCase());
-      const hasTargetCorrectSpelling = checkTargetSpelling(sentence);
+    if (uniqueWords.size < MIN_WORD_COUNT) {
+      setIsValid(false);
+      setFeedback(`Your sentence needs at least ${MIN_WORD_COUNT} different words. You have ${uniqueWords.size}.`);
+      setShowResult(true);
+      return;
+    }
 
-      // Check for misspelling of target word
-      const hasTargetMisspelled = !hasTargetCorrectSpelling &&
-        lower.split(/\s+/).some((w) => {
+    // Check if both words are present (quick local check before API)
+    const lower = trimmedSentence.toLowerCase();
+    const hasCompanion = lower.includes(currentCompanionWord.toLowerCase());
+    const hasTargetCorrectSpelling = checkTargetSpelling(trimmedSentence);
+
+    if (!hasTargetCorrectSpelling || !hasCompanion) {
+      // Handle missing words locally for faster feedback
+      if (!hasTargetCorrectSpelling && !hasCompanion) {
+        setFeedback(`Remember to use both "${targetWord}" and "${currentCompanionWord}" in your sentence.`);
+      } else if (!hasTargetCorrectSpelling) {
+        // Check for misspelling
+        const hasTargetMisspelled = lower.split(/\s+/).some((w) => {
           const cleaned = w.replace(/[^a-z]/gi, '');
-          // Simple similarity check - if word starts with same 2+ letters
           return cleaned.length >= 3 &&
                  targetWord.toLowerCase().startsWith(cleaned.slice(0, 2)) &&
                  cleaned !== targetWord.toLowerCase();
         });
 
-      const valid = hasTargetCorrectSpelling && hasCompanion && sentence.trim().length >= 10;
+        if (hasTargetMisspelled) {
+          const newErrorCount = spellingErrorCount + 1;
+          setSpellingErrorCount(newErrorCount);
+          if (newErrorCount >= 2 && validCompanionWords.length > 1) {
+            setCompanionIndex((prev) => prev + 1);
+            setFeedback(`Check the spelling of "${targetWord}". Here's a new companion word to try with!`);
+          } else {
+            setFeedback(`Almost! Check the spelling of the target word. The correct spelling is: ${targetWord}`);
+          }
+        } else {
+          setFeedback(`Don't forget to include the target word "${targetWord}" in your sentence.`);
+        }
+      } else {
+        setFeedback(`Don't forget to include "${currentCompanionWord}" in your sentence.`);
+      }
+      setIsValid(false);
+      setShowResult(true);
+      return;
+    }
+
+    // Call API for LLM validation
+    setIsChecking(true);
+
+    try {
+      const response = await api.post('api/student/intervention/sentence', {
+        interventionId,
+        sentence: trimmedSentence,
+        targetWord,
+        baseWord: currentCompanionWord,
+      });
+
+      const { isValid: valid, feedback: apiFeedback } = response.data;
 
       setIsValid(valid);
+      setFeedback(apiFeedback || (valid ? 'Great sentence!' : 'Please write a more complete sentence.'));
+      setShowResult(true);
+      onAttempt(trimmedSentence, valid, apiFeedback);
 
       if (valid) {
-        setFeedback('Great sentence! You used both words correctly.');
-      } else if (hasTargetMisspelled) {
-        // Track spelling errors
-        const newErrorCount = spellingErrorCount + 1;
-        setSpellingErrorCount(newErrorCount);
-
-        // After 2 spelling errors, change companion word
-        if (newErrorCount >= 2 && validCompanionWords.length > 1) {
-          setCompanionIndex((prev) => prev + 1);
-          setFeedback(
-            `Check the spelling of "${targetWord}". Here's a new companion word to try with!`
-          );
-        } else {
-          setFeedback(
-            `Almost! Check the spelling of the target word. The correct spelling is: ${targetWord}`
-          );
-        }
-      } else if (!hasTargetCorrectSpelling && !hasCompanion) {
-        setFeedback(
-          `Remember to use both "${targetWord}" and "${currentCompanionWord}" in your sentence.`
-        );
-      } else if (!hasTargetCorrectSpelling) {
-        setFeedback(
-          `Don't forget to include the target word "${targetWord}" in your sentence.`
-        );
-      } else {
-        setFeedback(
-          `Don't forget to include "${currentCompanionWord}" in your sentence.`
-        );
+        setTimeout(() => {
+          onComplete();
+        }, 1500);
       }
-
+    } catch (error) {
+      console.error('Failed to validate sentence:', error);
+      // Fallback to basic validation if API fails
+      const valid = hasTargetCorrectSpelling && hasCompanion && uniqueWords.size >= MIN_WORD_COUNT;
+      setIsValid(valid);
+      setFeedback(valid ? 'Great sentence!' : 'Please write a more complete sentence with both words.');
       setShowResult(true);
-      onAttempt(sentence, valid, feedback);
+      onAttempt(trimmedSentence, valid, feedback);
 
       if (valid) {
         setTimeout(() => {

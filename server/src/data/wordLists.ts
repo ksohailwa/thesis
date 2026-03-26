@@ -12,6 +12,7 @@ export type WordItem = {
 
 export const wordsByLevel: Record<string, WordItem[]> = {
   A1: [
+    { word: 'family', level: 'A1', meaning: 'a group of people who are related to each other, such as parents and children', sentence1: 'I live with my family in a small house.', sentence2: 'She comes from a large family with five siblings.', corpus: 'Family is the most important thing in life.' },
     { word: 'waitress', level: 'A1', meaning: 'a woman whose job is to serve customers in a restaurant', sentence1: "She's working as a waitress at the moment.", sentence2: 'I will ask the waitress for the bill.', corpus: 'The owners are looking to hire a waitress.' },
     { word: 'sandwich', level: 'A1', meaning: 'two slices of bread with meat', sentence1: 'I love a toasted sandwich', sentence2: 'We ate turkey sandwiches', corpus: 'I made him some sandwiches to take with him' },
     { word: 'nationality', level: 'A1', meaning: 'the legal status of belonging to a particular nation', sentence1: 'She has British nationality.', sentence2: 'The college attracts students of all nationalities.', corpus: 'He has held French nationality for the past 20 years.' },

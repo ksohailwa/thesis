@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import api from '../../lib/api'
 import { logger } from '../../lib/logger'
 import { toast } from '../../store/toasts'
@@ -103,6 +103,14 @@ function RunFull() {
   const audioRef = useRef<HTMLAudioElement>(null)
   const sentenceAudioRef = useRef<HTMLAudioElement>(null)
   const [currentSentenceId, setCurrentSentenceId] = useState<string | null>(null)
+
+  // Track paragraph playback state for resuming after correct answer
+  const paragraphPlaybackRef = useRef<{
+    active: boolean
+    paragraphIndex: number
+    sentenceIndex: number
+    clips: SentenceClip[]
+  } | null>(null)
   const base = import.meta.env.VITE_API_BASE_URL || ''
 
   // Story setup
@@ -115,77 +123,9 @@ function RunFull() {
   const currentSegments = segmentsByLabel[currentStoryLabel]
   const currentTts = ttsByLabel[currentStoryLabel]
 
-  // Client-side noise word generation
-  const clientNoise = useMemo(() => {
-    const explicit = (currentStory as any).noiseOccurrences || []
-    if (explicit.length) return explicit
-    const targets = new Set((currentStory.occurrences || []).map((o) => (o.word || '').toLowerCase()))
-    const out: any[] = []
-    const targetByParagraph = new Map<number, { sentenceIndex?: number; charStart?: number; charEnd?: number }[]>()
-    ;(currentStory.occurrences || []).forEach((o) => {
-      const list = targetByParagraph.get(o.paragraphIndex) || []
-      list.push({ sentenceIndex: o.sentenceIndex, charStart: o.charStart, charEnd: o.charEnd })
-      targetByParagraph.set(o.paragraphIndex, list)
-    })
-    ;(currentStory.paragraphs || []).forEach((p, pIdx) => {
-      const tokens = p.split(/\b/)
-      const candidates: { word: string; start: number; end: number; sentenceIndex: number }[] = []
-      let cursor = 0
-      const sentences = splitSentences(p)
-      const sentenceIndexAt = (charPos: number) => {
-        let cumulative = 0
-        for (let si = 0; si < sentences.length; si++) {
-          const len = sentences[si].length + 1
-          if (charPos < cumulative + len) return si
-          cumulative += len
-        }
-        return Math.max(0, sentences.length - 1)
-      }
-      const targetList = targetByParagraph.get(pIdx) || []
-      const targetSentenceSet = new Set(
-        targetList.map((t) => t.sentenceIndex).filter((v) => typeof v === 'number') as number[]
-      )
-      const isAdjacentToTarget = (start: number, end: number) => {
-        for (const t of targetList) {
-          if (typeof t.charStart !== 'number' || typeof t.charEnd !== 'number') continue
-          if (end <= t.charStart) {
-            const between = p.slice(end, t.charStart)
-            if (between.length <= 3 && !/[A-Za-z]/.test(between)) return true
-          }
-          if (t.charEnd <= start) {
-            const between = p.slice(t.charEnd, start)
-            if (between.length <= 3 && !/[A-Za-z]/.test(between)) return true
-          }
-        }
-        return false
-      }
-      tokens.forEach((tok) => {
-        if (/^[A-Za-z]{4,}$/.test(tok) && !targets.has(tok.toLowerCase())) {
-          const start = cursor
-          const end = cursor + tok.length
-          candidates.push({ word: tok, start, end, sentenceIndex: sentenceIndexAt(start) })
-        }
-        cursor += tok.length
-      })
-      const picks: typeof candidates = []
-      const poolBySentence = candidates.filter((c) => !targetSentenceSet.has(c.sentenceIndex))
-      const basePool = poolBySentence.length ? poolBySentence : candidates
-      const pool = basePool.filter((c) => !isAdjacentToTarget(c.start, c.end))
-      while (pool.length && picks.length < 3) {
-        const idx = Math.floor(Math.random() * pool.length)
-        picks.push(pool.splice(idx, 1)[0])
-      }
-      picks.slice(0, 3).forEach((pick) => {
-        out.push({
-          word: pick.word,
-          paragraphIndex: pIdx,
-          sentenceIndex: pick.sentenceIndex,
-          charStart: pick.start,
-          charEnd: pick.end,
-        })
-      })
-    })
-    return out
+  // Noise words come ONLY from teacher selection - no random fallback
+  const noiseOccurrences = useMemo(() => {
+    return (currentStory as any).noiseOccurrences || []
   }, [currentStory])
 
   const parsedStory = useMemo(() => {
@@ -196,10 +136,10 @@ function RunFull() {
         pIdx,
         wordCounts,
         currentStory.occurrences || [],
-        (currentStory as any).noiseOccurrences?.length ? (currentStory as any).noiseOccurrences : clientNoise
+        noiseOccurrences
       )
     )
-  }, [currentStory, clientNoise])
+  }, [currentStory, noiseOccurrences])
 
   const allBlanks = useMemo(() => parsedStory.flatMap((p) => p.blanks), [parsedStory])
   const activeBlank = useMemo(
@@ -287,7 +227,7 @@ function RunFull() {
   }, [isStoryComplete])
 
   // Audio functions
-  function softPause() {
+  function softPause(clearPlaybackState = true) {
     if (audioRef.current && !audioRef.current.paused) {
       audioRef.current.pause()
       setIsPlaying(false)
@@ -296,6 +236,10 @@ function RunFull() {
       sentenceAudioRef.current.pause()
     }
     setAutoAdvance(false)
+    // Clear paragraph playback state when manually paused
+    if (clearPlaybackState) {
+      paragraphPlaybackRef.current = null
+    }
   }
 
   function restartStory(targetIndex: number) {
@@ -360,24 +304,38 @@ function RunFull() {
     }
   }
 
-  function playParagraph(pIdx: number) {
+  function playParagraph(pIdx: number, startFromSentence = 0) {
     const clips = sentenceClips.filter((c) => c.paragraphIndex === pIdx)
     if (!clips.length || !sentenceAudioRef.current) return
 
     if (audioRef.current) {
       audioRef.current.pause()
-      setIsPlaying(false)
     }
     setIsPlaying(true)
 
-    let idx = 0
+    // Track playback state for resuming
+    paragraphPlaybackRef.current = {
+      active: true,
+      paragraphIndex: pIdx,
+      sentenceIndex: startFromSentence,
+      clips,
+    }
+
+    let idx = startFromSentence
     const playNext = () => {
       const clip = clips[idx]
       if (!clip) {
         setCurrentSentenceId(null)
         setIsPlaying(false)
+        paragraphPlaybackRef.current = null
         return
       }
+
+      // Update tracking
+      if (paragraphPlaybackRef.current) {
+        paragraphPlaybackRef.current.sentenceIndex = idx
+      }
+
       const segUrl = currentSegments[clip.globalIndex]
       const fallbackLabel = currentStoryLabel === 'A' ? 'H' : 'N'
       const fallbackPath = `/static/audio/${expId}/${fallbackLabel}_s${clip.globalIndex}.mp3`
@@ -390,6 +348,7 @@ function RunFull() {
         toast.error('Paragraph audio is unavailable.')
         setCurrentSentenceId(null)
         setIsPlaying(false)
+        paragraphPlaybackRef.current = null
       }
       sentenceAudioRef.current!.onended = () => {
         // Check if current sentence has any blanks (unsolved)
@@ -399,7 +358,7 @@ function RunFull() {
         const hasUnsolvedBlank = sentenceBlanks.some((b) => !locked[b.key])
 
         if (hasUnsolvedBlank) {
-          // Stop playback after this sentence - user needs to fill in the blank
+          // Pause playback - keep tracking state for resume
           setCurrentSentenceId(null)
           setIsPlaying(false)
           // Focus the first unsolved blank in this sentence
@@ -424,32 +383,56 @@ function RunFull() {
     playNext()
   }
 
+  // Resume paragraph playback from current sentence
+  function resumeParagraphPlayback() {
+    const state = paragraphPlaybackRef.current
+    if (!state || !state.active) return
+
+    // Resume from current sentence
+    playParagraph(state.paragraphIndex, state.sentenceIndex)
+  }
+
   // Blank interaction functions
   function focusNextBlank(currentKey?: string) {
-    const currentIndex = currentKey ? allBlanks.findIndex((b) => b.key === currentKey) : -1
-    let nextIndex = -1
-    for (let i = currentIndex + 1; i < allBlanks.length; i++) {
-      if (!locked[allBlanks[i].key]) {
-        nextIndex = i
-        break
-      }
-    }
-    if (nextIndex === -1) {
-      for (let i = 0; i < currentIndex; i++) {
-        if (!locked[allBlanks[i].key]) {
+    // Use setTimeout to ensure state updates (locked) have been applied
+    setTimeout(() => {
+      const currentIndex = currentKey ? allBlanks.findIndex((b) => b.key === currentKey) : -1
+      let nextIndex = -1
+
+      // Find next unlocked blank after current position
+      for (let i = currentIndex + 1; i < allBlanks.length; i++) {
+        const blankKey = allBlanks[i].key
+        // Check if blank is not locked (including newly locked ones)
+        if (!locked[blankKey] && blankKey !== currentKey) {
           nextIndex = i
           break
         }
       }
-    }
-    if (nextIndex !== -1) {
-      const nextKey = allBlanks[nextIndex].key
-      const el = document.getElementById(`blank-${nextKey}-0`)
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-        setTimeout(() => el.focus(), 50)
+
+      // Wrap around to beginning if no blank found after current
+      if (nextIndex === -1) {
+        for (let i = 0; i < currentIndex; i++) {
+          const blankKey = allBlanks[i].key
+          if (!locked[blankKey]) {
+            nextIndex = i
+            break
+          }
+        }
       }
-    }
+
+      if (nextIndex !== -1) {
+        const nextKey = allBlanks[nextIndex].key
+        const el = document.getElementById(`blank-${nextKey}-0`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          // Wait for scroll animation before focusing
+          setTimeout(() => {
+            el.focus()
+            setActiveBlankKey(nextKey)
+          }, 150)
+        }
+      }
+    }, 50)
   }
 
   function startWordTimer(word: string) {
@@ -490,7 +473,18 @@ function RunFull() {
       toast.success('Correct!')
       setStreak((s) => s + 1)
       setMaxStreak((m) => Math.max(m, streak + 1))
-      focusNextBlank(blank.key)
+
+      // Check if we were in paragraph playback mode - resume audio
+      if (paragraphPlaybackRef.current?.active) {
+        // Small delay to let the UI update, then resume audio
+        setTimeout(() => {
+          resumeParagraphPlayback()
+        }, 300)
+      } else {
+        // Not in paragraph playback - just focus next blank
+        focusNextBlank(blank.key)
+      }
+
       api
         .post('api/student/attempt', {
           experimentId: expId,
@@ -503,7 +497,8 @@ function RunFull() {
         .catch((e) => logger.error('Failed to submit attempt', e))
     } else {
       setStreak(0)
-      softPause()
+      // Pause audio but keep playback state for potential resume
+      softPause(false)
 
       // Log the incorrect attempt
       api
@@ -750,8 +745,25 @@ function RunFull() {
     setBreakUntil(null)
   }
 
+  // Memoized callbacks for BlankInput to prevent re-renders during audio
+  const handleBlankFocus = useCallback((b: Blank) => {
+    setActiveBlankKey(b.key)
+    startWordTimer(b.word)
+  }, [])
+
+  const handleBlankBlur = useCallback((b: Blank) => {
+    stopWordTimer(b.word)
+  }, [])
+
+  const handleUpdateValue = useCallback((blankKey: string, value: string) => {
+    setBlanksState((prev) => ({
+      ...prev,
+      [blankKey]: { ...prev[blankKey], value, feedback: '', letterFeedback: undefined },
+    }))
+  }, [])
+
   // Render blank input using BlankInput component
-  const renderBlankInput = (blank: Blank) => {
+  const renderBlankInput = useCallback((blank: Blank) => {
     const state = blanksState[blank.key] || { value: '', correct: false, feedback: '' }
     const isLocked = locked[blank.key]
     const feedbackEnabled = blank.paragraphIndex !== 4
@@ -762,25 +774,15 @@ function RunFull() {
         blank={blank}
         state={state}
         isLocked={isLocked}
-        hintsEnabled={false}
         feedbackEnabled={feedbackEnabled}
         onCheck={checkBlank}
-        onHint={() => {}}
-        onFocus={(b) => {
-          setActiveBlankKey(b.key)
-          startWordTimer(b.word)
-        }}
-        onBlur={(b) => stopWordTimer(b.word)}
+        onFocus={handleBlankFocus}
+        onBlur={handleBlankBlur}
         onFocusNext={focusNextBlank}
-        onUpdateValue={(blankKey, value) => {
-          setBlanksState((prev) => ({
-            ...prev,
-            [blankKey]: { ...prev[blankKey], value, feedback: '', letterFeedback: undefined },
-          }))
-        }}
+        onUpdateValue={handleUpdateValue}
       />
     )
-  }
+  }, [blanksState, locked, checkBlank, handleBlankFocus, handleBlankBlur, focusNextBlank, handleUpdateValue])
 
   // Conditional renders
   if (showMentalEffort) {

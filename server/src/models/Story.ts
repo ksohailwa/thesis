@@ -12,8 +12,8 @@ export interface IStory extends Document {
   experiment: Types.ObjectId;
   label: 'A' | 'B';
   storySet?: 'set1' | 'set2';
-  paragraphs: string[]; // exactly 4 paragraphs
-  targetOccurrences: IStoryOccurrence[]; // exactly 4 per word (one per paragraph)
+  paragraphs: string[]; // 4-5 paragraphs
+  targetOccurrences: IStoryOccurrence[]; // 2-4 per word
   noiseOccurrences?: IStoryOccurrence[];
   ttsAudioUrl?: string;
   ttsSegments?: string[];

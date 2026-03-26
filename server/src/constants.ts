@@ -40,7 +40,7 @@ export const STORY = {
 
   // Target words per story
   MAX_TARGET_WORDS: 5,
-  TARGET_WORD_OCCURRENCES: 4, // Each word appears exactly 4 times (once per paragraph)
+  TARGET_WORD_OCCURRENCES: { min: 2, max: 4 }, // Each word appears 2-4 times
 
   // Validation
   MIN_TARGET_WORDS: 1,

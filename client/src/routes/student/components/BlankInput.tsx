@@ -1,28 +1,24 @@
-import type { KeyboardEvent } from 'react'
+import { memo, type KeyboardEvent } from 'react'
 import type { Blank, BlankState } from '../types'
 
 type BlankInputProps = {
   blank: Blank
   state: BlankState
   isLocked: boolean
-  hintsEnabled: boolean
   feedbackEnabled: boolean
   onCheck: (blank: Blank, value: string) => void
-  onHint: (blank: Blank) => void
   onFocus: (blank: Blank) => void
   onBlur: (blank: Blank) => void
   onFocusNext: (currentKey: string) => void
   onUpdateValue: (blankKey: string, value: string) => void
 }
 
-export default function BlankInput({
+function BlankInput({
   blank,
   state,
   isLocked,
-  hintsEnabled,
   feedbackEnabled,
   onCheck,
-  onHint,
   onFocus,
   onBlur,
   onFocusNext,
@@ -31,7 +27,6 @@ export default function BlankInput({
   const length = blank.word.length
   const letterFeedback = state.letterFeedback || []
   const letters = Array.from({ length }, (_, i) => state.value[i] || '')
-  const blankHintsAllowed = hintsEnabled && blank.occurrenceIndex < 5
 
   const updateLetters = (nextLetters: string[]) => {
     onUpdateValue(blank.key, nextLetters.join(''))
@@ -136,21 +131,6 @@ export default function BlankInput({
         >
           Check
         </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation()
-            onHint(blank)
-          }}
-          disabled={!blankHintsAllowed}
-          className={`px-2 py-1 text-xs font-semibold rounded border transition ${
-            blankHintsAllowed
-              ? 'border-amber-300 text-amber-700 hover:bg-amber-50'
-              : 'border-gray-200 text-gray-400 bg-gray-50 cursor-not-allowed'
-          }`}
-        >
-          Hint
-        </button>
       </div>
       {isLocked && (
         <span className="absolute -top-3 -right-2 text-green-500 text-xs">
@@ -160,3 +140,17 @@ export default function BlankInput({
     </span>
   )
 }
+
+// Memoize to prevent re-renders during audio playback
+export default memo(BlankInput, (prevProps, nextProps) => {
+  // Only re-render if these specific props change
+  return (
+    prevProps.blank.key === nextProps.blank.key &&
+    prevProps.state.value === nextProps.state.value &&
+    prevProps.state.feedback === nextProps.state.feedback &&
+    prevProps.state.correct === nextProps.state.correct &&
+    prevProps.isLocked === nextProps.isLocked &&
+    prevProps.feedbackEnabled === nextProps.feedbackEnabled &&
+    JSON.stringify(prevProps.state.letterFeedback) === JSON.stringify(nextProps.state.letterFeedback)
+  )
+})

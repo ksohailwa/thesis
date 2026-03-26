@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react'
 import { Play } from 'lucide-react'
 
 // Duplicated types for prop clarity, ideally import from shared types
@@ -71,19 +72,20 @@ export default function StoryReader({
                 )
                 const isCurrentPlayingSentence = currentSentenceId === clip?.id
                 
-                // Filter blanks that belong to this sentence
-                // We assume allBlanks is fully populated by the parent's parsing logic
-                const sentenceBlanks = allBlanks.filter(
+                // Filter blanks that belong to this paragraph
+                const paraBlanks = allBlanks.filter(
                   (b) => b.paragraphIndex === pIdx
                 )
-                
+
+                // Sort blanks by charStart (descending) - use spread to avoid mutating original array
+                const sortedBlanks = [...paraBlanks].sort((a, b) => (b.charStart || 0) - (a.charStart || 0))
+
                 // Render logic: Inject blanks into sentence string
                 let currentSentenceSegments: (string | Blank)[] = [sentenceText];
-                
-                // Inject blanks
-                sentenceBlanks.sort((a,b) => (b.charStart || 0) - (a.charStart || 0))
-                sentenceBlanks.forEach(blank => {
-                  for(let i=0; i<currentSentenceSegments.length; i++) {
+
+                // Inject blanks without mutating
+                sortedBlanks.forEach(blank => {
+                  for (let i = 0; i < currentSentenceSegments.length; i++) {
                     const seg = currentSentenceSegments[i]
                     if (typeof seg === 'string') {
                       // Search for word in segment
@@ -91,7 +93,13 @@ export default function StoryReader({
                       if (pos >= 0) {
                         const before = seg.slice(0, pos)
                         const after = seg.slice(pos + blank.word.length)
-                        currentSentenceSegments.splice(i, 1, before, blank, after)
+                        currentSentenceSegments = [
+                          ...currentSentenceSegments.slice(0, i),
+                          before,
+                          blank,
+                          after,
+                          ...currentSentenceSegments.slice(i + 1)
+                        ]
                         break
                       }
                     }

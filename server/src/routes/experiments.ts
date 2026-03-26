@@ -507,7 +507,7 @@ router.post(
       if (paragraphCount < 1) return false; // At least 1 paragraph required
       for (const w of storyWords) {
         const count = occ.filter((o: any) => o.word?.toLowerCase() === w.toLowerCase()).length;
-        if (count < 4) return false; // Each word must appear at least 4 times
+        if (count < 2) return false; // Each word must appear at least 2 times
       }
       return true;
     };
@@ -568,7 +568,11 @@ router.post(
             const parsedResult = parseBoldMarkers(limitedParas);
             paragraphs = parsedResult.cleanParagraphs;
             occ = parsedResult.occurrences;
-            localNoiseOcc = parsedResult.noiseOccurrences;
+            // Filter noise occurrences to only include words from the specified noise list
+            const noiseWordsLower = noiseWords.map(w => w.toLowerCase());
+            localNoiseOcc = parsedResult.noiseOccurrences.filter(
+              n => noiseWordsLower.includes(n.word.toLowerCase())
+            );
           }
         } catch (e) {
           logger.error(`Story generation failed (Claude): ${(e as any)?.message}`);
@@ -602,7 +606,11 @@ router.post(
             const parsedResult = parseBoldMarkers(limitedParas);
             paragraphs = parsedResult.cleanParagraphs;
             occ = parsedResult.occurrences;
-            localNoiseOcc = parsedResult.noiseOccurrences;
+            // Filter noise occurrences to only include words from the specified noise list
+            const noiseWordsLower = noiseWords.map(w => w.toLowerCase());
+            localNoiseOcc = parsedResult.noiseOccurrences.filter(
+              n => noiseWordsLower.includes(n.word.toLowerCase())
+            );
           }
         } catch (e) {
           logger.error(`Story generation failed (OpenAI): ${(e as any)?.message}`);
@@ -760,7 +768,11 @@ router.post(
           const parsed = parseBoldMarkers(limitedParas);
           paragraphs = parsed.cleanParagraphs;
           occ = parsed.occurrences;
-          noiseOcc = parsed.noiseOccurrences;
+          // Filter noise occurrences to only include words from the specified noise list
+          const noiseWordsLower = noiseWords.map(w => w.toLowerCase());
+          noiseOcc = parsed.noiseOccurrences.filter(
+            n => noiseWordsLower.includes(n.word.toLowerCase())
+          );
         }
       } catch (e) {
         logger.error(`Story generation failed (Claude): ${(e as any)?.message}`);
@@ -791,7 +803,11 @@ router.post(
           const parsedResult = parseBoldMarkers(limitedParas);
           paragraphs = parsedResult.cleanParagraphs;
           occ = parsedResult.occurrences;
-          noiseOcc = parsedResult.noiseOccurrences;
+          // Filter noise occurrences to only include words from the specified noise list
+          const noiseWordsLower = noiseWords.map(w => w.toLowerCase());
+          noiseOcc = parsedResult.noiseOccurrences.filter(
+            n => noiseWordsLower.includes(n.word.toLowerCase())
+          );
 
           // Log if no occurrences found
           if (parsedResult.occurrences.length === 0) {
@@ -828,9 +844,9 @@ router.post(
       if (occList.length > 0) {
         for (const w of words) {
           const c = occList.filter((o: any) => o.word.toLowerCase() === w.toLowerCase()).length;
-          if (c < 4) {
+          if (c < 2) {
             out.ok = false;
-            out.violations.push(`Word "${w}" must appear at least 4 times (got ${c}).`);
+            out.violations.push(`Word "${w}" must appear at least 2 times (got ${c}).`);
           }
 
           // Flexible distribution: words can appear multiple times per paragraph
@@ -922,10 +938,8 @@ router.post(
       }
     }
 
-    // Derive noise words AFTER story text is finalized (dispersed across paragraphs)
-    if (paragraphs.length >= 1) {
-      const targetSet = new Set(words.map((w: string) => w.toLowerCase()));
-
+    // Find noise word occurrences - ONLY from teacher-selected noise words
+    if (paragraphs.length >= 1 && noiseWords.length > 0) {
       // Helper to map char positions to sentenceIndex
       const sentencesPerParagraph: string[][] = [];
       paragraphs.forEach((p) => {
@@ -933,26 +947,12 @@ router.post(
         sentencesPerParagraph.push(sentences.length ? sentences : [p]);
       });
 
-      const localNoise = () => {
+      // Find occurrences of teacher-selected noise words only
+      const findNoiseWordOccurrences = () => {
         const noiseOccurrences: any[] = [];
-        paragraphs.forEach((p, pIdx) => {
-          const tokens = p.split(/\b/);
-          const wordsInParagraph: {
-            word: string;
-            start: number;
-            end: number;
-            sentenceIndex: number;
-          }[] = [];
-          const targetsInParagraph = (occ || []).filter((o: any) => o.paragraphIndex === pIdx);
-          const targetSentenceSet = new Set(
-            targetsInParagraph
-              .map((o: any) => o.sentenceIndex)
-              .filter((v: any) => typeof v === 'number') as number[]
-          );
-          const targetRanges = targetsInParagraph
-            .filter((o: any) => typeof o.charStart === 'number' && typeof o.charEnd === 'number')
-            .map((o: any) => ({ start: o.charStart, end: o.charEnd }));
+        const noiseWordsLower = noiseWords.map(w => w.toLowerCase());
 
+        paragraphs.forEach((p, pIdx) => {
           const sentences = sentencesPerParagraph[pIdx];
           const sentenceIndexAt = (charPos: number) => {
             let cumulative = 0;
@@ -963,81 +963,41 @@ router.post(
             }
             return Math.max(0, sentences.length - 1);
           };
-          const isAdjacentToTarget = (cand: { start: number; end: number }) => {
-            for (const r of targetRanges) {
-              if (cand.end <= r.start) {
-                const between = p.slice(cand.end, r.start);
-                if (between.length <= 3 && !/[A-Za-z]/.test(between)) return true;
+
+          // For each teacher-selected noise word, find its first occurrence in this paragraph
+          for (const noiseWord of noiseWords) {
+            const lower = p.toLowerCase();
+            const w = noiseWord.toLowerCase();
+            let idx = 0;
+            while (idx <= lower.length) {
+              const at = lower.indexOf(w, idx);
+              if (at === -1) break;
+              const before = lower[at - 1] || '';
+              const after = lower[at + w.length] || '';
+              const isWordBoundary = !/[a-z]/.test(before) && !/[a-z]/.test(after);
+              if (isWordBoundary) {
+                noiseOccurrences.push({
+                  word: noiseWord,
+                  paragraphIndex: pIdx,
+                  sentenceIndex: sentenceIndexAt(at),
+                  charStart: at,
+                  charEnd: at + w.length,
+                });
+                break; // Only take first occurrence per paragraph per word
               }
-              if (r.end <= cand.start) {
-                const between = p.slice(r.end, cand.start);
-                if (between.length <= 3 && !/[A-Za-z]/.test(between)) return true;
-              }
+              idx = at + w.length;
             }
-            return false;
-          };
-          const buildCandidates = (minLen: number) => {
-            wordsInParagraph.length = 0;
-            let cursor = 0;
-            const re = new RegExp(`^[A-Za-z]{${minLen},}$`);
-            tokens.forEach((tok) => {
-              if (re.test(tok)) {
-                if (!targetSet.has(tok.toLowerCase())) {
-                  const start = cursor;
-                  const end = cursor + tok.length;
-                  wordsInParagraph.push({
-                    word: tok,
-                    start,
-                    end,
-                    sentenceIndex: sentenceIndexAt(start),
-                  });
-                }
-              }
-              cursor += tok.length;
-            });
-          };
-          const buildCandidatesFromRegex = (re: RegExp) => {
-            wordsInParagraph.length = 0;
-            let match: RegExpExecArray | null;
-            while ((match = re.exec(p)) !== null) {
-              const tok = match[0];
-              if (targetSet.has(tok.toLowerCase())) continue;
-              const start = match.index;
-              const end = start + tok.length;
-              wordsInParagraph.push({
-                word: tok,
-                start,
-                end,
-                sentenceIndex: sentenceIndexAt(start),
-              });
-            }
-          };
-          buildCandidates(4);
-          if (wordsInParagraph.length === 0) buildCandidates(3);
-          if (wordsInParagraph.length === 0) buildCandidates(2);
-          if (wordsInParagraph.length === 0) buildCandidatesFromRegex(/[A-Za-z]{2,}/g);
-          const poolBySentence = wordsInParagraph.filter(
-            (w) => !targetSentenceSet.has(w.sentenceIndex)
-          );
-          const basePool = poolBySentence;
-          if (!basePool.length) return;
-          const pool = basePool.filter((w) => !isAdjacentToTarget(w));
-          if (!pool.length) return;
-          pool.sort((a, b) => a.start - b.start);
-          pool.slice(0, 1).forEach((pick) => {
-            noiseOccurrences.push({
-              word: pick.word,
-              paragraphIndex: pIdx,
-              sentenceIndex: pick.sentenceIndex,
-              charStart: pick.start,
-              charEnd: pick.end,
-            });
-          });
+          }
         });
         return noiseOccurrences;
       };
-      const llmNoise = await selectNoiseOccurrencesLLM(oa, paragraphs, occ, words);
-      noise = llmNoise && llmNoise.length ? llmNoise : localNoise();
+
+      // Use noiseOcc from LLM parsing if available (already filtered), otherwise find them
+      if (noiseOcc.length > 0) {
+        noise = noiseOcc;
+      } else {
+        noise = findNoiseWordOccurrences();
+      }
     }
 
     const filter = { experiment: exp._id, label: map } as any;
@@ -1347,116 +1307,58 @@ router.get('/:id/story/:label', requireAuth, requireRole('teacher'), async (req,
       .filter(Boolean)
   );
 
-  if ((!story.noiseOccurrences || story.noiseOccurrences.length === 0) && story.paragraphs.length) {
-    const oa = getOpenAI();
-    const targetSet = new Set(
-      (story.targetOccurrences || []).map((o) => (o.word || '').toLowerCase())
-    );
+  // Find noise word occurrences - ONLY from teacher-selected noise words
+  const teacherNoiseWords: string[] = (exp as any).noiseWords || [];
+  if ((!story.noiseOccurrences || story.noiseOccurrences.length === 0) && story.paragraphs.length && teacherNoiseWords.length > 0) {
     const sentencesPerParagraph = story.paragraphs.map((p) => {
       const parts = p.split(/(?<=[.!?])\s+/).filter(Boolean);
       return parts.length ? parts : [p];
     });
 
     const noiseOccurrences: any[] = [];
-    const llmNoise = await selectNoiseOccurrencesLLM(
-      oa,
-      story.paragraphs,
-      story.targetOccurrences || [],
-      Array.from(targetSet)
-    );
-    if (llmNoise && llmNoise.length) {
-      story.noiseOccurrences = llmNoise as any;
-      await story.save();
-    } else {
-      story.paragraphs.forEach((p, pIdx) => {
-        const tokens = p.split(/\b/);
-        const targetsInParagraph = (story.targetOccurrences || []).filter(
-          (o) => o.paragraphIndex === pIdx
-        );
-        const sentenceIndexAt = (charPos: number) => {
-          const sentences = sentencesPerParagraph[pIdx];
-          let cumulative = 0;
-          for (let si = 0; si < sentences.length; si++) {
-            const len = sentences[si].length + 1;
-            if (charPos < cumulative + len) return si;
-            cumulative += len;
+
+    // Find occurrences of teacher-selected noise words only
+    story.paragraphs.forEach((p, pIdx) => {
+      const sentences = sentencesPerParagraph[pIdx];
+      const sentenceIndexAt = (charPos: number) => {
+        let cumulative = 0;
+        for (let si = 0; si < sentences.length; si++) {
+          const len = sentences[si].length + 1;
+          if (charPos < cumulative + len) return si;
+          cumulative += len;
+        }
+        return Math.max(0, sentences.length - 1);
+      };
+
+      // For each teacher-selected noise word, find its first occurrence in this paragraph
+      for (const noiseWord of teacherNoiseWords) {
+        const lower = p.toLowerCase();
+        const w = noiseWord.toLowerCase();
+        let idx = 0;
+        while (idx <= lower.length) {
+          const at = lower.indexOf(w, idx);
+          if (at === -1) break;
+          const before = lower[at - 1] || '';
+          const after = lower[at + w.length] || '';
+          const isWordBoundary = !/[a-z]/.test(before) && !/[a-z]/.test(after);
+          if (isWordBoundary) {
+            noiseOccurrences.push({
+              word: noiseWord,
+              paragraphIndex: pIdx,
+              sentenceIndex: sentenceIndexAt(at),
+              charStart: at,
+              charEnd: at + w.length,
+            });
+            break; // Only take first occurrence per paragraph per word
           }
-          return Math.max(0, sentences.length - 1);
-        };
-        const targetSentenceSet = new Set<number>();
-        const targetRanges = targetsInParagraph
-          .filter((o: any) => typeof o.charStart === 'number' && typeof o.charEnd === 'number')
-          .map((o: any) => {
-            if (typeof o.sentenceIndex === 'number') {
-              targetSentenceSet.add(o.sentenceIndex);
-            } else if (typeof o.charStart === 'number') {
-              targetSentenceSet.add(sentenceIndexAt(o.charStart));
-            }
-            return { start: o.charStart, end: o.charEnd };
-          });
-        const isAdjacentToTarget = (cand: { start: number; end: number }) => {
-          for (const r of targetRanges) {
-            if (cand.end <= r.start) {
-              const between = p.slice(cand.end, r.start);
-              if (between.length <= 3 && !/[A-Za-z]/.test(between)) return true;
-            }
-            if (r.end <= cand.start) {
-              const between = p.slice(r.end, cand.start);
-              if (between.length <= 3 && !/[A-Za-z]/.test(between)) return true;
-            }
-          }
-          return false;
-        };
-        const candidates: { word: string; start: number; end: number; sentenceIndex: number }[] =
-          [];
-        const buildCandidates = (minLen: number) => {
-          candidates.length = 0;
-          let cursor = 0;
-          const re = new RegExp(`^[A-Za-z]{${minLen},}$`);
-          tokens.forEach((tok) => {
-            if (re.test(tok) && !targetSet.has(tok.toLowerCase())) {
-              const start = cursor;
-              const end = cursor + tok.length;
-              candidates.push({ word: tok, start, end, sentenceIndex: sentenceIndexAt(start) });
-            }
-            cursor += tok.length;
-          });
-        };
-        const buildCandidatesFromRegex = (re: RegExp) => {
-          candidates.length = 0;
-          let match: RegExpExecArray | null;
-          while ((match = re.exec(p)) !== null) {
-            const tok = match[0];
-            if (targetSet.has(tok.toLowerCase())) continue;
-            const start = match.index;
-            const end = start + tok.length;
-            candidates.push({ word: tok, start, end, sentenceIndex: sentenceIndexAt(start) });
-          }
-        };
-        buildCandidates(4);
-        if (candidates.length === 0) buildCandidates(3);
-        if (candidates.length === 0) buildCandidates(2);
-        if (candidates.length === 0) buildCandidatesFromRegex(/[A-Za-z]{2,}/g);
-        const poolBySentence = candidates.filter((c) => !targetSentenceSet.has(c.sentenceIndex));
-        const basePool = poolBySentence;
-        if (!basePool.length) return;
-        const pool = basePool.filter((c) => !isAdjacentToTarget(c));
-        if (!pool.length) return;
-        pool.sort((a, b) => a.start - b.start);
-        pool.slice(0, 1).forEach((pick) => {
-          noiseOccurrences.push({
-            word: pick.word,
-            paragraphIndex: pIdx,
-            sentenceIndex: pick.sentenceIndex,
-            charStart: pick.start,
-            charEnd: pick.end,
-          });
-        });
-      });
-      if (noiseOccurrences.length) {
-        story.noiseOccurrences = noiseOccurrences as any;
-        await story.save();
+          idx = at + w.length;
+        }
       }
+    });
+
+    if (noiseOccurrences.length) {
+      story.noiseOccurrences = noiseOccurrences as any;
+      await story.save();
     }
   }
   return res.json({
