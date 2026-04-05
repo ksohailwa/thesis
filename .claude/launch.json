@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "SpellWise Client",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace=@spellwise/client"],
+      "port": 3000
+    },
+    {
+      "name": "SpellWise Server",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace=@spellwise/server"],
+      "port": 4000
+    }
+  ]
+}

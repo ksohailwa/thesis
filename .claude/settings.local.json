@@ -6,5 +6,9 @@
       "Bash(node -e:*)",
       "Bash(powershell -Command:*)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "playwright"
+  ],
+  "enableAllProjectMcpServers": true
 }
