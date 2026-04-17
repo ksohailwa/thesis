@@ -3,7 +3,7 @@ import api from '../../lib/api'
 import { logger } from '../../lib/logger'
 import { toast } from '../../store/toasts'
 import ErrorBoundaryComponent from '../../components/ErrorBoundary'
-import { hydrateStudentSession } from '../../lib/studentSession'
+import { hydrateStudentSession, loadSavedStudentSession, persistStudentSession } from '../../lib/studentSession'
 import { useIntervention, type WordMetadata } from '../../store/intervention'
 
 // Types and utilities
@@ -74,10 +74,12 @@ function RunFull() {
   const [locked, setLocked] = useState<Record<string, boolean>>({})
   const [attemptsByWord, setAttemptsByWord] = useState<Record<string, number>>({})
   const [timeByWordMs, setTimeByWordMs] = useState<Record<string, number>>({})
+  const hasRestoredRef = useRef(false)
 
   const [activeBlankKey, setActiveBlankKey] = useState<string | null>(null)
   const [streak, setStreak] = useState(0)
   const [maxStreak, setMaxStreak] = useState(0)
+  const [wordsInStreak, setWordsInStreak] = useState<Set<string>>(new Set())
   const [showConfetti, setShowConfetti] = useState(false)
   const [showFeedback, setShowFeedback] = useState(false)
   const [feedbackData, setFeedbackData] = useState({
@@ -125,7 +127,9 @@ function RunFull() {
 
   // Noise words come ONLY from teacher selection - no random fallback
   const noiseOccurrences = useMemo(() => {
-    return (currentStory as any).noiseOccurrences || []
+    const noise = (currentStory as any).noiseOccurrences || []
+    console.log('🔊 Noise occurrences:', noise.length, noise)
+    return noise
   }, [currentStory])
 
   const parsedStory = useMemo(() => {
@@ -141,7 +145,11 @@ function RunFull() {
     )
   }, [currentStory, noiseOccurrences])
 
-  const allBlanks = useMemo(() => parsedStory.flatMap((p) => p.blanks), [parsedStory])
+  const allBlanks = useMemo(() => {
+    const blanks = parsedStory.flatMap((p) => p.blanks)
+    console.log('📝 Total blanks:', blanks.length, '| Target:', blanks.filter(b => !b.isNoise).length, '| Noise:', blanks.filter(b => b.isNoise).length)
+    return blanks
+  }, [parsedStory])
   const activeBlank = useMemo(
     () => allBlanks.find((b) => b.key === activeBlankKey) || null,
     [allBlanks, activeBlankKey]
@@ -166,7 +174,7 @@ function RunFull() {
     return clips
   }, [currentStory, storyIndex])
 
-  const solvedCount = allBlanks.filter((b) => locked[b.key]).length
+  const solvedCount = allBlanks.filter((b) => blanksState[b.key]?.correct).length
   const totalBlanks = allBlanks.length
   const progressPct = totalBlanks ? (solvedCount / totalBlanks) * 100 : 0
   const isStoryComplete = solvedCount === totalBlanks && totalBlanks > 0
@@ -226,6 +234,85 @@ function RunFull() {
     }
   }, [isStoryComplete])
 
+  // Reset intervention state on mount (interventions restart after refresh)
+  useEffect(() => {
+    interventionStore.reset()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Restore progress from sessionStorage on mount
+  useEffect(() => {
+    const savedProgress = sessionStorage.getItem('exp.progress')
+    console.log('🔄 Restoring progress:', savedProgress ? 'Found' : 'Not found')
+    if (savedProgress) {
+      try {
+        const progress = JSON.parse(savedProgress)
+        console.log('📦 Progress data:', progress)
+        if (progress.currentParagraph !== undefined) {
+          setCurrentParagraph(progress.currentParagraph)
+          console.log('✅ Restored paragraph:', progress.currentParagraph)
+        }
+        if (progress.blanksState && Object.keys(progress.blanksState).length > 0) {
+          setBlanksState(progress.blanksState)
+          console.log('✅ Restored blanksState:', Object.keys(progress.blanksState).length, 'entries')
+        }
+        if (progress.storyIndex !== undefined) {
+          setStoryIndex(progress.storyIndex)
+        }
+        if (progress.wordsInStreak) {
+          setWordsInStreak(new Set(progress.wordsInStreak))
+        }
+        if (progress.streak !== undefined) {
+          setStreak(progress.streak)
+        }
+        if (progress.maxStreak !== undefined) {
+          setMaxStreak(progress.maxStreak)
+        }
+        if (progress.attemptsByWord) {
+          setAttemptsByWord(progress.attemptsByWord)
+        }
+        if (progress.timeByWordMs) {
+          setTimeByWordMs(progress.timeByWordMs)
+        }
+      } catch (err) {
+        logger.error('Failed to restore progress:', err)
+      }
+    }
+    // Mark restoration as complete
+    hasRestoredRef.current = true
+  }, [])
+
+  // Save progress to sessionStorage and localStorage when key state changes (but only after initial restore)
+  useEffect(() => {
+    // Skip saving until initial restoration is complete to prevent overwriting saved data
+    if (!hasRestoredRef.current) {
+      console.log('⏳ Skipping save - restoration not complete')
+      return
+    }
+
+    const progress = {
+      currentParagraph,
+      blanksState,
+      storyIndex,
+      currentStoryLabel,
+      wordsInStreak: Array.from(wordsInStreak),
+      streak,
+      maxStreak,
+      attemptsByWord,
+      timeByWordMs,
+    }
+    console.log('💾 Saving progress:', Object.keys(blanksState).length, 'blanks')
+
+    // Save to sessionStorage (fast access for current tab)
+    sessionStorage.setItem('exp.progress', JSON.stringify(progress))
+
+    // Also persist to localStorage (survives page refresh)
+    const existingSession = loadSavedStudentSession()
+    if (existingSession) {
+      persistStudentSession({ ...existingSession, progress })
+    }
+  }, [currentParagraph, blanksState, storyIndex, currentStoryLabel, wordsInStreak, streak, maxStreak, attemptsByWord, timeByWordMs])
+
   // Audio functions
   function softPause(clearPlaybackState = true) {
     if (audioRef.current && !audioRef.current.paused) {
@@ -250,6 +337,7 @@ function RunFull() {
     setTimeByWordMs({})
     wordTimerRef.current = {}
     setStreak(0)
+    setWordsInStreak(new Set())
     setActiveBlankKey(null)
     setCurrentSentenceId(null)
     setShowMentalEffort(false)
@@ -355,14 +443,14 @@ function RunFull() {
         const sentenceBlanks = allBlanks.filter(
           (b) => b.paragraphIndex === clip.paragraphIndex && b.sentenceIndex === clip.sentenceIndex
         )
-        const hasUnsolvedBlank = sentenceBlanks.some((b) => !locked[b.key])
+        const hasUnsolvedBlank = sentenceBlanks.some((b) => !blanksState[b.key]?.correct)
 
         if (hasUnsolvedBlank) {
           // Pause playback - keep tracking state for resume
           setCurrentSentenceId(null)
           setIsPlaying(false)
           // Focus the first unsolved blank in this sentence
-          const firstUnsolved = sentenceBlanks.find((b) => !locked[b.key])
+          const firstUnsolved = sentenceBlanks.find((b) => !blanksState[b.key]?.correct)
           if (firstUnsolved) {
             const el = document.getElementById(`blank-${firstUnsolved.key}-0`)
             if (el) {
@@ -394,33 +482,14 @@ function RunFull() {
 
   // Blank interaction functions
   function focusNextBlank(currentKey?: string) {
-    // Use setTimeout to ensure state updates (locked) have been applied
+    // Use setTimeout to ensure state updates have been applied
     setTimeout(() => {
       const currentIndex = currentKey ? allBlanks.findIndex((b) => b.key === currentKey) : -1
-      let nextIndex = -1
-
-      // Find next unlocked blank after current position
-      for (let i = currentIndex + 1; i < allBlanks.length; i++) {
-        const blankKey = allBlanks[i].key
-        // Check if blank is not locked (including newly locked ones)
-        if (!locked[blankKey] && blankKey !== currentKey) {
-          nextIndex = i
-          break
-        }
-      }
-
-      // Wrap around to beginning if no blank found after current
-      if (nextIndex === -1) {
-        for (let i = 0; i < currentIndex; i++) {
-          const blankKey = allBlanks[i].key
-          if (!locked[blankKey]) {
-            nextIndex = i
-            break
-          }
-        }
-      }
-
-      if (nextIndex !== -1) {
+      
+      // Simply move to next blank in sequence (including noise words and already-filled blanks)
+      const nextIndex = currentIndex + 1
+      
+      if (nextIndex < allBlanks.length) {
         const nextKey = allBlanks[nextIndex].key
         const el = document.getElementById(`blank-${nextKey}-0`)
         if (el) {
@@ -468,11 +537,18 @@ function RunFull() {
       [blank.key]: { value: val, correct: isCorrect, feedback: feedbackText, letterFeedback },
     }))
     if (isCorrect) {
-      setLocked((prev) => ({ ...prev, [blank.key]: true }))
+      // Allow editing after correct answer - don't lock the input
+      // setLocked((prev) => ({ ...prev, [blank.key]: true }))
       stopWordTimer(blank.word)
       toast.success('Correct!')
-      setStreak((s) => s + 1)
-      setMaxStreak((m) => Math.max(m, streak + 1))
+      
+      // Only increment streak for unique words (first time spelling each word correctly)
+      const wordLower = blank.word.toLowerCase()
+      if (!wordsInStreak.has(wordLower)) {
+        setWordsInStreak((prev) => new Set(prev).add(wordLower))
+        setStreak((s) => s + 1)
+        setMaxStreak((m) => Math.max(m, streak + 1))
+      }
 
       // Check if we were in paragraph playback mode - resume audio
       if (paragraphPlaybackRef.current?.active) {
@@ -712,7 +788,7 @@ function RunFull() {
   async function saveParagraphProgress(paragraphIndex: number) {
     try {
       const paraBlanks = allBlanks.filter((b) => b.paragraphIndex === paragraphIndex)
-      const solvedParaBlanks = paraBlanks.filter((b) => locked[b.key])
+      const solvedParaBlanks = paraBlanks.filter((b) => blanksState[b.key]?.correct)
 
       await api.post('api/student/paragraph-progress', {
         experimentId: expId,
@@ -847,36 +923,6 @@ function RunFull() {
             <button
               className="btn primary"
               onClick={() => {
-                // Check if all blanks in current paragraph are solved
-                const currentParaBlanks = allBlanks.filter((b) => b.paragraphIndex === currentParagraph)
-                const unsolvedBlanks = currentParaBlanks.filter((b) => !locked[b.key])
-
-                // If there are unsolved blanks, auto-check them one at a time
-                if (unsolvedBlanks.length > 0) {
-                  // Find the first unchecked blank and check it
-                  const firstUnchecked = unsolvedBlanks[0]
-                  const state = blanksState[firstUnchecked.key]
-                  const currentValue = state?.value?.trim() || ''
-
-                  // Check the blank with current value
-                  checkBlank(firstUnchecked, currentValue)
-
-                  // Show message about remaining words
-                  if (unsolvedBlanks.length === 1) {
-                    toast.error('Please spell this word correctly before continuing')
-                  } else {
-                    toast.error(`Please spell all ${unsolvedBlanks.length} remaining words correctly before continuing`)
-                  }
-
-                  // Focus the first unchecked blank
-                  const el = document.getElementById(`blank-${firstUnchecked.key}-0`)
-                  if (el) {
-                    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                    setTimeout(() => el.focus(), 100)
-                  }
-                  return
-                }
-
                 const next = currentParagraph + 1
                 if (next >= 5) return
 
@@ -897,31 +943,6 @@ function RunFull() {
                 className={`btn ${effortDoneByKey[effortKey(4)] ? 'bg-green-600 text-white cursor-not-allowed' : 'primary'}`}
                 onClick={() => {
                   if (effortDoneByKey[effortKey(4)]) return
-
-                  // Check if all blanks in current paragraph are solved
-                  const currentParaBlanks = allBlanks.filter((b) => b.paragraphIndex === currentParagraph)
-                  const unsolvedBlanks = currentParaBlanks.filter((b) => !locked[b.key])
-
-                  // If there are unsolved blanks, auto-check them
-                  if (unsolvedBlanks.length > 0) {
-                    const firstUnchecked = unsolvedBlanks[0]
-                    const state = blanksState[firstUnchecked.key]
-                    const currentValue = state?.value?.trim() || ''
-                    checkBlank(firstUnchecked, currentValue)
-
-                    if (unsolvedBlanks.length === 1) {
-                      toast.error('Please spell this word correctly before submitting')
-                    } else {
-                      toast.error(`Please spell all ${unsolvedBlanks.length} remaining words correctly before submitting`)
-                    }
-
-                    const el = document.getElementById(`blank-${firstUnchecked.key}-0`)
-                    if (el) {
-                      el.scrollIntoView({ behavior: 'smooth', block: 'center' })
-                      setTimeout(() => el.focus(), 100)
-                    }
-                    return
-                  }
 
                   // Show mental effort questionnaire before finishing story
                   setPendingEffortPara(4)

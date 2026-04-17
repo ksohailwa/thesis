@@ -8,6 +8,7 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "create-teacher": "tsx src/scripts/create-teacher.ts",
+    "reset-password": "tsx src/scripts/reset-password.ts",
     "test": "jest --coverage",
     "test:watch": "jest --watch",
     "test:ci": "jest --ci --coverage --maxWorkers=2",

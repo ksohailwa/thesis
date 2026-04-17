@@ -1,6 +1,7 @@
 import { Route, Routes, Navigate, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useAuth } from "../store/auth";
+import { hydrateStudentSession } from "../lib/studentSession";
 import Login from "./Login";
 import Landing from "./Landing";
 import Signup from "./Signup";
@@ -15,6 +16,12 @@ import StudentTest from "./student/StudentTest";
 import StudentLogin from "./StudentLogin";
 import Toaster from "../components/Toaster";
 import Layout from "../components/Layout";
+
+// Hydrate student session from localStorage on app load (before auth checks)
+// This ensures student sessions survive page refresh
+if (typeof window !== 'undefined') {
+  hydrateStudentSession();
+}
 
 function RequireRole({ role, children }: { role: 'teacher'|'student'; children: JSX.Element }) {
   const state = useAuth();

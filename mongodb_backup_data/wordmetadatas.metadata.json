@@ -1,0 +1,1 @@
+{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"experiment":{"$numberInt":"1"},"word":{"$numberInt":"1"}},"name":"experiment_1_word_1","background":true,"unique":true}],"uuid":"e188cd8935d84701b9c719a13ebe5a87","collectionName":"wordmetadatas","type":"collection"}

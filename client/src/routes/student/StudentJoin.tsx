@@ -70,6 +70,10 @@ export default function StudentJoin() {
         cues1: data.cues1 || [],
         cues2: data.cues2 || [],
         schedule: data.schedule || {},
+        // Save auth tokens for session restoration after refresh
+        accessToken: auth.accessToken || undefined,
+        refreshToken: auth.refreshToken || undefined,
+        username: auth.username || undefined,
       })
       nav('/student/run')
     } catch (e: any) {

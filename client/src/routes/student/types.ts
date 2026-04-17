@@ -8,6 +8,7 @@ export type Blank = {
   sentenceIndex?: number
   charStart?: number
   charEnd?: number
+  isNoise?: boolean
 }
 
 export type StoryPayload = {

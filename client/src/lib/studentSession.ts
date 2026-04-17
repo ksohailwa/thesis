@@ -1,5 +1,17 @@
 import { useAuth } from '../store/auth'
 
+export type StudentProgress = {
+  currentParagraph: number
+  blanksState: Record<string, any>
+  storyIndex: number
+  currentStoryLabel: string
+  wordsInStreak: string[]
+  streak: number
+  maxStreak: number
+  attemptsByWord: Record<string, number>
+  timeByWordMs: Record<string, number>
+}
+
 export type StoredStudentSession = {
   assignmentId: string
   experimentId?: string
@@ -16,6 +28,11 @@ export type StoredStudentSession = {
   cues1?: any[]
   cues2?: any[]
   schedule?: any
+  progress?: StudentProgress
+  // Auth tokens for API calls
+  accessToken?: string
+  refreshToken?: string
+  username?: string
   savedAt: number
 }
 
@@ -51,14 +68,18 @@ export function loadSavedStudentSession(): StoredStudentSession | null {
 export function hydrateStudentSession(): boolean {
   if (typeof window === 'undefined') return false
 
-  // Already have an active session
+  // Already have an active session in sessionStorage
   if (sessionStorage.getItem('assignmentId')) {
-    const currentRole = useAuth.getState().role
-    if (currentRole !== 'student') {
+    const authState = useAuth.getState()
+    // Only set auth if not already set as student
+    if (authState.role !== 'student') {
+      // Try to get tokens from localStorage backup
+      const saved = loadSavedStudentSession()
       useAuth.getState().setAuth({
-        accessToken: 'student-session',
+        accessToken: saved?.accessToken || authState.accessToken || 'student-session',
+        refreshToken: saved?.refreshToken || authState.refreshToken || null,
         role: 'student',
-        username: 'student',
+        username: saved?.username || authState.username || 'student',
       })
     }
     return true
@@ -67,6 +88,7 @@ export function hydrateStudentSession(): boolean {
   const saved = loadSavedStudentSession()
   if (!saved) return false
 
+  // Restore session data to sessionStorage
   sessionStorage.setItem('assignmentId', saved.assignmentId || '')
   if (saved.experimentId) sessionStorage.setItem('exp.experimentId', saved.experimentId)
   if (saved.condition) sessionStorage.setItem('exp.condition', saved.condition)
@@ -82,11 +104,14 @@ export function hydrateStudentSession(): boolean {
   if (saved.cues1) sessionStorage.setItem('exp.cues1', JSON.stringify(saved.cues1))
   if (saved.cues2) sessionStorage.setItem('exp.cues2', JSON.stringify(saved.cues2))
   if (saved.schedule) sessionStorage.setItem('exp.schedule', JSON.stringify(saved.schedule))
+  if (saved.progress) sessionStorage.setItem('exp.progress', JSON.stringify(saved.progress))
 
+  // Restore auth with real tokens if available
   useAuth.getState().setAuth({
-    accessToken: 'student-session',
+    accessToken: saved.accessToken || 'student-session',
+    refreshToken: saved.refreshToken || null,
     role: 'student',
-    username: 'student',
+    username: saved.username || 'student',
   })
 
   return true

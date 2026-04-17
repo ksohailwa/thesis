@@ -4,6 +4,30 @@ import { STORAGE_KEYS } from '../constants';
 
 type Role = 'teacher' | 'student' | null;
 
+// Check for saved student session in localStorage (survives page refresh)
+// Returns the session data if valid, null otherwise
+const loadStudentSessionFromStorage = (): { accessToken?: string; refreshToken?: string; username?: string } | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem('spellwise-student-session');
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed.assignmentId) return null;
+    // Check if session is fresh (< 12 hours)
+    if (Date.now() - parsed.savedAt >= 12 * 60 * 60 * 1000) {
+      localStorage.removeItem('spellwise-student-session');
+      return null;
+    }
+    return {
+      accessToken: parsed.accessToken,
+      refreshToken: parsed.refreshToken,
+      username: parsed.username,
+    };
+  } catch {
+    return null;
+  }
+};
+
 interface AuthState {
   accessToken: string | null;
   refreshToken?: string | null;
@@ -75,6 +99,19 @@ export const useAuth = create<AuthState>()(
         username: state.username,
       }),
       onRehydrateStorage: () => (state) => {
+        // If no role found in sessionStorage, check for saved student session in localStorage
+        if (state && !state.role) {
+          const savedSession = loadStudentSessionFromStorage();
+          if (savedSession) {
+            // Restore student auth state with real tokens from localStorage
+            state.setAuth({
+              accessToken: savedSession.accessToken || 'student-session',
+              refreshToken: savedSession.refreshToken || null,
+              role: 'student',
+              username: savedSession.username || 'student',
+            });
+          }
+        }
         // Ensure the app waits for hydration before gating routes.
         state?.setHydrated(true);
       },

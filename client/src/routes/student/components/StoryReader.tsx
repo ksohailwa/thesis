@@ -72,18 +72,26 @@ export default function StoryReader({
                 )
                 const isCurrentPlayingSentence = currentSentenceId === clip?.id
                 
-                // Filter blanks that belong to this paragraph
-                const paraBlanks = allBlanks.filter(
-                  (b) => b.paragraphIndex === pIdx
-                )
+                // Filter blanks that belong to this specific sentence
+                // Using sentenceIndex ensures same word in different sentences gets correct blank
+                const sentenceBlanks = allBlanks.filter((b) => {
+                  if (b.paragraphIndex !== pIdx) return false
+                  // If sentenceIndex is defined, use it for precise filtering
+                  if (typeof b.sentenceIndex === 'number') return b.sentenceIndex === sIdx
+                  // Fallback for legacy bold marker mode: include all paragraph blanks
+                  // (less precise but maintains backwards compatibility)
+                  return true
+                })
 
-                // Sort blanks by charStart (descending) - use spread to avoid mutating original array
-                const sortedBlanks = [...paraBlanks].sort((a, b) => (b.charStart || 0) - (a.charStart || 0))
+                // Sort blanks by charStart (ascending) for correct left-to-right processing
+                // This ensures indexOf finds the correct occurrence when same word appears multiple times
+                const sortedBlanks = [...sentenceBlanks].sort((a, b) => (a.charStart || 0) - (b.charStart || 0))
 
                 // Render logic: Inject blanks into sentence string
                 let currentSentenceSegments: (string | Blank)[] = [sentenceText];
 
-                // Inject blanks without mutating
+                // Inject blanks in reading order (left-to-right)
+                // Each indexOf finds the first remaining occurrence, which is correct after previous blanks are inserted
                 sortedBlanks.forEach(blank => {
                   for (let i = 0; i < currentSentenceSegments.length; i++) {
                     const seg = currentSentenceSegments[i]

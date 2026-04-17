@@ -106,7 +106,7 @@ function BlankInput({
               autoComplete="off"
               maxLength={1}
               value={letter}
-              disabled={isLocked}
+              disabled={false}
               onClick={(e) => e.stopPropagation()}
               onChange={(e) => handleLetterChange(i, e.target.value)}
               onKeyDown={(e) => handleKeyDown(i, e)}

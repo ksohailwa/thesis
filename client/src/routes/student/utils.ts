@@ -18,14 +18,16 @@ export function parseParagraph(
   const blanks: Blank[] = []
   let segments: (string | Blank)[] = [paragraph]
 
-  // Strategy 1: Bold markers (**word**)
-  if (paragraph.includes('**')) {
-    const parts = paragraph.split(/(\*\*[^*]+\*\*)/g)
+  // Strategy 1: Bold markers (**word**) for target and ++word++ for noise
+  if (paragraph.includes('**') || paragraph.includes('++')) {
+    // Split by both **word** (target) and ++word++ (noise) markers
+    const parts = paragraph.split(/(\*\*[^*]+\*\*|\+\+[^+]+\+\+)/g)
     segments = []
     parts.forEach((part) => {
-      const m = part.match(/^\*\*([^*]+)\*\*$/)
-      if (m) {
-        const word = m[1]
+      // Check for target word (**word**)
+      const targetMatch = part.match(/^\*\*([^*]+)\*\*$/)
+      if (targetMatch) {
+        const word = targetMatch[1]
         const idx = (wordCounts[word] || 0) + 1
         wordCounts[word] = idx
         const blank: Blank = {
@@ -33,10 +35,33 @@ export function parseParagraph(
           word,
           occurrenceIndex: idx,
           paragraphIndex: pIdx,
+          isNoise: false,
         }
         blanks.push(blank)
         segments.push(blank)
-      } else if (part) {
+        return
+      }
+      
+      // Check for noise word (++word++)
+      const noiseMatch = part.match(/^\+\+([^+]+)\+\+$/)
+      if (noiseMatch) {
+        const word = noiseMatch[1]
+        const idx = (wordCounts[word] || 0) + 1
+        wordCounts[word] = idx
+        const blank: Blank = {
+          key: `noise-${word}-${idx}-${pIdx}-${blanks.length}`,
+          word,
+          occurrenceIndex: idx,
+          paragraphIndex: pIdx,
+          isNoise: true,
+        }
+        blanks.push(blank)
+        segments.push(blank)
+        return
+      }
+      
+      // Plain text segment
+      if (part) {
         segments.push(part)
       }
     })
@@ -52,17 +77,24 @@ export function parseParagraph(
     sentenceIndex?: number
     charStart?: number
     charEnd?: number
+    isNoise?: boolean
   }) => {
-    const idx = (wordCounts[o.word] || 0) + 1
-    wordCounts[o.word] = idx
+    // Use separate counters for target vs noise to handle same word appearing as both
+    const counterKey = o.isNoise ? `noise:${o.word}` : o.word
+    const idx = (wordCounts[counterKey] || 0) + 1
+    wordCounts[counterKey] = idx
+
+    // Include noise prefix in key to match Strategy 1 and ensure uniqueness
+    const keyPrefix = o.isNoise ? 'noise-' : ''
     const blank: Blank = {
-      key: `${o.word}-${idx}-${pIdx}-${blanks.length}`,
+      key: `${keyPrefix}${o.word}-${idx}-${pIdx}-${blanks.length}`,
       word: o.word,
       occurrenceIndex: idx,
       paragraphIndex: pIdx,
       sentenceIndex: o.sentenceIndex,
       charStart: o.charStart,
       charEnd: o.charEnd,
+      isNoise: o.isNoise || false,
     }
 
     let inserted = false
@@ -80,12 +112,18 @@ export function parseParagraph(
       }
     }
     if (!inserted) {
-      wordCounts[o.word] = idx // keep counter to avoid reusing keys
+      wordCounts[counterKey] = idx // keep counter to avoid reusing keys
     }
   }
 
-  paraOcc.forEach(addBlank)
-  paraNoise.forEach(addBlank)
+  // Merge target and noise occurrences, then sort by charStart for correct reading order
+  const allOccurrences = [
+    ...paraOcc.map((o) => ({ ...o, isNoise: false })),
+    ...paraNoise.map((o) => ({ ...o, isNoise: true })),
+  ].sort((a, b) => (a.charStart ?? 0) - (b.charStart ?? 0))
+
+  // Process in text order (left-to-right) so blanks array matches reading sequence
+  allOccurrences.forEach((occ) => addBlank(occ))
 
   segments = segments.filter((s) => typeof s !== 'string' || s.length > 0)
   return { segments, blanks }
