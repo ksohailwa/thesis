@@ -14,6 +14,7 @@ import TeacherAnalyticsPicker from "./teacher/TeacherAnalyticsPicker";
 import RunFull from "./student/RunFull";
 import StudentTest from "./student/StudentTest";
 import StudentLogin from "./StudentLogin";
+import StudentSurvey from "./student/StudentSurvey";
 import Toaster from "../components/Toaster";
 import Layout from "../components/Layout";
 
@@ -92,6 +93,7 @@ export default function App() {
 
           <Route path="/student" element={<RequireRole role="student"><StudentJoin /></RequireRole>} />
           <Route path="/student/consent" element={<RequireRole role="student"><StudentConsentForm /></RequireRole>} />
+          <Route path="/student/survey" element={<RequireRole role="student"><StudentSurvey /></RequireRole>} />
           <Route path="/student/join" element={<Navigate to="/student" replace />} />
           <Route path="/student/exp" element={<Navigate to="/student/run" replace />} />
           <Route path="/student/gap-fill" element={<Navigate to="/student/run" replace />} />

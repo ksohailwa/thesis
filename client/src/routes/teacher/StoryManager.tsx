@@ -1003,7 +1003,7 @@ export default function StoryManager({ experimentId, onStoriesConfirmed }: Props
               <div className="grid md:grid-cols-2 gap-4 mt-4">
                 <div className="p-4 rounded-xl bg-blue-50/50 border border-blue-200 space-y-3">
                   <div className="flex items-center justify-between">
-                    <div className="font-semibold text-blue-800">Story 1 (with hints)</div>
+                    <div className="font-semibold text-blue-800">Story 1 (treatment)</div>
                     <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
                       {story1Preview?.paragraphs.length || 0} paragraphs
                     </span>
@@ -1038,7 +1038,7 @@ export default function StoryManager({ experimentId, onStoriesConfirmed }: Props
 
                 <div className="p-4 rounded-xl bg-purple-50/50 border border-purple-200 space-y-3">
                   <div className="flex items-center justify-between">
-                    <div className="font-semibold text-purple-800">Story 2 (without hints)</div>
+                    <div className="font-semibold text-purple-800">Story 2 (control)</div>
                     <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
                       {story2Preview?.paragraphs.length || 0} paragraphs
                     </span>

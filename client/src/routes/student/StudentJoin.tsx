@@ -75,7 +75,8 @@ export default function StudentJoin() {
         refreshToken: auth.refreshToken || undefined,
         username: auth.username || undefined,
       })
-      nav('/student/run')
+      if (data.preSurveyCompleted === false) nav('/student/survey')
+      else nav('/student/run')
     } catch (e: any) {
       const msg = e?.response?.data?.error
       const code = e?.response?.data?.code

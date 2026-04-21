@@ -229,8 +229,8 @@ export default function TeacherManage() {
                   onChange={(e) => setAssignedCondition(e.target.value as Condition)}
                   className="px-4 py-2 border-2 border-gray-200 rounded-lg text-sm font-medium hover:border-gray-300 transition"
                 >
-                  <option value="with-hints">With Hints</option>
-                  <option value="without-hints">Without Hints</option>
+                  <option value="with-hints">Treatment (with interventions)</option>
+                  <option value="without-hints">Control (no interventions)</option>
                 </select>
                 <div className="relative group">
                   <button
@@ -328,7 +328,7 @@ export default function TeacherManage() {
                     <tr key={student.id} className="border-b hover:bg-gray-50">
                       <td className="p-3 font-medium text-gray-900">{student.username}</td>
                       <td className="p-3 text-sm text-gray-600">
-                        {student.condition === 'with-hints' ? 'With Hints' : 'Without Hints'}
+                        {student.condition === 'with-hints' ? 'Treatment (with interventions)' : 'Control (no interventions)'}
                       </td>
                       <td className="p-3 text-sm">
                         {student.completed ? (
@@ -371,7 +371,7 @@ export default function TeacherManage() {
                   <strong>Username:</strong> {studentProgress.username}
                 </div>
                 <div>
-                  <strong>Condition:</strong> {studentProgress.condition === 'with-hints' ? 'With Hints' : 'Without Hints'}
+                  <strong>Condition:</strong> {studentProgress.condition === 'with-hints' ? 'Treatment (with interventions)' : 'Control (no interventions)'}
                 </div>
                 <div>
                   <strong>Started:</strong> {new Date(studentProgress.startedAt).toLocaleString()}

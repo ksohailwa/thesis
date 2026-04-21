@@ -50,8 +50,8 @@ export default function FilterPanel({ filters, setFilters, onApply, onReset }: F
             onChange={(e) => setFilters((s) => ({ ...s, condition: e.target.value }))}
           >
             <option value="">All</option>
-            <option value="with-hints">With Hints</option>
-            <option value="without-hints">Without Hints</option>
+            <option value="with-hints">Treatment (with interventions)</option>
+            <option value="without-hints">Control (no interventions)</option>
           </select>
         </label>
       </div>

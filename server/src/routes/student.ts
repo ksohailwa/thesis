@@ -22,6 +22,7 @@ import { toDbLabel } from '../utils/labelMapper';
 import { clearAnalyticsCache } from '../utils/analyticsCache';
 import { WordMetadata } from '../models/WordMetadata';
 import { InterventionAttempt } from '../models/InterventionAttempt';
+import { PreStudySurvey } from '../models/PreStudySurvey';
 import {
   sentenceValidationSystem,
   sentenceValidationUser,
@@ -264,6 +265,45 @@ async function selectNoiseOccurrencesLLM(
   }
 }
 
+// Pre-study survey status (read-only scaffold)
+router.get('/survey/pre/status', requireAuth, requireRole('student'), async (req: AuthedRequest, res) => {
+  const schema = z.object({ experimentId: z.string() });
+  const parsed = schema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: 'experimentId is required' });
+  const { experimentId } = parsed.data as { experimentId: string };
+  try {
+    const doc = await PreStudySurvey.findOne({ experiment: experimentId as any, student: req.user!.sub })
+      .select('completedAt offloadingScore')
+      .lean();
+    if (!doc) return res.json({ completed: false });
+    return res.json({ completed: true, completedAt: (doc.completedAt as Date)?.toISOString?.(), offloadingScore: (doc as any).offloadingScore });
+  } catch {
+    return res.json({ completed: false });
+  }
+});
+
+// Pre-study survey submit (persist responses)
+router.post('/survey/pre', requireAuth, requireRole('student'), async (req: AuthedRequest, res) => {
+  const schema = z.object({
+    experimentId: z.string(),
+    offloadingItems: z.array(z.number().int().min(1).max(6)).length(5),
+  })
+  const parsed = schema.safeParse(req.body)
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() })
+  const { experimentId, offloadingItems } = parsed.data
+  try {
+    const avg = Math.round((offloadingItems.reduce((s, v) => s + v, 0) / offloadingItems.length) * 100) / 100
+    await PreStudySurvey.findOneAndUpdate(
+      { experiment: experimentId as any, student: req.user!.sub },
+      { $set: { offloadingItems, offloadingScore: avg, completedAt: new Date() } },
+      { upsert: true, new: true }
+    )
+    return res.json({ ok: true, offloadingScore: avg })
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to save survey' })
+  }
+})
+
 router.post('/join', requireAuth, requireRole('student'), async (req: AuthedRequest, res) => {
   const schema = z.object({
     code: z.string().min(4).optional(),
@@ -287,6 +327,7 @@ router.post('/join', requireAuth, requireRole('student'), async (req: AuthedRequ
       allowDelayedAfterHours: session.allowDelayedAfterHours,
       sentences: session.sentences || [],
       gapPlan: session.gapPlan || [],
+      preSurveyCompleted: false,
     });
   }
   // Experiment join fallback
@@ -514,7 +555,17 @@ router.post('/join', requireAuth, requireRole('student'), async (req: AuthedRequ
       cues1: cuesFromStory(demoStory),
       cues2: cuesFromStory(demoStory),
       schedule,
+      preSurveyCompleted: false,
     });
+  }
+
+  // Check pre-survey completion for this experiment/student
+  let preCompleted = false;
+  try {
+    const pre = await PreStudySurvey.findOne({ experiment: exp._id, student: req.user!.sub }).select('_id').lean();
+    preCompleted = !!pre;
+  } catch {
+    preCompleted = false;
   }
 
   return res.json({
@@ -544,6 +595,7 @@ router.post('/join', requireAuth, requireRole('student'), async (req: AuthedRequ
     cues1: cuesFromStory(storyA ?? undefined),
     cues2: cuesFromStory(storyB ?? undefined),
     schedule,
+    preSurveyCompleted: preCompleted,
   });
 });
 
@@ -1067,6 +1119,41 @@ router.post('/events', requireAuth, requireRole('student'), async (req: AuthedRe
     parsed.data.events.map((e) => ({ ...e, student: req.user!.sub, ts: new Date(e.ts as any) }))
   );
   res.json({ count: docs.length });
+});
+
+// Session 2 (delayed recall) status: unlocked flag + unlock time + early attempts count
+router.get('/session2/status', requireAuth, requireRole('student'), async (req: AuthedRequest, res) => {
+  const schema = z.object({ assignmentId: z.string() });
+  const parsed = schema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: 'assignmentId is required' });
+  const { assignmentId } = parsed.data as { assignmentId: string };
+  const assignment = await Assignment.findById(assignmentId);
+  if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+  // Ensure access limited to the owner student
+  if (String(assignment.student) !== String(req.user!.sub)) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  const unlocksAt = assignment.recallUnlockAt || null;
+  const now = new Date();
+  const unlocked = !!unlocksAt && now >= unlocksAt;
+  let attempts = assignment.session2UnlockAttempts || 0;
+  if (!unlocked) {
+    try {
+      const updated = await Assignment.findByIdAndUpdate(
+        assignment._id,
+        { $inc: { session2UnlockAttempts: 1 } },
+        { new: true }
+      ).select('session2UnlockAttempts');
+      attempts = updated?.session2UnlockAttempts || attempts + 1;
+    } catch {
+      // ignore counting failures
+    }
+  }
+  return res.json({
+    unlocked,
+    unlocksAt: unlocksAt ? unlocksAt.toISOString() : null,
+    attempts,
+  });
 });
 
 router.post(

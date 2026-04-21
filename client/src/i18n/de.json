@@ -10,6 +10,25 @@
     "code": "Code",
     "preview": "Vorschau"
   },
+  "survey": {
+    "title": "Kurzer Vorerhebungs‑Fragebogen",
+    "subtitle": "Bewerte jede Aussage von 1 (stimme überhaupt nicht zu) bis 6 (stimme voll zu).",
+    "items": {
+      "1": "Ich suche Informationen auf meinem Handy, statt zu versuchen, sie mir zu merken.",
+      "2": "Ich verlasse mich auf mein Smartphone, um Informationen zu speichern, die ich mir sonst merken würde.",
+      "3": "Wenn ich etwas vergesse, suche ich sofort auf meinem Handy danach.",
+      "4": "Ich bin auf digitale Werkzeuge angewiesen, damit sie sich Fakten für mich merken.",
+      "5": "Ich nutze mein Handy im Alltag als Gedächtnisstütze."
+    },
+    "cancel": "Abbrechen",
+    "submit": "Absenden und fortfahren",
+    "lang": {
+      "english": "English",
+      "german": "Deutsch"
+    },
+    "average": "Durchschnitt",
+    "answered": "beantwortet"
+  },
   "help": {
     "title": "Hilfe",
     "gapfill": "Tippe das gehörte Wort. Richtige Buchstaben werden grün.",

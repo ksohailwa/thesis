@@ -15,6 +15,9 @@ export interface IAssignment extends Document {
   recallUnlockAt?: Date; // 12-hour minimum wait before recall test
   story1CompletedAt?: Date;
   story2CompletedAt?: Date;
+  session2StartedAt?: Date;
+  session2CompletedAt?: Date;
+  session2UnlockAttempts?: number;
   createdAt: Date;
 }
 
@@ -31,6 +34,9 @@ const AssignmentSchema = new Schema<IAssignment>({
   recallUnlockAt: { type: Date, required: false },
   story1CompletedAt: { type: Date, required: false },
   story2CompletedAt: { type: Date, required: false },
+  session2StartedAt: { type: Date, required: false },
+  session2CompletedAt: { type: Date, required: false },
+  session2UnlockAttempts: { type: Number, default: 0 },
   createdAt: { type: Date, default: () => new Date() },
 });
 

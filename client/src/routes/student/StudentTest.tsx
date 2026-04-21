@@ -29,6 +29,7 @@ export default function StudentTest() {
   hydrateStudentSession()
 
   const assignmentId = sessionStorage.getItem('assignmentId') || ''
+  const expId = sessionStorage.getItem('exp.experimentId') || ''
   const [recallUnlockAt, setRecallUnlockAt] = useState<string | null>(() => sessionStorage.getItem('exp.recallUnlockAt'))
   const story1Done = sessionStorage.getItem('exp.story1Complete') === 'true'
   const story2Done = sessionStorage.getItem('exp.story2Complete') === 'true'
@@ -43,6 +44,9 @@ export default function StudentTest() {
     definitionAverage: number
     combinedAverage: number
   } | null>(null)
+  const [effortSelected, setEffortSelected] = useState<number | null>(null)
+  const [effortSubmitting, setEffortSubmitting] = useState(false)
+  const [effortDone, setEffortDone] = useState(() => sessionStorage.getItem('exp.delayedEffortSubmitted') === 'true')
   const audioRef = useRef<HTMLAudioElement>(null)
   const base = import.meta.env.VITE_API_BASE_URL || ''
   const [now, setNow] = useState(Date.now())
@@ -54,6 +58,24 @@ export default function StudentTest() {
   }, [recallUnlockAt, now])
 
   const isReady = assignmentId && story1Done && story2Done && !recallLocked
+
+  useEffect(() => {
+    // Fetch session2 status to ensure consistent unlock time
+    if (!assignmentId) return
+    api.get('api/student/session2/status', { params: { assignmentId } })
+      .then(({ data }) => {
+        if (data?.unlocked) {
+          setRecallUnlockAt(null)
+          sessionStorage.removeItem('exp.recallUnlockAt')
+        } else if (typeof data?.unlocksAt === 'string') {
+          setRecallUnlockAt(data.unlocksAt)
+          sessionStorage.setItem('exp.recallUnlockAt', data.unlocksAt)
+        }
+      })
+      .catch(() => { /* ignore; fallback to stored value */ })
+  // run once on mount
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     if (!assignmentId || !isReady) return
@@ -139,6 +161,30 @@ export default function StudentTest() {
       toast.error('Recall submission failed')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function submitEffort() {
+    if (!expId) {
+      toast.error('Missing experiment context')
+      return
+    }
+    if (!effortSelected) return
+    setEffortSubmitting(true)
+    try {
+      await api.post('api/student/effort', {
+        experimentId: expId,
+        taskType: 'delayed-recall',
+        position: 'end',
+        score: effortSelected,
+      })
+      setEffortDone(true)
+      sessionStorage.setItem('exp.delayedEffortSubmitted', 'true')
+      toast.success('Thanks for your response!')
+    } catch {
+      toast.error('Failed to save effort rating')
+    } finally {
+      setEffortSubmitting(false)
     }
   }
 
@@ -310,6 +356,38 @@ export default function StudentTest() {
               )
             })}
           </div>
+
+          {/* Post-test effort rating (Paas 1–9) */}
+          {!effortDone && (
+            <div className="bg-white border border-amber-200 rounded-2xl p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-gray-800 mb-2">How much mental effort did this test take?</h2>
+              <p className="text-sm text-gray-600 mb-4">Please select a number from 1 (very, very low) to 9 (very, very high).</p>
+              <div className="grid grid-cols-9 gap-2">
+                {Array.from({ length: 9 }).map((_, i) => {
+                  const v = i + 1
+                  const active = effortSelected === v
+                  return (
+                    <button
+                      key={v}
+                      className={`py-2 rounded-lg border text-sm font-semibold transition ${active ? 'bg-amber-600 text-white border-amber-600' : 'border-gray-200 hover:bg-gray-50'}`}
+                      onClick={() => setEffortSelected(v)}
+                    >
+                      {v}
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="mt-4 text-right">
+                <button
+                  className={`btn primary ${effortSelected ? '' : 'opacity-50 cursor-not-allowed'}`}
+                  disabled={!effortSelected || effortSubmitting}
+                  onClick={submitEffort}
+                >
+                  {effortSubmitting ? 'Submitting…' : 'Submit Effort'}
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="text-center">
             <a href={`${import.meta.env.BASE_URL || '/'}student`} className="btn primary px-6 py-3 inline-flex justify-center">

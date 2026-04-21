@@ -7,14 +7,14 @@
     "teacher": "Teacher",
     "student": "Student",
     "join": "Join Session",
-    "code": "Code"
+    "code": "Code",
+    "preview": "Preview"
   },
   "help": {
     "title": "Help",
     "gapfill": "Type the word you hear. Correct letters turn green.",
     "system": "We show the correct spelling and definition; confirm to proceed."
-  }
-  ,
+  },
   "common": {
     "check": "Check",
     "hint": "Hint",
@@ -44,15 +44,29 @@
     "avg": "Average score",
     "unlockAt": "Delayed recall unlocks at",
     "gotoDelayed": "Go to delayed recall"
-  }
-  ,
+  },
   "teacherHelp": {
     "title": "Student Instructions (based on selected language)",
     "targets": "Target words",
     "previewReadonly": "Inputs are read-only here; students type answers in their session."
   },
-  "app": {
-    "preview": "Preview",
-    "student": "Student"
+  "survey": {
+    "title": "Short Pre-Study Survey",
+    "subtitle": "Rate each statement from 1 (Strongly disagree) to 6 (Strongly agree).",
+    "items": {
+      "1": "I look up information on my phone rather than trying to remember it.",
+      "2": "I rely on my smartphone to store information I might otherwise remember.",
+      "3": "When I forget something, I immediately search for it on my phone.",
+      "4": "I depend on digital tools to remember facts for me.",
+      "5": "I use my phone as a memory aid in everyday life."
+    },
+    "cancel": "Cancel",
+    "submit": "Submit and Continue",
+    "lang": {
+      "english": "English",
+      "german": "Deutsch"
+    },
+    "average": "Average",
+    "answered": "answered"
   }
 }
