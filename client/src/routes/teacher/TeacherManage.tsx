@@ -258,7 +258,7 @@ export default function TeacherManage() {
                 className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 font-semibold transition"
                 onClick={closeExperiment}
               >
-                Close
+                Close the study
               </button>
             )}
             {experimentStatus === 'closed' && (
@@ -360,7 +360,7 @@ export default function TeacherManage() {
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-xl font-bold text-gray-900">Student Progress</h3>
               <button className="text-gray-500 hover:text-gray-700" onClick={() => setSelectedStudent(null)}>
-                Close
+                Close the study
               </button>
             </div>
             {loadingStudent ? (

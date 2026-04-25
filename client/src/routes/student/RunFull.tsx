@@ -369,7 +369,11 @@ function RunFull() {
       sentenceAudioRef.current.src = src
       sentenceAudioRef.current.currentTime = 0
       sentenceAudioRef.current.onerror = () => {
-        toast.error('Sentence audio is unavailable. Please regenerate TTS or try again.')
+        if (segUrl) {
+          toast.error('Sentence audio is unavailable. Please regenerate TTS or try again.')
+        } else {
+          toast.error('Sentence audio is unavailable. Please generate TTS or try again.')
+        }
         setCurrentSentenceId(null)
       }
 
@@ -742,17 +746,28 @@ function RunFull() {
     }
   }
 
-  async function submitMentalEffort(score: number) {
+  async function submitMentalEffort(scores: { difficulty: number; effort: number }) {
     try {
       const targetPara = pendingEffortPara ?? currentParagraph
       const completedPara = targetPara === 4 ? targetPara : targetPara - 1
 
-      // Submit mental effort to backend
+      // Submit perceived difficulty
       await api.post('api/student/effort', {
         experimentId: expId,
         storyLabel: currentStoryLabel,
         paragraphIndex: completedPara,
-        score,
+        taskType: 'difficulty',
+        score: scores.difficulty,
+        position: targetPara === 4 ? 'end' : 'mid',
+      })
+
+      // Submit mental effort (Paas)
+      await api.post('api/student/effort', {
+        experimentId: expId,
+        storyLabel: currentStoryLabel,
+        paragraphIndex: completedPara,
+        taskType: 'effort',
+        score: scores.effort,
         position: targetPara === 4 ? 'end' : 'mid',
       })
 
