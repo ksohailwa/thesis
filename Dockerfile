@@ -1,7 +1,7 @@
 # Multi-stage build for SpellWise monorepo
 
-# Stage 1: Build everything
-FROM node:20-alpine AS builder
+# Stage 1: Build everything (use Debian-based image to avoid musl/rollup optional dep issues)
+FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
 
@@ -11,8 +11,11 @@ COPY client/package*.json ./client/
 COPY server/package*.json ./server/
 COPY shared/package*.json ./shared/
 
-# Install all dependencies
-RUN npm ci
+# Use npm v11.x to match latest CI expectations and silence update notices
+RUN npm i -g npm@11.13.0 && npm --version && npm config set update-notifier false
+
+# Install all dependencies with pinned npm (use install to workaround npm optional deps bug with workspaces)
+RUN npm install
 
 # Copy source code
 COPY . .
@@ -27,6 +30,8 @@ RUN npm run build --workspace=@spellwise/server
 # Build client with /SpellWise/ base path for Docker
 ENV VITE_BASE_PATH=/SpellWise/
 ENV VITE_API_BASE_URL=/SpellWise
+# Work around npm optional-deps bug for Rollup native binary on Linux builders
+RUN npm i --no-save -w @spellwise/client @rollup/rollup-linux-x64-gnu
 RUN npm run build --workspace=@spellwise/client
 
 # Stage 2: Production server
@@ -35,6 +40,9 @@ FROM node:20-alpine AS production
 WORKDIR /app
 
 RUN apk add --no-cache curl
+
+# Use npm v11.x in production image as well (for npm ci during image build)
+RUN npm i -g npm@11.13.0 && npm --version && npm config set update-notifier false
 
 # Copy package files
 COPY package*.json ./
