@@ -1378,7 +1378,7 @@ router.get('/experiment/:id/research-export', requireAuth, requireRole('teacher'
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Disposition', `attachment; filename="experiment_${expId}_research_export.zip"`);
     const archive = archiver('zip', { zlib: { level: 9 } });
-    archive.on('error', (err) => { try { res.status(500).end(`Archive error: ${String(err)}`); } catch {} });
+    archive.on('error', (err: any) => { try { res.status(500).end(`Archive error: ${String(err)}`); } catch {} });
     archive.pipe(res);
     archive.append(Buffer.from(studentsCsv, 'utf8'), { name: 'students.csv' });
     archive.append(Buffer.from(wordsCsv, 'utf8'), { name: 'words.csv' });
