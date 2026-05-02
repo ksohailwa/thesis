@@ -842,10 +842,10 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
       : null;
 
     // Determine phase conditions based on storyOrder and hintsStory
-    let phase1Condition = null;
-    let phase1Story = null;
-    let phase2Condition = null;
-    let phase2Story = null;
+    let phase1Condition: 'treatment' | 'control' | null = null;
+    let phase1Story: 'A' | 'B' | null = null;
+    let phase2Condition: 'treatment' | 'control' | null = null;
+    let phase2Story: 'A' | 'B' | null = null;
 
     if (s.storyOrder && s.hintsStory) {
       const firstStory = s.storyOrder === 'A-first' ? 'A' : 'B';
