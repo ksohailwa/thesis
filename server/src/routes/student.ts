@@ -274,7 +274,7 @@ router.get('/survey/pre/status', requireAuth, requireRole('student'), async (req
   try {
     const doc = await PreStudySurvey.findOne({ experiment: experimentId as any, student: req.user!.sub })
       .select('completedAt offloadingScore')
-      .lean();
+      .lean() as any;
     if (!doc) return res.json({ completed: false });
     return res.json({ completed: true, completedAt: (doc.completedAt as Date)?.toISOString?.(), offloadingScore: (doc as any).offloadingScore });
   } catch {
