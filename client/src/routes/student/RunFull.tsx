@@ -182,7 +182,11 @@ function RunFull() {
   const [currentParagraph, setCurrentParagraph] = useState(0)
   const [readMode, setReadMode] = useState(false)
   const [showMentalEffort, setShowMentalEffort] = useState(false)
-  const [pendingEffortPara, setPendingEffortPara] = useState<number | null>(null)
+  const [pendingEffortContext, setPendingEffortContext] = useState<{
+    completedPara: number
+    nextPara: number | null
+    final: boolean
+  } | null>(null)
   const [effortDoneByKey, setEffortDoneByKey] = useState<Record<string, boolean>>({})
 
   // Control group: correct answer modal state
@@ -200,10 +204,13 @@ function RunFull() {
   const effortKey = (para: number) => `${storyIndex}-${para}`
 
   const displayParagraphs = currentStory.paragraphs || []
+  const paragraphCount = Math.max(1, displayParagraphs.length)
+  const lastParagraphIndex = paragraphCount - 1
   const displayStory = { ...currentStory, paragraphs: displayParagraphs }
   const displayParsedStory = parsedStory
   const visibleBlanks = allBlanks.filter((b) => b.paragraphIndex === currentParagraph)
   const visibleClips = sentenceClips.filter((c) => c.paragraphIndex === currentParagraph)
+  const currentParagraphComplete = visibleBlanks.every((b) => blanksState[b.key]?.correct)
 
   // Effects
   useEffect(() => {
@@ -222,6 +229,12 @@ function RunFull() {
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
   }, [breakUntil])
+
+  useEffect(() => {
+    if (currentParagraph > lastParagraphIndex) {
+      setCurrentParagraph(lastParagraphIndex)
+    }
+  }, [currentParagraph, lastParagraphIndex])
 
   // Note: We no longer auto-clear breakUntil - user must click the button
 
@@ -341,7 +354,7 @@ function RunFull() {
     setActiveBlankKey(null)
     setCurrentSentenceId(null)
     setShowMentalEffort(false)
-    setPendingEffortPara(null)
+    setPendingEffortContext(null)
     setEffortDoneByKey({})
     setShowFeedback(false)
     setShowConfetti(false)
@@ -489,12 +502,13 @@ function RunFull() {
     // Use setTimeout to ensure state updates have been applied
     setTimeout(() => {
       const currentIndex = currentKey ? allBlanks.findIndex((b) => b.key === currentKey) : -1
-      
-      // Simply move to next blank in sequence (including noise words and already-filled blanks)
-      const nextIndex = currentIndex + 1
-      
-      if (nextIndex < allBlanks.length) {
-        const nextKey = allBlanks[nextIndex].key
+
+      const nextBlank = allBlanks
+        .slice(Math.max(0, currentIndex + 1))
+        .find((b) => !blanksState[b.key]?.correct)
+
+      if (nextBlank && nextBlank.paragraphIndex === currentParagraph) {
+        const nextKey = nextBlank.key
         const el = document.getElementById(`blank-${nextKey}-0`)
         if (el) {
           el.scrollIntoView({ behavior: 'smooth', block: 'center' })
@@ -532,10 +546,12 @@ function RunFull() {
       toast.error('Please type something')
       return
     }
-    setAttemptsByWord((prev) => ({ ...prev, [blank.word]: (prev[blank.word] || 0) + 1 }))
+    if (!blank.isNoise) {
+      setAttemptsByWord((prev) => ({ ...prev, [blank.word]: (prev[blank.word] || 0) + 1 }))
+    }
     const isCorrect = val.toLowerCase() === blank.word.toLowerCase()
     const feedbackText = blank.occurrenceIndex >= 5 ? '' : isCorrect ? 'Correct!' : 'Try again'
-    const letterFeedback = blank.paragraphIndex === 4 ? undefined : buildLetterFeedback(val, blank.word)
+    const letterFeedback = blank.paragraphIndex === lastParagraphIndex ? undefined : buildLetterFeedback(val, blank.word)
     setBlanksState((prev) => ({
       ...prev,
       [blank.key]: { value: val, correct: isCorrect, feedback: feedbackText, letterFeedback },
@@ -546,6 +562,17 @@ function RunFull() {
       stopWordTimer(blank.word)
       toast.success('Correct!')
       
+      if (blank.isNoise) {
+        if (paragraphPlaybackRef.current?.active) {
+          setTimeout(() => {
+            resumeParagraphPlayback()
+          }, 300)
+        } else {
+          focusNextBlank(blank.key)
+        }
+        return
+      }
+
       // Only increment streak for unique words (first time spelling each word correctly)
       const wordLower = blank.word.toLowerCase()
       if (!wordsInStreak.has(wordLower)) {
@@ -576,6 +603,11 @@ function RunFull() {
         })
         .catch((e) => logger.error('Failed to submit attempt', e))
     } else {
+      if (blank.isNoise) {
+        toast.error('Try again')
+        return
+      }
+
       setStreak(0)
       // Pause audio but keep playback state for potential resume
       softPause(false)
@@ -748,8 +780,13 @@ function RunFull() {
 
   async function submitMentalEffort(scores: { difficulty: number; effort: number }) {
     try {
-      const targetPara = pendingEffortPara ?? currentParagraph
-      const completedPara = targetPara === 4 ? targetPara : targetPara - 1
+      const context = pendingEffortContext || {
+        completedPara: currentParagraph,
+        nextPara: null,
+        final: currentParagraph === lastParagraphIndex,
+      }
+      const { completedPara } = context
+      const position = context.final ? 'end' : 'mid'
 
       // Submit perceived difficulty
       await api.post('api/student/effort', {
@@ -758,7 +795,7 @@ function RunFull() {
         paragraphIndex: completedPara,
         taskType: 'difficulty',
         score: scores.difficulty,
-        position: targetPara === 4 ? 'end' : 'mid',
+        position,
       })
 
       // Submit mental effort (Paas)
@@ -768,24 +805,24 @@ function RunFull() {
         paragraphIndex: completedPara,
         taskType: 'effort',
         score: scores.effort,
-        position: targetPara === 4 ? 'end' : 'mid',
+        position,
       })
 
       // Save paragraph progress to server
       await saveParagraphProgress(completedPara)
 
-      setEffortDoneByKey((prev) => ({ ...prev, [effortKey(targetPara)]: true }))
+      setEffortDoneByKey((prev) => ({ ...prev, [effortKey(completedPara)]: true }))
       setShowMentalEffort(false)
-      setPendingEffortPara(null)
+      setPendingEffortContext(null)
       setStorySubmitted(true)
 
-      if (targetPara === 4) {
+      if (context.final) {
         // Final paragraph - show feedback modal
         setShowFeedback(true)
       } else {
         // Move to next paragraph
         setStorySubmitted(false)
-        setCurrentParagraph(targetPara)
+        setCurrentParagraph(context.nextPara ?? Math.min(lastParagraphIndex, completedPara + 1))
       }
     } catch {
       toast.error('Could not submit mental effort rating')
@@ -857,7 +894,7 @@ function RunFull() {
   const renderBlankInput = useCallback((blank: Blank) => {
     const state = blanksState[blank.key] || { value: '', correct: false, feedback: '' }
     const isLocked = locked[blank.key]
-    const feedbackEnabled = blank.paragraphIndex !== 4
+    const feedbackEnabled = blank.paragraphIndex !== lastParagraphIndex
 
     return (
       <BlankInput
@@ -873,11 +910,11 @@ function RunFull() {
         onUpdateValue={handleUpdateValue}
       />
     )
-  }, [blanksState, locked, checkBlank, handleBlankFocus, handleBlankBlur, focusNextBlank, handleUpdateValue])
+  }, [blanksState, locked, checkBlank, handleBlankFocus, handleBlankBlur, focusNextBlank, handleUpdateValue, lastParagraphIndex])
 
   // Conditional renders
   if (showMentalEffort) {
-    const targetPara = pendingEffortPara ?? currentParagraph
+    const targetPara = pendingEffortContext?.completedPara ?? currentParagraph
     return (
       <MentalEffortView
         paragraphNumber={targetPara + 1}
@@ -939,37 +976,56 @@ function RunFull() {
               className="btn primary"
               onClick={() => {
                 const next = currentParagraph + 1
-                if (next >= 5) return
+                if (next >= paragraphCount) return
+                if (!currentParagraphComplete) {
+                  toast.error('Please complete all blanks in this paragraph before continuing.')
+                  return
+                }
 
                 // Show mental effort questionnaire before moving to next paragraph
-                if (!effortDoneByKey[effortKey(next)]) {
-                  setPendingEffortPara(next)
+                if (!effortDoneByKey[effortKey(currentParagraph)]) {
+                  setPendingEffortContext({
+                    completedPara: currentParagraph,
+                    nextPara: next,
+                    final: false,
+                  })
                   setShowMentalEffort(true)
                   return
                 }
                 setCurrentParagraph(next)
               }}
-              disabled={currentParagraph >= 4}
+              disabled={currentParagraph >= lastParagraphIndex || !currentParagraphComplete}
             >
               Next paragraph
             </button>
-            {currentParagraph === 4 && (
+            {currentParagraph === lastParagraphIndex && (
               <button
-                className={`btn ${effortDoneByKey[effortKey(4)] ? 'bg-green-600 text-white cursor-not-allowed' : 'primary'}`}
+                className={`btn ${effortDoneByKey[effortKey(lastParagraphIndex)] ? 'bg-green-600 text-white cursor-not-allowed' : 'primary'}`}
                 onClick={() => {
-                  if (effortDoneByKey[effortKey(4)]) return
+                  if (!isStoryComplete) {
+                    toast.error('Please complete every blank before submitting the story.')
+                    return
+                  }
+                  if (effortDoneByKey[effortKey(lastParagraphIndex)]) {
+                    setShowFeedback(true)
+                    return
+                  }
 
                   // Show mental effort questionnaire before finishing story
-                  setPendingEffortPara(4)
+                  setPendingEffortContext({
+                    completedPara: lastParagraphIndex,
+                    nextPara: null,
+                    final: true,
+                  })
                   setShowMentalEffort(true)
                 }}
-                disabled={!!effortDoneByKey[effortKey(4)]}
+                disabled={!isStoryComplete}
               >
-                {effortDoneByKey[effortKey(4)] ? 'Submitted' : 'Submit story'}
+                {effortDoneByKey[effortKey(lastParagraphIndex)] ? 'Submitted' : 'Submit story'}
               </button>
             )}
           </div>
-          <div className="text-sm text-gray-600">Paragraph {currentParagraph + 1} / 5</div>
+          <div className="text-sm text-gray-600">Paragraph {currentParagraph + 1} / {paragraphCount}</div>
         </div>
 
         <StoryReader
@@ -983,8 +1039,16 @@ function RunFull() {
           isStoryComplete={isStoryComplete}
           onPlaySentence={playSentence}
           onShowFeedback={() => {
-            if (!effortDoneByKey[effortKey(4)]) {
-              setPendingEffortPara(4)
+            if (!isStoryComplete) {
+              toast.error('Please complete every blank before submitting the story.')
+              return
+            }
+            if (!effortDoneByKey[effortKey(lastParagraphIndex)]) {
+              setPendingEffortContext({
+                completedPara: lastParagraphIndex,
+                nextPara: null,
+                final: true,
+              })
               setShowMentalEffort(true)
             } else {
               setShowFeedback(true)

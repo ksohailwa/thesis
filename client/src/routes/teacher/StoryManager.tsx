@@ -630,6 +630,10 @@ export default function StoryManager({ experimentId, onStoriesConfirmed }: Props
   const ttsReady = Boolean(story1Preview?.ttsAudioUrl && story2Preview?.ttsAudioUrl)
   const wordTtsReady = wordTtsItems.length > 0 && wordTtsItems.every(item => item.audioUrl)
   const canConfirm = storiesReady && ttsReady && wordTtsReady
+  const higherBucketTitle =
+    groupedWords?.higher.level && groupedWords.higher.level === groupedWords.current.level
+      ? 'Same Level'
+      : 'Higher Level'
 
   if (!experimentId) {
     return <div className="text-sm text-red-600">Missing experiment id</div>
@@ -683,6 +687,9 @@ export default function StoryManager({ experimentId, onStoriesConfirmed }: Props
               <p><strong>Target Words (10 total):</strong> 4 from current level + 4 from higher level + 2 from lower level</p>
               <p><strong>Noise Words (3 total):</strong> 1 from each level (shared between both stories)</p>
               <p><strong>Per Story:</strong> 5 target words (2 current + 2 higher + 1 lower) + 3 shared noise words</p>
+              {groupedWords?.higher.level === groupedWords?.current.level && (
+                <p><strong>C2:</strong> the higher-level bucket uses additional C2 words.</p>
+              )}
             </div>
           </div>
         )}
@@ -797,7 +804,7 @@ export default function StoryManager({ experimentId, onStoriesConfirmed }: Props
                     />
 
                     <LevelSection
-                      title="Higher Level"
+                      title={higherBucketTitle}
                       levelLabel={groupedWords.higher.level}
                       words={groupedWords.higher.words.filter(w => !isWordSelectedElsewhere(w.word, 'targetHigher'))}
                       selectedWords={selection.targetHigher}
@@ -843,7 +850,7 @@ export default function StoryManager({ experimentId, onStoriesConfirmed }: Props
                     />
 
                     <LevelSection
-                      title="Higher Level"
+                      title={higherBucketTitle}
                       levelLabel={groupedWords.higher.level}
                       words={groupedWords.higher.words.filter(w => !isWordSelectedElsewhere(w.word, 'noiseHigher'))}
                       selectedWords={selection.noiseHigher}

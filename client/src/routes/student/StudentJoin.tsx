@@ -84,6 +84,10 @@ export default function StudentJoin() {
         nav('/student/consent')
         return
       }
+      if (code === 'EXPERIMENT_ALREADY_COMPLETED') {
+        setError(msg || 'You have already completed this experiment. You can enter a different join code.')
+        return
+      }
       if (!e?.response || e?.code === 'ERR_NETWORK') setError('Cannot connect to server. Please check your internet connection.')
       else if (msg?.toLowerCase().includes('not live')) setError('This experiment is not active yet. Check with your teacher.')
       else if (msg?.toLowerCase().includes('not found')) setError('Invalid join code. Please check and try again.')

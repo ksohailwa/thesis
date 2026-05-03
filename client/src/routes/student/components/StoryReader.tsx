@@ -10,6 +10,7 @@ type Blank = {
   sentenceIndex?: number
   charStart?: number
   charEnd?: number
+  isNoise?: boolean
 }
 
 type ParsedParagraph = {
@@ -145,7 +146,7 @@ export default function StoryReader({
             <p className="text-purple-700">Ready for the next challenge?</p>
           </div>
           <button 
-            onClick={() => onGoToStory(1)} // Changed to use onGoToStory(1)
+            onClick={onShowFeedback}
             className="px-6 py-2 bg-white text-purple-700 font-bold rounded-lg shadow hover:scale-105 transition"
           >
             Continue to Story 2

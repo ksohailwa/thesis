@@ -23,6 +23,7 @@ import { clearAnalyticsCache } from '../utils/analyticsCache';
 import { WordMetadata } from '../models/WordMetadata';
 import { InterventionAttempt } from '../models/InterventionAttempt';
 import { PreStudySurvey } from '../models/PreStudySurvey';
+import { AudioAsset } from '../models/AudioAsset';
 import {
   sentenceValidationSystem,
   sentenceValidationUser,
@@ -46,6 +47,10 @@ function safeWordFile(word: string) {
     .toLowerCase()
     .replace(/[^a-z0-9_-]+/g, '_')
     .replace(/^_+|_+$/g, '');
+}
+
+function audioAssetUrl(experimentId: unknown, assetId: unknown) {
+  return `/api/experiments/${experimentId}/audio/${assetId}`;
 }
 
 function computeHighlightIndices(guess: string, target: string): number[] {
@@ -346,6 +351,23 @@ router.post('/join', requireAuth, requireRole('student'), async (req: AuthedRequ
     ),
   ]);
   const existing = await Assignment.findOne({ experiment: exp._id, student: req.user!.sub });
+  if (existing) {
+    const completedRecall =
+      !!existing.recallCompletedAt ||
+      !!(await Event.exists({
+        experiment: exp._id,
+        student: req.user!.sub,
+        type: 'recall-attempt',
+        taskType: 'delayed-recall',
+      }));
+    if (completedRecall) {
+      return res.status(409).json({
+        error: 'You have already completed this experiment. Ask your teacher for a different join code if you need to take another experiment.',
+        code: 'EXPERIMENT_ALREADY_COMPLETED',
+        experimentId: String(exp._id),
+      });
+    }
+  }
   let assignmentDoc = existing;
   let chosen = withHints;
   let storyOrder: StoryOrder | undefined = existing?.storyOrder as StoryOrder | undefined;
@@ -1359,6 +1381,16 @@ router.post(
     const { default: fs } = await import('fs');
     const { default: path } = await import('path');
     const { getWordDefinition, getAllWords } = await import('../data/wordLists');
+    const wordAudioAssets = await AudioAsset.find({
+      experiment: expId,
+      kind: 'word',
+      word: { $in: words.map((w) => w.toLowerCase()) },
+    })
+      .select('_id word')
+      .lean();
+    const audioAssetByWord = new Map(
+      wordAudioAssets.map((asset: any) => [String(asset.word || '').toLowerCase(), asset])
+    );
 
     // Pre-fetch all words for distractor generation
     const allStaticWords = getAllWords();
@@ -1374,7 +1406,12 @@ router.post(
         'words',
         `${safe}.mp3`
       );
-      const available = fs.existsSync(abs);
+      const audioAsset = audioAssetByWord.get(word.toLowerCase());
+      const audioUrl = audioAsset
+        ? audioAssetUrl(expId, audioAsset._id)
+        : fs.existsSync(abs)
+          ? rel
+          : null;
 
       // Get metadata for this word - first try WordMetadata, then fall back to static word list
       const metadata = metadataByWord.get(word.toLowerCase());
@@ -1416,7 +1453,7 @@ router.post(
 
       return {
         word,
-        audioUrl: available ? rel : null,
+        audioUrl,
         correctDefinition,
         definitionOptions: shuffledOptions,
       };
@@ -1500,6 +1537,17 @@ router.post(
       // ignore logging failures
     }
 
+    try {
+      await Assignment.findByIdAndUpdate(assignment._id, {
+        $set: {
+          recallCompletedAt: new Date(),
+          session2CompletedAt: new Date(),
+        },
+      });
+    } catch {
+      // ignore assignment completion update failures
+    }
+
     return res.json({
       scores,
       spellingAverage: spellingAvg,
@@ -1562,14 +1610,28 @@ router.get(
     }
 
     // Build audio URL for the word (if TTS was generated)
-    const wordAudioPath = `/static/audio/${experimentId}/word_${word.toLowerCase()}.mp3`;
     let audioUrl: string | null = null;
+    const audioAsset = await AudioAsset.findOne({
+      experiment: experimentId,
+      kind: 'word',
+      word: word.toLowerCase(),
+    }).select('_id');
+    if (audioAsset) {
+      audioUrl = audioAssetUrl(experimentId, audioAsset._id);
+    }
     try {
       const { default: fs } = await import('fs');
       const { default: path } = await import('path');
-      const fullPath = path.join(process.cwd(), wordAudioPath);
-      if (fs.existsSync(fullPath)) {
-        audioUrl = wordAudioPath;
+      const legacyPaths = [
+        `/static/audio/${experimentId}/word_${word.toLowerCase()}.mp3`,
+        `/static/audio/${experimentId}/words/${safeWordFile(word)}.mp3`,
+      ];
+      for (const wordAudioPath of legacyPaths) {
+        if (audioUrl) break;
+        const fullPath = path.join(process.cwd(), wordAudioPath);
+        if (fs.existsSync(fullPath)) {
+          audioUrl = wordAudioPath;
+        }
       }
     } catch {
       // Audio file doesn't exist, leave null

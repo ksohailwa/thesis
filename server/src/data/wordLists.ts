@@ -213,15 +213,17 @@ export function getWordsGroupedByLevel(
 
   const higherLevel = getHigherLevel(currentLevel);
   const lowerLevel = getLowerLevel(currentLevel);
+  const current = currentLevel.toUpperCase();
+  const effectiveHigherLevel = higherLevel || current;
 
   return {
     current: {
-      level: currentLevel.toUpperCase(),
+      level: current,
       words: filterWords(getWordsBySpecificLevel(currentLevel)),
     },
     higher: {
-      level: higherLevel,
-      words: higherLevel ? filterWords(getWordsBySpecificLevel(higherLevel)) : [],
+      level: effectiveHigherLevel,
+      words: filterWords(getWordsBySpecificLevel(effectiveHigherLevel)),
     },
     lower: {
       level: lowerLevel,

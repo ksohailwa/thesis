@@ -14,8 +14,8 @@ COPY shared/package*.json ./shared/
 # Use npm v11.x to match latest CI expectations and silence update notices
 RUN npm i -g npm@11.13.0 && npm --version && npm config set update-notifier false
 
-# Install all dependencies with pinned npm (use install to workaround npm optional deps bug with workspaces)
-RUN npm install
+# Install exactly from package-lock so dependency auto-updates cannot change Docker builds
+RUN npm ci
 
 # Copy source code
 COPY . .

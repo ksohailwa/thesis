@@ -6,6 +6,7 @@ import { requireAuth, requireRole, AuthedRequest } from '../middleware/auth';
 import { requireExperimentOwnership } from '../middleware/ownership';
 import { Experiment } from '../models/Experiment';
 import { Story } from '../models/Story';
+import { AudioAsset } from '../models/AudioAsset';
 import { Assignment } from '../models/Assignment';
 import { Condition } from '../models/Condition';
 import { Attempt } from '../models/Attempt';
@@ -27,6 +28,78 @@ import { getWordsForLevel, getWordDefinition } from '../data/wordLists';
 
 const router = Router();
 const OPENAI_CHAT_MODEL = process.env.OPENAI_MODEL || 'gpt-5.2-2025-12-11';
+
+function audioAssetUrl(experimentId: unknown, assetId: unknown, timestamp = Date.now()) {
+  return `/api/experiments/${experimentId}/audio/${assetId}?t=${timestamp}`;
+}
+
+async function upsertAudioAsset(input: {
+  experiment: any;
+  kind: 'story-full' | 'story-segment' | 'word';
+  label?: 'A' | 'B';
+  storySet?: 'set1' | 'set2';
+  key: string;
+  word?: string;
+  data: Buffer;
+  contentType?: string;
+}) {
+  const filter: any = {
+    experiment: input.experiment,
+    kind: input.kind,
+    storySet: input.storySet || 'set1',
+    key: input.key,
+  };
+  if (input.label) filter.label = input.label;
+  if (input.word) filter.word = input.word.toLowerCase();
+
+  return AudioAsset.findOneAndUpdate(
+    filter,
+    {
+      $set: {
+        ...filter,
+        contentType: input.contentType || 'audio/mpeg',
+        data: input.data,
+        size: input.data.length,
+      },
+    },
+    { upsert: true, new: true, setDefaultsOnInsert: true }
+  );
+}
+
+router.get('/:id/audio/:assetId', async (req, res) => {
+  if (!/^[a-f\d]{24}$/i.test(req.params.id) || !/^[a-f\d]{24}$/i.test(req.params.assetId)) {
+    return res.status(404).json({ error: 'Audio not found' });
+  }
+  const asset = (await AudioAsset.findOne({
+    _id: req.params.assetId,
+    experiment: req.params.id,
+  }).lean()) as any;
+  if (!asset?.data) return res.status(404).json({ error: 'Audio not found' });
+
+  const data = Buffer.isBuffer(asset.data) ? asset.data : Buffer.from(asset.data as any);
+  const size = data.length;
+  const range = req.headers.range;
+  res.setHeader('Content-Type', asset.contentType || 'audio/mpeg');
+  res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
+
+  if (range) {
+    const [startText, endText] = range.replace(/bytes=/, '').split('-');
+    const start = Math.max(0, parseInt(startText, 10) || 0);
+    const end = Math.min(size - 1, endText ? parseInt(endText, 10) : size - 1);
+    if (start >= size || end < start) {
+      res.setHeader('Content-Range', `bytes */${size}`);
+      return res.status(416).end();
+    }
+    res.status(206);
+    res.setHeader('Content-Range', `bytes ${start}-${end}/${size}`);
+    res.setHeader('Content-Length', String(end - start + 1));
+    return res.end(data.subarray(start, end + 1));
+  }
+
+  res.setHeader('Content-Length', String(size));
+  return res.end(data);
+});
 
 /** Scan paragraphs for word occurrences by matching actual text (not relying on bold markers) */
 function computeOccurrences(paragraphs: string[], storyWords: string[]) {
@@ -1146,7 +1219,15 @@ router.post(
           } as any);
           const buf = Buffer.from(await resp.arrayBuffer());
           fs.writeFileSync(outPath, buf);
-          story.ttsAudioUrl = `/static/audio/${exp._id}/${fileLabel}.mp3?t=${timestamp}`;
+          const fullAsset = await upsertAudioAsset({
+            experiment: exp._id,
+            kind: 'story-full',
+            label: map as 'A' | 'B',
+            storySet: set,
+            key: fileLabel,
+            data: buf,
+          });
+          story.ttsAudioUrl = audioAssetUrl(exp._id, fullAsset._id, timestamp);
           story.ttsSegments = [];
           story.storySet = set;
           await story.save();
@@ -1160,13 +1241,24 @@ router.post(
           const segPath = path.join(outDir, segName);
           fs.writeFileSync(segPath, buf);
           segBuffers.push(buf);
-          segUrls.push(`/static/audio/${exp._id}/${segName}?t=${timestamp}`);
         });
+        for (const { buf, segName } of results) {
+          const segmentAsset = await upsertAudioAsset({
+            experiment: exp._id,
+            kind: 'story-segment',
+            label: map as 'A' | 'B',
+            storySet: set,
+            key: segName,
+            data: buf,
+          });
+          segUrls.push(audioAssetUrl(exp._id, segmentAsset._id, timestamp));
+        }
 
         // Build full audio by concatenating segments (rough but acceptable for sequential playback)
+        let fullAudioBuf: Buffer;
         if (segBuffers.length) {
-          const fullBuf = Buffer.concat(segBuffers);
-          fs.writeFileSync(outPath, fullBuf);
+          fullAudioBuf = Buffer.concat(segBuffers);
+          fs.writeFileSync(outPath, fullAudioBuf);
         } else {
           // fallback to one-shot generation if sentences missing
           const resp = await oa.audio.speech.create({
@@ -1174,11 +1266,19 @@ router.post(
             voice: process.env.OPENAI_TTS_VOICE || 'nova',
             input: story.paragraphs.join('\n\n'),
           } as any);
-          const buf = Buffer.from(await resp.arrayBuffer());
-          fs.writeFileSync(outPath, buf);
+          fullAudioBuf = Buffer.from(await resp.arrayBuffer());
+          fs.writeFileSync(outPath, fullAudioBuf);
         }
 
-        const rel = `/static/audio/${exp._id}/${fileLabel}.mp3?t=${timestamp}`;
+        const fullAsset = await upsertAudioAsset({
+          experiment: exp._id,
+          kind: 'story-full',
+          label: map as 'A' | 'B',
+          storySet: set,
+          key: fileLabel,
+          data: fullAudioBuf,
+        });
+        const rel = audioAssetUrl(exp._id, fullAsset._id, timestamp);
         story.ttsAudioUrl = rel;
         story.ttsSegments = segUrls;
         story.storySet = set;
@@ -1191,8 +1291,17 @@ router.post(
     // mock beep wav
     const wav = Buffer.alloc(44);
     fs.writeFileSync(outPath, wav);
-    const rel = `/static/audio/${exp._id}/${fileLabel}.mp3`;
+    const fullAsset = await upsertAudioAsset({
+      experiment: exp._id,
+      kind: 'story-full',
+      label: map as 'A' | 'B',
+      storySet: set,
+      key: fileLabel,
+      data: wav,
+    });
+    const rel = audioAssetUrl(exp._id, fullAsset._id);
     story.ttsAudioUrl = rel;
+    story.ttsSegments = [];
     story.storySet = set;
     await story.save();
     return res.json({ url: rel, used: 'mock' });
@@ -1233,15 +1342,40 @@ router.post(
     for (const w of words) {
       const safe = safeWordFile(w);
       const outPath = path.join(outDir, `${safe}.mp3`);
-      const rel = `/static/audio/${exp._id}/words/${safe}.mp3`;
+      const existingAsset = await AudioAsset.findOne({
+        experiment: exp._id,
+        kind: 'word',
+        storySet: 'set1',
+        key: safe,
+        word: w.toLowerCase(),
+      }).select('_id');
+      if (!parsed.data.regenerate && existingAsset) {
+        results.push({ word: w, audioUrl: audioAssetUrl(exp._id, existingAsset._id), generated: false });
+        continue;
+      }
       if (!parsed.data.regenerate && fs.existsSync(outPath)) {
-        results.push({ word: w, audioUrl: rel, generated: false });
+        const buf = fs.readFileSync(outPath);
+        const asset = await upsertAudioAsset({
+          experiment: exp._id,
+          kind: 'word',
+          key: safe,
+          word: w,
+          data: buf,
+        });
+        results.push({ word: w, audioUrl: audioAssetUrl(exp._id, asset._id), generated: false });
         continue;
       }
       try {
         const buf = await generateSentenceTTS({ client: oa, text: w });
         fs.writeFileSync(outPath, buf);
-        results.push({ word: w, audioUrl: rel, generated: true });
+        const asset = await upsertAudioAsset({
+          experiment: exp._id,
+          kind: 'word',
+          key: safe,
+          word: w,
+          data: buf,
+        });
+        results.push({ word: w, audioUrl: audioAssetUrl(exp._id, asset._id), generated: true });
       } catch (e: any) {
         results.push({ word: w, audioUrl: null, error: e?.message || 'TTS failed' });
       }
@@ -1272,9 +1406,26 @@ router.get(
       const safe = safeWordFile(w);
       const outPath = path.join(outDir, `${safe}.mp3`);
       const rel = `/static/audio/${exp._id}/words/${safe}.mp3`;
+      const asset = await AudioAsset.findOne({
+        experiment: exp._id,
+        kind: 'word',
+        storySet: 'set1',
+        key: safe,
+        word: w.toLowerCase(),
+      }).select('_id');
 
-      if (fs.existsSync(outPath)) {
-        results.push({ word: w, audioUrl: rel });
+      if (asset) {
+        results.push({ word: w, audioUrl: audioAssetUrl(exp._id, asset._id) });
+      } else if (fs.existsSync(outPath)) {
+        const buf = fs.readFileSync(outPath);
+        const restored = await upsertAudioAsset({
+          experiment: exp._id,
+          kind: 'word',
+          key: safe,
+          word: w,
+          data: buf,
+        });
+        results.push({ word: w, audioUrl: audioAssetUrl(exp._id, restored._id) });
       } else {
         results.push({ word: w, audioUrl: null });
       }

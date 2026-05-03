@@ -24,6 +24,7 @@ export type StoryPayload = {
     word: string
     paragraphIndex: number
     sentenceIndex?: number
+    charStart?: number
     charEnd?: number
   }[]
 }

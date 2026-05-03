@@ -37,7 +37,7 @@ export type StoredStudentSession = {
 }
 
 const KEY = 'spellwise-student-session'
-const MAX_AGE_HOURS = 12
+const MAX_AGE_HOURS = 72
 
 const isFresh = (savedAt: number) => Date.now() - savedAt < MAX_AGE_HOURS * 60 * 60 * 1000
 

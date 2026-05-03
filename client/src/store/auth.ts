@@ -13,8 +13,8 @@ const loadStudentSessionFromStorage = (): { accessToken?: string; refreshToken?:
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (!parsed.assignmentId) return null;
-    // Check if session is fresh (< 12 hours)
-    if (Date.now() - parsed.savedAt >= 12 * 60 * 60 * 1000) {
+    // Check if session is fresh. This must outlive the 12-hour recall delay.
+    if (Date.now() - parsed.savedAt >= 72 * 60 * 60 * 1000) {
       localStorage.removeItem('spellwise-student-session');
       return null;
     }

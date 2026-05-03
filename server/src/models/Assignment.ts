@@ -17,6 +17,7 @@ export interface IAssignment extends Document {
   story2CompletedAt?: Date;
   session2StartedAt?: Date;
   session2CompletedAt?: Date;
+  recallCompletedAt?: Date;
   session2UnlockAttempts?: number;
   createdAt: Date;
 }
@@ -36,6 +37,7 @@ const AssignmentSchema = new Schema<IAssignment>({
   story2CompletedAt: { type: Date, required: false },
   session2StartedAt: { type: Date, required: false },
   session2CompletedAt: { type: Date, required: false },
+  recallCompletedAt: { type: Date, required: false },
   session2UnlockAttempts: { type: Number, default: 0 },
   createdAt: { type: Date, default: () => new Date() },
 });
