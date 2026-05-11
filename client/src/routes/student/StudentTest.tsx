@@ -118,7 +118,7 @@ export default function StudentTest() {
 
   const playAudio = (url: string | null) => {
     if (!url || !audioRef.current) return
-    const src = url.startsWith('http') ? url : `${base}${url}`
+    const src = url.startsWith('http') || url.startsWith('/') ? url : `${base}${url}`
     audioRef.current.src = src
     audioRef.current.currentTime = 0
     audioRef.current.play().catch(() => {})

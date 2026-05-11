@@ -215,7 +215,7 @@ function RunFull() {
   // Effects
   useEffect(() => {
     if (audioRef.current && currentTts) {
-      const src = currentTts.startsWith('http') ? currentTts : `${base}${currentTts}`
+      const src = currentTts.startsWith('http') || currentTts.startsWith('/') ? currentTts : `${base}${currentTts}`
       const path = audioRef.current.src.split(window.location.origin)[1] || audioRef.current.src
       if (!path.includes(currentTts)) {
         audioRef.current.src = src
@@ -377,7 +377,7 @@ function RunFull() {
       const fallbackLabel = currentStoryLabel === 'A' ? 'H' : 'N'
       const fallbackPath = `/static/audio/${expId}/${fallbackLabel}_s${clip.globalIndex}.mp3`
       const chosen = segUrl || fallbackPath
-      const src = chosen.startsWith('http') ? chosen : `${base}${chosen}`
+      const src = chosen.startsWith('http') || chosen.startsWith('/') ? chosen : `${base}${chosen}`
 
       sentenceAudioRef.current.src = src
       sentenceAudioRef.current.currentTime = 0
@@ -445,7 +445,7 @@ function RunFull() {
       const fallbackLabel = currentStoryLabel === 'A' ? 'H' : 'N'
       const fallbackPath = `/static/audio/${expId}/${fallbackLabel}_s${clip.globalIndex}.mp3`
       const chosen = segUrl || fallbackPath
-      const src = chosen.startsWith('http') ? chosen : `${base}${chosen}`
+      const src = chosen.startsWith('http') || chosen.startsWith('/') ? chosen : `${base}${chosen}`
 
       sentenceAudioRef.current!.src = src
       sentenceAudioRef.current!.currentTime = 0

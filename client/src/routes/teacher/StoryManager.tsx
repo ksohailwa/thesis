@@ -413,8 +413,11 @@ export default function StoryManager({ experimentId, onStoriesConfirmed }: Props
       const { data } = await api.get(`api/experiments/${experimentId}/story/${storyNum}`)
       const resolveUrl = (u?: string) => {
         if (!u) return ''
-        const baseUrl = u.startsWith('http') ? u : `${base}${u}`
-        // Add cache buster to force browser to reload audio
+        if (u.startsWith('http') || u.startsWith('/')) {
+          const separator = u.includes('?') ? '&' : '?'
+          return `${u}${separator}t=${Date.now()}`
+        }
+        const baseUrl = `${base}${base.endsWith('/') ? '' : '/'}${u}`
         const separator = baseUrl.includes('?') ? '&' : '?'
         return `${baseUrl}${separator}t=${Date.now()}`
       }
@@ -1252,7 +1255,7 @@ export default function StoryManager({ experimentId, onStoriesConfirmed }: Props
               <div className="grid md:grid-cols-2 gap-3">
                 {wordTtsItems.map((item) => {
                   const audioUrl = item.audioUrl
-                    ? (item.audioUrl.startsWith('http') ? item.audioUrl : `${base}${item.audioUrl}`)
+                    ? (item.audioUrl.startsWith('http') || item.audioUrl.startsWith('/') ? item.audioUrl : `${base}${item.audioUrl}`)
                     : ''
                   const audioUrlWithCache = audioUrl ? `${audioUrl}${audioUrl.includes('?') ? '&' : '?'}t=${Date.now()}` : ''
                   return (

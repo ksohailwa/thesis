@@ -42,7 +42,7 @@ export default function JumbleExercise({ word, audioUrl, onComplete, onAttempt }
 
   const playAudio = () => {
     if (!audioUrl || !audioRef.current) return;
-    const src = audioUrl.startsWith('http') ? audioUrl : `${base}${audioUrl}`;
+    const src = audioUrl.startsWith('http') || audioUrl.startsWith('/') ? audioUrl : `${base}${audioUrl}`;
     audioRef.current.src = src;
     audioRef.current.currentTime = 0;
     audioRef.current.play().catch(() => {});

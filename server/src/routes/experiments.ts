@@ -30,7 +30,9 @@ const router = Router();
 const OPENAI_CHAT_MODEL = process.env.OPENAI_MODEL || 'gpt-5.2-2025-12-11';
 
 function audioAssetUrl(experimentId: unknown, assetId: unknown, timestamp = Date.now()) {
-  return `/api/experiments/${experimentId}/audio/${assetId}?t=${timestamp}`;
+  const env = process.env.NODE_ENV || 'development';
+  const basePath = env === 'production' ? '/SpellWise' : '';
+  return `${basePath}/api/experiments/${experimentId}/audio/${assetId}?t=${timestamp}`;
 }
 
 async function upsertAudioAsset(input: {

@@ -50,7 +50,9 @@ function safeWordFile(word: string) {
 }
 
 function audioAssetUrl(experimentId: unknown, assetId: unknown) {
-  return `/api/experiments/${experimentId}/audio/${assetId}`;
+  const env = process.env.NODE_ENV || 'development';
+  const basePath = env === 'production' ? '/SpellWise' : '';
+  return `${basePath}/api/experiments/${experimentId}/audio/${assetId}`;
 }
 
 function computeHighlightIndices(guess: string, target: string): number[] {
