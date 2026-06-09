@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { BookOpen, CheckCircle2, Loader2, Lock, RefreshCw, Unlock, Volume2, AlertCircle } from 'lucide-react'
 import api from '../../lib/api'
+import { resolveAssetUrl } from '../../lib/assetUrl'
 import { toast } from '../../store/toasts'
 
 type Props = {
@@ -28,7 +29,8 @@ type GroupedWords = {
 type StoryPreview = {
   paragraphs: string[]
   sentences?: string[][]
-  ttsAudioUrl?: string
+  ttsAudioUrl?: string | null
+  ttsSegments?: string[]
   noiseOccurrences?: { word: string; paragraphIndex: number }[]
   occurrences?: { word: string; paragraphIndex: number; sentenceIndex?: number }[]
 }
@@ -228,8 +230,6 @@ function LevelSection({
 }
 
 export default function StoryManager({ experimentId, onStoriesConfirmed }: Props) {
-  const base = import.meta.env.VITE_API_BASE_URL || ''
-
   // Word pool
   const [groupedWords, setGroupedWords] = useState<GroupedWords | null>(null)
   const [experimentLevel, setExperimentLevel] = useState<string>('B1')
@@ -393,6 +393,10 @@ export default function StoryManager({ experimentId, onStoriesConfirmed }: Props
               setTtsStatus('success')
               toast.success('TTS audio ready!')
               await Promise.all([fetchStoryPreview(1), fetchStoryPreview(2)])
+            } else if (s?.tts1 === 'error' || s?.tts2 === 'error') {
+              setActiveTtsJob(null)
+              setTtsStatus('error')
+              toast.error('Failed to generate TTS for one of the stories')
             }
           } else if (data?.data?.status === 'error') {
             setActiveTtsJob(null)
@@ -411,20 +415,11 @@ export default function StoryManager({ experimentId, onStoriesConfirmed }: Props
   async function fetchStoryPreview(storyNum: 1 | 2) {
     try {
       const { data } = await api.get(`api/experiments/${experimentId}/story/${storyNum}`)
-      const resolveUrl = (u?: string) => {
-        if (!u) return ''
-        if (u.startsWith('http') || u.startsWith('/')) {
-          const separator = u.includes('?') ? '&' : '?'
-          return `${u}${separator}t=${Date.now()}`
-        }
-        const baseUrl = `${base}${base.endsWith('/') ? '' : '/'}${u}`
-        const separator = baseUrl.includes('?') ? '&' : '?'
-        return `${baseUrl}${separator}t=${Date.now()}`
-      }
       const preview: StoryPreview = {
         paragraphs: data?.paragraphs || [],
         sentences: data?.sentences || [],
-        ttsAudioUrl: resolveUrl(data?.ttsAudioUrl),
+        ttsAudioUrl: resolveAssetUrl(data?.ttsAudioUrl, { cacheBust: true }) || null,
+        ttsSegments: Array.isArray(data?.ttsSegments) ? data.ttsSegments : [],
         noiseOccurrences: data?.noiseOccurrences || [],
         occurrences: data?.occurrences || [],
       }
@@ -631,6 +626,7 @@ export default function StoryManager({ experimentId, onStoriesConfirmed }: Props
 
   const storiesReady = story1Preview?.paragraphs?.length && story2Preview?.paragraphs?.length
   const ttsReady = Boolean(story1Preview?.ttsAudioUrl && story2Preview?.ttsAudioUrl)
+  const hasAnyStoryAudio = Boolean(story1Preview?.ttsAudioUrl || story2Preview?.ttsAudioUrl)
   const wordTtsReady = wordTtsItems.length > 0 && wordTtsItems.every(item => item.audioUrl)
   const canConfirm = storiesReady && ttsReady && wordTtsReady
   const higherBucketTitle =
@@ -1125,12 +1121,12 @@ export default function StoryManager({ experimentId, onStoriesConfirmed }: Props
             )}
 
             {/* Not generated yet state */}
-            {ttsStatus === 'idle' && !ttsReady && storiesReady && (
+            {ttsStatus !== 'generating' && !ttsReady && storiesReady && (
               <div className="flex items-center gap-3 p-4 bg-gray-50 border border-gray-200 rounded-lg">
                 <Volume2 className="w-5 h-5 text-gray-400" />
                 <div>
-                  <div className="font-medium text-gray-700">Story audio not generated</div>
-                  <div className="text-xs text-gray-500">Click the button below to generate TTS audio.</div>
+                  <div className="font-medium text-gray-700">Story audio unavailable</div>
+                  <div className="text-xs text-gray-500">Generate or regenerate story audio before confirming.</div>
                 </div>
               </div>
             )}
@@ -1168,24 +1164,40 @@ export default function StoryManager({ experimentId, onStoriesConfirmed }: Props
             </button>
 
             {/* Audio players */}
-            {ttsReady && (
+            {storiesReady && hasAnyStoryAudio && (
               <div className="grid md:grid-cols-2 gap-4">
-                {story1Preview?.ttsAudioUrl && (
-                  <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
-                    <div className="text-sm font-medium text-blue-800 mb-2">Story 1 Audio</div>
+                <div className="p-3 rounded-lg bg-blue-50 border border-blue-200">
+                  <div className="text-sm font-medium text-blue-800 mb-2">Story 1 Audio</div>
+                  {story1Preview?.ttsAudioUrl ? (
                     <audio key={story1Preview.ttsAudioUrl} controls className="w-full">
-                      <source src={story1Preview.ttsAudioUrl} type="audio/mpeg" />
+                      <source
+                        src={story1Preview.ttsAudioUrl}
+                        type="audio/mpeg"
+                        onError={() => {
+                          setStory1Preview((prev) => prev ? { ...prev, ttsAudioUrl: null } : prev)
+                        }}
+                      />
                     </audio>
-                  </div>
-                )}
-                {story2Preview?.ttsAudioUrl && (
-                  <div className="p-3 rounded-lg bg-purple-50 border border-purple-200">
-                    <div className="text-sm font-medium text-purple-800 mb-2">Story 2 Audio</div>
+                  ) : (
+                    <div className="text-xs text-blue-700">Audio unavailable. Regenerate story audio.</div>
+                  )}
+                </div>
+                <div className="p-3 rounded-lg bg-purple-50 border border-purple-200">
+                  <div className="text-sm font-medium text-purple-800 mb-2">Story 2 Audio</div>
+                  {story2Preview?.ttsAudioUrl ? (
                     <audio key={story2Preview.ttsAudioUrl} controls className="w-full">
-                      <source src={story2Preview.ttsAudioUrl} type="audio/mpeg" />
+                      <source
+                        src={story2Preview.ttsAudioUrl}
+                        type="audio/mpeg"
+                        onError={() => {
+                          setStory2Preview((prev) => prev ? { ...prev, ttsAudioUrl: null } : prev)
+                        }}
+                      />
                     </audio>
-                  </div>
-                )}
+                  ) : (
+                    <div className="text-xs text-purple-700">Audio unavailable. Regenerate story audio.</div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -1254,10 +1266,9 @@ export default function StoryManager({ experimentId, onStoriesConfirmed }: Props
             {wordTtsItems.length > 0 && (
               <div className="grid md:grid-cols-2 gap-3">
                 {wordTtsItems.map((item) => {
-                  const audioUrl = item.audioUrl
-                    ? (item.audioUrl.startsWith('http') || item.audioUrl.startsWith('/') ? item.audioUrl : `${base}${item.audioUrl}`)
+                  const audioUrlWithCache = item.audioUrl
+                    ? resolveAssetUrl(item.audioUrl, { cacheBust: true })
                     : ''
-                  const audioUrlWithCache = audioUrl ? `${audioUrl}${audioUrl.includes('?') ? '&' : '?'}t=${Date.now()}` : ''
                   return (
                     <div key={item.word} className={`p-3 rounded-lg border ${item.audioUrl ? 'bg-white border-gray-200' : 'bg-red-50 border-red-200'}`}>
                       <div className="flex items-center justify-between mb-2">
@@ -1266,7 +1277,19 @@ export default function StoryManager({ experimentId, onStoriesConfirmed }: Props
                       </div>
                       {item.audioUrl ? (
                         <audio key={audioUrlWithCache} controls className="w-full">
-                          <source src={audioUrlWithCache} type="audio/mpeg" />
+                          <source
+                            src={audioUrlWithCache}
+                            type="audio/mpeg"
+                            onError={() => {
+                              setWordTtsItems((prev) =>
+                                prev.map((existing) =>
+                                  existing.word === item.word
+                                    ? { ...existing, audioUrl: null, error: 'Audio unavailable. Regenerate word audio.' }
+                                    : existing
+                                )
+                              )
+                            }}
+                          />
                         </audio>
                       ) : (
                         <div className="text-xs text-red-600">{item.error || 'Audio failed'}</div>

@@ -18,8 +18,12 @@ function readStoredAuth() {
   }
 }
 
+const defaultApiBase = import.meta.env.DEV
+  ? 'http://localhost:4000'
+  : (import.meta.env.BASE_URL || '/').replace(/\/$/, '')
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000',
+  baseURL: import.meta.env.VITE_API_BASE_URL || defaultApiBase,
   withCredentials: true,
   timeout: 90000,
   headers: {

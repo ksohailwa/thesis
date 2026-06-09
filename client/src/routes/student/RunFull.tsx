@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import api from '../../lib/api'
+import { resolveAssetUrl } from '../../lib/assetUrl'
 import { logger } from '../../lib/logger'
 import { toast } from '../../store/toasts'
 import ErrorBoundaryComponent from '../../components/ErrorBoundary'
@@ -113,8 +114,6 @@ function RunFull() {
     sentenceIndex: number
     clips: SentenceClip[]
   } | null>(null)
-  const base = import.meta.env.VITE_API_BASE_URL || ''
-
   // Story setup
   const storySequence = storyOrder === 'B-first' ? (['B', 'A'] as const) : (['A', 'B'] as const)
   const storyByLabel = { A: story1, B: story2 } as const
@@ -215,14 +214,14 @@ function RunFull() {
   // Effects
   useEffect(() => {
     if (audioRef.current && currentTts) {
-      const src = currentTts.startsWith('http') || currentTts.startsWith('/') ? currentTts : `${base}${currentTts}`
+      const src = resolveAssetUrl(currentTts)
       const path = audioRef.current.src.split(window.location.origin)[1] || audioRef.current.src
       if (!path.includes(currentTts)) {
         audioRef.current.src = src
         audioRef.current.load()
       }
     }
-  }, [currentTts, base])
+  }, [currentTts])
 
   useEffect(() => {
     if (!breakUntil) return
@@ -377,7 +376,7 @@ function RunFull() {
       const fallbackLabel = currentStoryLabel === 'A' ? 'H' : 'N'
       const fallbackPath = `/static/audio/${expId}/${fallbackLabel}_s${clip.globalIndex}.mp3`
       const chosen = segUrl || fallbackPath
-      const src = chosen.startsWith('http') || chosen.startsWith('/') ? chosen : `${base}${chosen}`
+      const src = resolveAssetUrl(chosen)
 
       sentenceAudioRef.current.src = src
       sentenceAudioRef.current.currentTime = 0
@@ -445,7 +444,7 @@ function RunFull() {
       const fallbackLabel = currentStoryLabel === 'A' ? 'H' : 'N'
       const fallbackPath = `/static/audio/${expId}/${fallbackLabel}_s${clip.globalIndex}.mp3`
       const chosen = segUrl || fallbackPath
-      const src = chosen.startsWith('http') || chosen.startsWith('/') ? chosen : `${base}${chosen}`
+      const src = resolveAssetUrl(chosen)
 
       sentenceAudioRef.current!.src = src
       sentenceAudioRef.current!.currentTime = 0
@@ -546,9 +545,7 @@ function RunFull() {
       toast.error('Please type something')
       return
     }
-    if (!blank.isNoise) {
-      setAttemptsByWord((prev) => ({ ...prev, [blank.word]: (prev[blank.word] || 0) + 1 }))
-    }
+    setAttemptsByWord((prev) => ({ ...prev, [blank.word]: (prev[blank.word] || 0) + 1 }))
     const isCorrect = val.toLowerCase() === blank.word.toLowerCase()
     const feedbackText = blank.occurrenceIndex >= 5 ? '' : isCorrect ? 'Correct!' : 'Try again'
     const letterFeedback = blank.paragraphIndex === lastParagraphIndex ? undefined : buildLetterFeedback(val, blank.word)
@@ -562,17 +559,6 @@ function RunFull() {
       stopWordTimer(blank.word)
       toast.success('Correct!')
       
-      if (blank.isNoise) {
-        if (paragraphPlaybackRef.current?.active) {
-          setTimeout(() => {
-            resumeParagraphPlayback()
-          }, 300)
-        } else {
-          focusNextBlank(blank.key)
-        }
-        return
-      }
-
       // Only increment streak for unique words (first time spelling each word correctly)
       const wordLower = blank.word.toLowerCase()
       if (!wordsInStreak.has(wordLower)) {
@@ -600,14 +586,10 @@ function RunFull() {
           correct: true,
           story: currentStoryLabel,
           occurrenceIndex: blank.occurrenceIndex,
+          isNoise: Boolean(blank.isNoise),
         })
         .catch((e) => logger.error('Failed to submit attempt', e))
     } else {
-      if (blank.isNoise) {
-        toast.error('Try again')
-        return
-      }
-
       setStreak(0)
       // Pause audio but keep playback state for potential resume
       softPause(false)
@@ -621,6 +603,7 @@ function RunFull() {
           correct: false,
           story: currentStoryLabel,
           occurrenceIndex: blank.occurrenceIndex,
+          isNoise: Boolean(blank.isNoise),
         })
         .catch((e) => logger.error('Failed to submit attempt', e))
 

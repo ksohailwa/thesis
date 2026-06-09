@@ -62,12 +62,21 @@ export default function StoryReader({
         {currentStory.paragraphs && currentStory.paragraphs.map((paragraphText: string, pIdx: number) => {
           if (pIdx !== activeParagraph) return null
           const sentences = splitSentences(paragraphText)
+          let sentenceCursor = 0
+          const sentenceRanges = sentences.map((sentence) => {
+            const foundAt = paragraphText.indexOf(sentence, sentenceCursor)
+            const start = foundAt >= 0 ? foundAt : sentenceCursor
+            const end = start + sentence.length
+            sentenceCursor = end
+            return { start, end }
+          })
           return (
             <div key={pIdx} className="mb-6 last:mb-0">
               <div className="mb-2 flex items-center justify-between">
                 <div className="text-xs uppercase tracking-wide text-gray-400">Paragraph {pIdx + 1}</div>
               </div>
               {sentences.map((sentenceText, sIdx) => {
+                const sentenceRange = sentenceRanges[sIdx] || { start: 0, end: sentenceText.length }
                 const clip = sentenceClips.find(
                   (c) => c.paragraphIndex === pIdx && c.sentenceIndex === sIdx
                 )
@@ -79,6 +88,9 @@ export default function StoryReader({
                   if (b.paragraphIndex !== pIdx) return false
                   // If sentenceIndex is defined, use it for precise filtering
                   if (typeof b.sentenceIndex === 'number') return b.sentenceIndex === sIdx
+                  if (typeof b.charStart === 'number') {
+                    return b.charStart >= sentenceRange.start && b.charStart < sentenceRange.end
+                  }
                   // Fallback for legacy bold marker mode: include all paragraph blanks
                   // (less precise but maintains backwards compatibility)
                   return true
@@ -88,32 +100,48 @@ export default function StoryReader({
                 // This ensures indexOf finds the correct occurrence when same word appears multiple times
                 const sortedBlanks = [...sentenceBlanks].sort((a, b) => (a.charStart || 0) - (b.charStart || 0))
 
-                // Render logic: Inject blanks into sentence string
-                let currentSentenceSegments: (string | Blank)[] = [sentenceText];
+                let currentSentenceSegments: (string | Blank)[] = []
+                const canUseExactPositions = sortedBlanks.every(
+                  (blank) => typeof blank.charStart === 'number'
+                )
 
-                // Inject blanks in reading order (left-to-right)
-                // Each indexOf finds the first remaining occurrence, which is correct after previous blanks are inserted
-                sortedBlanks.forEach(blank => {
-                  for (let i = 0; i < currentSentenceSegments.length; i++) {
-                    const seg = currentSentenceSegments[i]
-                    if (typeof seg === 'string') {
-                      // Search for word in segment
-                      const pos = seg.toLowerCase().indexOf(blank.word.toLowerCase())
-                      if (pos >= 0) {
-                        const before = seg.slice(0, pos)
-                        const after = seg.slice(pos + blank.word.length)
-                        currentSentenceSegments = [
-                          ...currentSentenceSegments.slice(0, i),
-                          before,
-                          blank,
-                          after,
-                          ...currentSentenceSegments.slice(i + 1)
-                        ]
-                        break
+                if (canUseExactPositions) {
+                  let cursor = 0
+                  sortedBlanks.forEach((blank) => {
+                    const localStart = Math.max(0, (blank.charStart || 0) - sentenceRange.start)
+                    const localEnd = Math.min(
+                      sentenceText.length,
+                      (blank.charEnd || (blank.charStart || 0) + blank.word.length) - sentenceRange.start
+                    )
+                    if (localStart < cursor || localEnd <= localStart) return
+                    if (localStart > cursor) currentSentenceSegments.push(sentenceText.slice(cursor, localStart))
+                    currentSentenceSegments.push(blank)
+                    cursor = localEnd
+                  })
+                  if (cursor < sentenceText.length) currentSentenceSegments.push(sentenceText.slice(cursor))
+                } else {
+                  currentSentenceSegments = [sentenceText]
+                  sortedBlanks.forEach(blank => {
+                    for (let i = 0; i < currentSentenceSegments.length; i++) {
+                      const seg = currentSentenceSegments[i]
+                      if (typeof seg === 'string') {
+                        const pos = seg.toLowerCase().indexOf(blank.word.toLowerCase())
+                        if (pos >= 0) {
+                          const before = seg.slice(0, pos)
+                          const after = seg.slice(pos + blank.word.length)
+                          currentSentenceSegments = [
+                            ...currentSentenceSegments.slice(0, i),
+                            before,
+                            blank,
+                            after,
+                            ...currentSentenceSegments.slice(i + 1)
+                          ]
+                          break
+                        }
                       }
                     }
-                  }
-                })
+                  })
+                }
 
                 return (
                   <span

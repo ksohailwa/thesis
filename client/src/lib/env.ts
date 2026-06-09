@@ -11,11 +11,13 @@ interface Env {
 }
 
 function getEnv(): Env {
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000';
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || (
+    import.meta.env.DEV ? 'http://localhost:4000' : (import.meta.env.BASE_URL || '/').replace(/\/$/, '')
+  );
   const nodeEnv = import.meta.env.MODE || 'development';
 
   if (nodeEnv === 'production' && !import.meta.env.VITE_API_BASE_URL) {
-    console.warn('VITE_API_BASE_URL not set, using default:', apiBaseUrl);
+    console.warn('VITE_API_BASE_URL not set, using same-origin base:', apiBaseUrl);
   }
 
   return {

@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef } from 'react';
 import { Shuffle, CheckCircle, XCircle, RotateCcw, Volume2 } from 'lucide-react';
+import { resolveAssetUrl } from '../../../../lib/assetUrl';
 
 type Props = {
   word: string;
@@ -29,7 +30,6 @@ function shuffleLetters(word: string): string[] {
 export default function JumbleExercise({ word, audioUrl, onComplete, onAttempt }: Props) {
   const originalLetters = useMemo(() => shuffleLetters(word), [word]);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const base = import.meta.env.VITE_API_BASE_URL || '';
 
   const [availableLetters, setAvailableLetters] = useState<{ letter: string; id: number }[]>(
     originalLetters.map((l, i) => ({ letter: l, id: i }))
@@ -42,7 +42,7 @@ export default function JumbleExercise({ word, audioUrl, onComplete, onAttempt }
 
   const playAudio = () => {
     if (!audioUrl || !audioRef.current) return;
-    const src = audioUrl.startsWith('http') || audioUrl.startsWith('/') ? audioUrl : `${base}${audioUrl}`;
+    const src = resolveAssetUrl(audioUrl);
     audioRef.current.src = src;
     audioRef.current.currentTime = 0;
     audioRef.current.play().catch(() => {});

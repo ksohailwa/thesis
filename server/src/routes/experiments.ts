@@ -35,6 +35,96 @@ function audioAssetUrl(experimentId: unknown, assetId: unknown, timestamp = Date
   return `${basePath}/api/experiments/${experimentId}/audio/${assetId}?t=${timestamp}`;
 }
 
+function audioDataToBuffer(value: unknown): Buffer {
+  if (!value) return Buffer.alloc(0);
+  if (Buffer.isBuffer(value)) return value;
+  if (value instanceof ArrayBuffer) return Buffer.from(value);
+  if (ArrayBuffer.isView(value)) {
+    return Buffer.from(value.buffer, value.byteOffset, value.byteLength);
+  }
+
+  const maybeData = value as any;
+  if (Array.isArray(maybeData.data)) return Buffer.from(maybeData.data);
+
+  if (typeof maybeData.value === 'function') {
+    const unwrapped = maybeData.value();
+    if (unwrapped !== value) return audioDataToBuffer(unwrapped);
+  }
+
+  if (maybeData.buffer) return audioDataToBuffer(maybeData.buffer);
+  return Buffer.alloc(0);
+}
+
+async function findValidStoryAudioAsset(input: {
+  experiment: any;
+  kind: 'story-full' | 'story-segment';
+  label: 'A' | 'B';
+  storySet: 'set1' | 'set2';
+  key: string;
+}) {
+  return AudioAsset.findOne({
+    experiment: input.experiment,
+    kind: input.kind,
+    label: input.label,
+    storySet: input.storySet,
+    key: input.key,
+    size: { $gt: 0 },
+  })
+    .select('_id size')
+    .lean();
+}
+
+async function resolveStoryAudioUrls(input: {
+  experiment: any;
+  label: 'A' | 'B';
+  storySet: 'set1' | 'set2';
+  conditionLabel: 'H' | 'N';
+  sentences: string[][];
+}) {
+  const timestamp = Date.now();
+  const fullKey = input.storySet === 'set1'
+    ? input.conditionLabel
+    : `${input.conditionLabel}-${input.storySet}`;
+  const fullAsset = await findValidStoryAudioAsset({
+    experiment: input.experiment,
+    kind: 'story-full',
+    label: input.label,
+    storySet: input.storySet,
+    key: fullKey,
+  });
+
+  const ttsAudioUrl = fullAsset
+    ? audioAssetUrl(input.experiment, (fullAsset as any)._id, timestamp)
+    : null;
+
+  const segmentKeys = input.sentences.flatMap((sentenceGroup, paragraphIndex) =>
+    sentenceGroup.map((_, sentenceIndex) => ({
+      key: `${input.conditionLabel}_${paragraphIndex}_${sentenceIndex}.mp3`,
+      paragraphIndex,
+      sentenceIndex,
+    }))
+  );
+  if (!segmentKeys.length) return { ttsAudioUrl, ttsSegments: [] };
+
+  const segmentAssets = await AudioAsset.find({
+    experiment: input.experiment,
+    kind: 'story-segment',
+    label: input.label,
+    storySet: input.storySet,
+    key: { $in: segmentKeys.map((segment) => segment.key) },
+    size: { $gt: 0 },
+  })
+    .select('_id key size')
+    .lean();
+  const byKey = new Map(segmentAssets.map((asset: any) => [asset.key, asset]));
+  const ttsSegments = segmentKeys
+    .map((segment) => byKey.get(segment.key))
+    .filter(Boolean)
+    .map((asset: any) => audioAssetUrl(input.experiment, asset._id, timestamp));
+
+  return { ttsAudioUrl, ttsSegments };
+}
+
 async function upsertAudioAsset(input: {
   experiment: any;
   kind: 'story-full' | 'story-segment' | 'word';
@@ -69,6 +159,11 @@ async function upsertAudioAsset(input: {
 }
 
 router.get('/:id/audio/:assetId', async (req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Range');
+  res.setHeader('Access-Control-Expose-Headers', 'Accept-Ranges, Content-Length, Content-Range');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+
   if (!/^[a-f\d]{24}$/i.test(req.params.id) || !/^[a-f\d]{24}$/i.test(req.params.assetId)) {
     return res.status(404).json({ error: 'Audio not found' });
   }
@@ -76,10 +171,40 @@ router.get('/:id/audio/:assetId', async (req, res) => {
     _id: req.params.assetId,
     experiment: req.params.id,
   }).lean()) as any;
-  if (!asset?.data) return res.status(404).json({ error: 'Audio not found' });
+  if (!asset?.data) {
+    const assetById = await AudioAsset.findById(req.params.assetId)
+      .select('_id experiment kind label storySet key size')
+      .lean();
+    logger.warn('Audio asset not found for experiment stream request', {
+      experimentId: req.params.id,
+      assetId: req.params.assetId,
+      existsById: Boolean(assetById),
+      matchingExperimentId: assetById ? String((assetById as any).experiment) : null,
+      kind: (assetById as any)?.kind,
+      label: (assetById as any)?.label,
+      storySet: (assetById as any)?.storySet,
+      key: (assetById as any)?.key,
+      size: (assetById as any)?.size,
+    });
+    return res.status(404).json({ error: 'Audio not found' });
+  }
 
-  const data = Buffer.isBuffer(asset.data) ? asset.data : Buffer.from(asset.data as any);
+  const data = audioDataToBuffer(asset.data);
   const size = data.length;
+  if (size <= 0) {
+    logger.warn('Audio asset has empty data for stream request', {
+      experimentId: req.params.id,
+      assetId: req.params.assetId,
+      kind: asset.kind,
+      label: asset.label,
+      storySet: asset.storySet,
+      key: asset.key,
+      declaredSize: asset.size,
+      dataType: (asset.data as any)?.constructor?.name || typeof asset.data,
+      bsonType: (asset.data as any)?._bsontype,
+    });
+    return res.status(404).json({ error: 'Audio not found' });
+  }
   const range = req.headers.range;
   res.setHeader('Content-Type', asset.contentType || 'audio/mpeg');
   res.setHeader('Accept-Ranges', 'bytes');
@@ -87,11 +212,14 @@ router.get('/:id/audio/:assetId', async (req, res) => {
 
   if (range) {
     const [startText, endText] = range.replace(/bytes=/, '').split('-');
-    const start = Math.max(0, parseInt(startText, 10) || 0);
-    const end = Math.min(size - 1, endText ? parseInt(endText, 10) : size - 1);
+    const suffixLength = !startText && endText ? parseInt(endText, 10) : NaN;
+    const start = Number.isFinite(suffixLength)
+      ? Math.max(0, size - suffixLength)
+      : Math.max(0, parseInt(startText, 10) || 0);
+    const end = Math.min(size - 1, endText && startText ? parseInt(endText, 10) : size - 1);
     if (start >= size || end < start) {
-      res.setHeader('Content-Range', `bytes */${size}`);
-      return res.status(416).end();
+      res.setHeader('Content-Length', String(size));
+      return res.end(data);
     }
     res.status(206);
     res.setHeader('Content-Range', `bytes ${start}-${end}/${size}`);
@@ -238,12 +366,21 @@ function safeWordFile(word: string) {
 }
 
 function collectSetWords(
-  exp: { stories?: { story1?: { targetWords?: string[] }; story2?: { targetWords?: string[] } } },
+  exp: {
+    stories?: {
+      story1?: { targetWords?: string[]; noiseWords?: string[] };
+      story2?: { targetWords?: string[]; noiseWords?: string[] };
+    };
+    noiseWords?: string[];
+  },
   _set: 'set1' | 'set2'
 ) {
   const entries = [
     ...(exp.stories?.story1?.targetWords || []),
+    ...(exp.stories?.story1?.noiseWords || []),
     ...(exp.stories?.story2?.targetWords || []),
+    ...(exp.stories?.story2?.noiseWords || []),
+    ...(exp.noiseWords || []),
   ];
   return Array.from(new Set(entries.map((w) => w || '').filter(Boolean)));
 }
@@ -1350,22 +1487,27 @@ router.post(
         storySet: 'set1',
         key: safe,
         word: w.toLowerCase(),
-      }).select('_id');
+      }).select('_id size');
       if (!parsed.data.regenerate && existingAsset) {
-        results.push({ word: w, audioUrl: audioAssetUrl(exp._id, existingAsset._id), generated: false });
-        continue;
+        if ((existingAsset as any).size > 0) {
+          results.push({ word: w, audioUrl: audioAssetUrl(exp._id, existingAsset._id), generated: false });
+          continue;
+        }
+        await AudioAsset.deleteOne({ _id: existingAsset._id });
       }
       if (!parsed.data.regenerate && fs.existsSync(outPath)) {
         const buf = fs.readFileSync(outPath);
-        const asset = await upsertAudioAsset({
-          experiment: exp._id,
-          kind: 'word',
-          key: safe,
-          word: w,
-          data: buf,
-        });
-        results.push({ word: w, audioUrl: audioAssetUrl(exp._id, asset._id), generated: false });
-        continue;
+        if (buf.length > 0) {
+          const asset = await upsertAudioAsset({
+            experiment: exp._id,
+            kind: 'word',
+            key: safe,
+            word: w,
+            data: buf,
+          });
+          results.push({ word: w, audioUrl: audioAssetUrl(exp._id, asset._id), generated: false });
+          continue;
+        }
       }
       try {
         const buf = await generateSentenceTTS({ client: oa, text: w });
@@ -1414,20 +1556,27 @@ router.get(
         storySet: 'set1',
         key: safe,
         word: w.toLowerCase(),
-      }).select('_id');
+      }).select('_id size');
 
-      if (asset) {
+      if (asset && (asset as any).size > 0) {
         results.push({ word: w, audioUrl: audioAssetUrl(exp._id, asset._id) });
+      } else if (asset) {
+        await AudioAsset.deleteOne({ _id: asset._id });
+        results.push({ word: w, audioUrl: null });
       } else if (fs.existsSync(outPath)) {
         const buf = fs.readFileSync(outPath);
-        const restored = await upsertAudioAsset({
-          experiment: exp._id,
-          kind: 'word',
-          key: safe,
-          word: w,
-          data: buf,
-        });
-        results.push({ word: w, audioUrl: audioAssetUrl(exp._id, restored._id) });
+        if (buf.length > 0) {
+          const restored = await upsertAudioAsset({
+            experiment: exp._id,
+            kind: 'word',
+            key: safe,
+            word: w,
+            data: buf,
+          });
+          results.push({ word: w, audioUrl: audioAssetUrl(exp._id, restored._id) });
+        } else {
+          results.push({ word: w, audioUrl: null });
+        }
       } else {
         results.push({ word: w, audioUrl: null });
       }
@@ -1450,9 +1599,6 @@ router.get('/:id/story/:label', requireAuth, requireRole('teacher'), async (req,
     $or: [{ storySet: set }, { storySet: { $exists: false } }],
   });
   if (!story) return res.status(404).json({ error: 'Story not found' });
-  // Try to compute a default tts url path
-  const fileLabel = set === 'set1' ? label : `${label}-${set}`;
-  const ttsUrl = `/static/audio/${exp._id}/${fileLabel}.mp3`;
   const sentences = story.paragraphs.map((p) =>
     p
       .split(/(?<=[.!?])\s+/)
@@ -1514,6 +1660,28 @@ router.get('/:id/story/:label', requireAuth, requireRole('teacher'), async (req,
       await story.save();
     }
   }
+  const resolvedAudio = await resolveStoryAudioUrls({
+    experiment: exp._id,
+    label: map as 'A' | 'B',
+    storySet: set,
+    conditionLabel: toConditionLabel(label),
+    sentences,
+  });
+
+  const nextSegments = resolvedAudio.ttsSegments || [];
+  const currentSegments = story.ttsSegments || [];
+  const segmentsChanged =
+    nextSegments.length !== currentSegments.length ||
+    nextSegments.some((url, index) => url !== currentSegments[index]);
+  if (
+    (resolvedAudio.ttsAudioUrl && story.ttsAudioUrl !== resolvedAudio.ttsAudioUrl) ||
+    segmentsChanged
+  ) {
+    if (resolvedAudio.ttsAudioUrl) story.ttsAudioUrl = resolvedAudio.ttsAudioUrl;
+    story.ttsSegments = nextSegments;
+    await story.save();
+  }
+
   return res.json({
     id: story._id,
     label,
@@ -1521,7 +1689,8 @@ router.get('/:id/story/:label', requireAuth, requireRole('teacher'), async (req,
     paragraphs: story.paragraphs,
     occurrences: story.targetOccurrences || [],
     sentences,
-    ttsAudioUrl: story.ttsAudioUrl || ttsUrl,
+    ttsAudioUrl: resolvedAudio.ttsAudioUrl,
+    ttsSegments: nextSegments,
     noiseOccurrences: story.noiseOccurrences || [],
   });
 });

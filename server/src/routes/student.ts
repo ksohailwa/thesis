@@ -55,6 +55,65 @@ function audioAssetUrl(experimentId: unknown, assetId: unknown) {
   return `${basePath}/api/experiments/${experimentId}/audio/${assetId}`;
 }
 
+async function resolveStoryMongoAudio(input: {
+  experiment: unknown;
+  label: 'A' | 'B';
+  conditionLabel: 'H' | 'N';
+  story?: any;
+}) {
+  if (!input.story) return { url: null, segments: [] as string[] };
+
+  const fullAsset = await AudioAsset.findOne({
+    experiment: input.experiment,
+    kind: 'story-full',
+    label: input.label,
+    storySet: 'set1',
+    key: input.conditionLabel,
+    size: { $gt: 0 },
+  })
+    .select('_id')
+    .lean();
+  const url = fullAsset ? audioAssetUrl(input.experiment, (fullAsset as any)._id) : null;
+
+  const segmentKeys = (input.story.paragraphs || []).flatMap((paragraph: string, paragraphIndex: number) => {
+    const sentences = paragraph
+      .split(/(?<=[.!?])\s+/)
+      .map((sentence) => sentence.trim())
+      .filter(Boolean);
+    if (sentences.length === 0 && paragraph.trim()) sentences.push(paragraph.trim());
+    return sentences.map((_, sentenceIndex) => `${input.conditionLabel}_${paragraphIndex}_${sentenceIndex}.mp3`);
+  });
+  const segmentAssets = segmentKeys.length
+    ? await AudioAsset.find({
+        experiment: input.experiment,
+        kind: 'story-segment',
+        label: input.label,
+        storySet: 'set1',
+        key: { $in: segmentKeys },
+        size: { $gt: 0 },
+      })
+        .select('_id key')
+        .lean()
+    : [];
+  const byKey = new Map(segmentAssets.map((asset: any) => [asset.key, asset]));
+  const segments = segmentKeys
+    .map((key) => byKey.get(key))
+    .filter(Boolean)
+    .map((asset: any) => audioAssetUrl(input.experiment, asset._id));
+
+  const currentSegments = input.story.ttsSegments || [];
+  const segmentsChanged =
+    segments.length !== currentSegments.length ||
+    segments.some((segment, index) => segment !== currentSegments[index]);
+  if ((url && input.story.ttsAudioUrl !== url) || segmentsChanged) {
+    if (url) input.story.ttsAudioUrl = url;
+    input.story.ttsSegments = segments;
+    await input.story.save();
+  }
+
+  return { url, segments };
+}
+
 function computeHighlightIndices(guess: string, target: string): number[] {
   // If equal length: mark mismatched positions
   if (guess.length === target.length) {
@@ -440,15 +499,9 @@ router.post('/join', requireAuth, requireRole('student'), async (req: AuthedRequ
     (!storyA.noiseOccurrences || storyA.noiseOccurrences.length === 0) &&
     storyA.paragraphs.length
   ) {
-    const llmNoise = await selectNoiseOccurrencesLLM(
+    storyA.noiseOccurrences = deriveNoiseOccurrences(
       storyA.paragraphs || [],
-      storyA.targetOccurrences || [],
-      Array.from(new Set((storyA.targetOccurrences || []).map((o: any) => o.word)))
-    );
-    storyA.noiseOccurrences = (
-      llmNoise && llmNoise.length
-        ? llmNoise
-        : deriveNoiseOccurrences(storyA.paragraphs || [], storyA.targetOccurrences || [])
+      storyA.targetOccurrences || []
     ) as any;
     if ((storyA.noiseOccurrences || []).length) await storyA.save();
   }
@@ -457,15 +510,9 @@ router.post('/join', requireAuth, requireRole('student'), async (req: AuthedRequ
     (!storyB.noiseOccurrences || storyB.noiseOccurrences.length === 0) &&
     storyB.paragraphs.length
   ) {
-    const llmNoise = await selectNoiseOccurrencesLLM(
+    storyB.noiseOccurrences = deriveNoiseOccurrences(
       storyB.paragraphs || [],
-      storyB.targetOccurrences || [],
-      Array.from(new Set((storyB.targetOccurrences || []).map((o: any) => o.word)))
-    );
-    storyB.noiseOccurrences = (
-      llmNoise && llmNoise.length
-        ? llmNoise
-        : deriveNoiseOccurrences(storyB.paragraphs || [], storyB.targetOccurrences || [])
+      storyB.targetOccurrences || []
     ) as any;
     if ((storyB.noiseOccurrences || []).length) await storyB.save();
   }
@@ -592,6 +639,21 @@ router.post('/join', requireAuth, requireRole('student'), async (req: AuthedRequ
     preCompleted = false;
   }
 
+  const [storyAAudio, storyBAudio] = await Promise.all([
+    resolveStoryMongoAudio({
+      experiment: exp._id,
+      label: 'A',
+      conditionLabel: 'H',
+      story: storyA,
+    }),
+    resolveStoryMongoAudio({
+      experiment: exp._id,
+      label: 'B',
+      conditionLabel: 'N',
+      story: storyB,
+    }),
+  ]);
+
   return res.json({
     assignmentId: String(assignmentDoc?._id || existing?._id),
     experimentId: String(exp._id),
@@ -612,10 +674,10 @@ router.post('/join', requireAuth, requireRole('student'), async (req: AuthedRequ
       occurrences: storyB?.targetOccurrences || [],
       noiseOccurrences: storyB?.noiseOccurrences || [],
     },
-    tts1Url: storyA?.ttsAudioUrl || `/static/audio/${exp._id}/H.mp3`,
-    tts2Url: storyB?.ttsAudioUrl || `/static/audio/${exp._id}/N.mp3`,
-    tts1Segments: storyA?.ttsSegments || [],
-    tts2Segments: storyB?.ttsSegments || [],
+    tts1Url: storyAAudio.url,
+    tts2Url: storyBAudio.url,
+    tts1Segments: storyAAudio.segments,
+    tts2Segments: storyBAudio.segments,
     cues1: cuesFromStory(storyA ?? undefined),
     cues2: cuesFromStory(storyB ?? undefined),
     schedule,
@@ -655,6 +717,7 @@ router.post('/attempt', requireAuth, requireRole('student'), async (req: AuthedR
     correct: z.boolean().optional(),
     story: z.enum(['A', 'B', 'H', 'N']).optional(),
     occurrenceIndex: z.number().int().min(1).optional(),
+    isNoise: z.boolean().optional(),
   });
   const parsedLegacy = legacySchema.safeParse(req.body);
   const parsedExp = experimentSchema.safeParse(req.body);
@@ -662,7 +725,7 @@ router.post('/attempt', requireAuth, requireRole('student'), async (req: AuthedR
     return res.status(400).json({ error: 'Invalid attempt payload' });
 
   if (parsedExp.success) {
-    const { experimentId, word, attempt, correct, story, occurrenceIndex } = parsedExp.data;
+    const { experimentId, word, attempt, correct, story, occurrenceIndex, isNoise } = parsedExp.data;
     try {
       await Event.create({
         session: req.user?.sub as any,
@@ -670,7 +733,7 @@ router.post('/attempt', requireAuth, requireRole('student'), async (req: AuthedR
         experiment: experimentId as any,
         taskType: 'gap-fill',
         type: 'attempt',
-        payload: { word, attempt, correct, story, occurrenceIndex },
+        payload: { word, attempt, correct, story, occurrenceIndex, isNoise: Boolean(isNoise) },
         ts: new Date(),
       });
       clearAnalyticsCache();
@@ -1361,15 +1424,16 @@ router.post(
       Story.findOne({ experiment: expId, label: 'B' }),
     ]);
 
-    // Get unique target words
+    // Get unique words students had to spell, including teacher-selected noise blanks.
     const words = Array.from(
       new Set([
         ...(storyA?.targetOccurrences || []).map((o: any) => o.word),
+        ...(storyA?.noiseOccurrences || []).map((o: any) => o.word),
         ...(storyB?.targetOccurrences || []).map((o: any) => o.word),
+        ...(storyB?.noiseOccurrences || []).map((o: any) => o.word),
       ])
     )
-      .filter(Boolean)
-      .slice(0, 10);
+      .filter(Boolean);
 
     // Fetch word metadata for definitions
     const wordMetadataList = await WordMetadata.find({

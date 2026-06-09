@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import api from '../../lib/api'
+import { resolveAssetUrl } from '../../lib/assetUrl'
 import { toast } from '../../store/toasts'
 import { hydrateStudentSession } from '../../lib/studentSession'
 import { Clock, Volume2, CheckCircle, XCircle } from 'lucide-react'
@@ -48,7 +49,6 @@ export default function StudentTest() {
   const [effortSubmitting, setEffortSubmitting] = useState(false)
   const [effortDone, setEffortDone] = useState(() => sessionStorage.getItem('exp.delayedEffortSubmitted') === 'true')
   const audioRef = useRef<HTMLAudioElement>(null)
-  const base = import.meta.env.VITE_API_BASE_URL || ''
   const [now, setNow] = useState(Date.now())
 
   // Check if recall test is locked (12-hour wait after Story 2)
@@ -118,7 +118,7 @@ export default function StudentTest() {
 
   const playAudio = (url: string | null) => {
     if (!url || !audioRef.current) return
-    const src = url.startsWith('http') || url.startsWith('/') ? url : `${base}${url}`
+    const src = resolveAssetUrl(url)
     audioRef.current.src = src
     audioRef.current.currentTime = 0
     audioRef.current.play().catch(() => {})
