@@ -4,6 +4,7 @@ import { resolveAssetUrl } from '../../lib/assetUrl'
 import { toast } from '../../store/toasts'
 import { hydrateStudentSession } from '../../lib/studentSession'
 import { Clock, Volume2, CheckCircle, XCircle } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 type RecallItem = {
   word: string
@@ -26,8 +27,11 @@ type RecallScore = {
   combinedScore: number
 }
 
+type OffloadingItem = { id: number; text: string }
+
 export default function StudentTest() {
   hydrateStudentSession()
+  const { t } = useTranslation()
 
   const assignmentId = sessionStorage.getItem('assignmentId') || ''
   const expId = sessionStorage.getItem('exp.experimentId') || ''
@@ -48,6 +52,9 @@ export default function StudentTest() {
   const [effortSelected, setEffortSelected] = useState<number | null>(null)
   const [effortSubmitting, setEffortSubmitting] = useState(false)
   const [effortDone, setEffortDone] = useState(() => sessionStorage.getItem('exp.delayedEffortSubmitted') === 'true')
+  const [offloadingAnswers, setOffloadingAnswers] = useState<Record<number, number>>({})
+  const [offloadingSubmitting, setOffloadingSubmitting] = useState(false)
+  const [offloadingDone, setOffloadingDone] = useState(() => sessionStorage.getItem('exp.offloadingSubmitted') === 'true')
   const audioRef = useRef<HTMLAudioElement>(null)
   const [now, setNow] = useState(Date.now())
 
@@ -58,6 +65,11 @@ export default function StudentTest() {
   }, [recallUnlockAt, now])
 
   const isReady = assignmentId && story1Done && story2Done && !recallLocked
+  const offloadingItems: OffloadingItem[] = useMemo(
+    () => [1, 2, 3, 4, 5].map((id) => ({ id, text: t(`survey.items.${id}`) })),
+    [t]
+  )
+  const offloadingAllAnswered = offloadingItems.every((item) => typeof offloadingAnswers[item.id] === 'number')
 
   useEffect(() => {
     // Fetch session2 status to ensure consistent unlock time
@@ -185,6 +197,25 @@ export default function StudentTest() {
       toast.error('Failed to save effort rating')
     } finally {
       setEffortSubmitting(false)
+    }
+  }
+
+  async function submitOffloading() {
+    if (!expId || !offloadingAllAnswered) return
+    setOffloadingSubmitting(true)
+    try {
+      await api.post('api/student/survey/pre', {
+        experimentId: expId,
+        offloadingItems: offloadingItems.map((item) => Number(offloadingAnswers[item.id])),
+      })
+      setOffloadingDone(true)
+      sessionStorage.setItem('exp.offloadingSubmitted', 'true')
+      sessionStorage.setItem('exp.preSurveyCompleted', 'true')
+      toast.success('Questionnaire submitted!')
+    } catch {
+      toast.error('Failed to save questionnaire')
+    } finally {
+      setOffloadingSubmitting(false)
     }
   }
 
@@ -389,10 +420,56 @@ export default function StudentTest() {
             </div>
           )}
 
+          {!offloadingDone && (
+            <div className="bg-white border border-indigo-200 rounded-2xl p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-gray-800 mb-2">{t('survey.title')}</h2>
+              <p className="text-sm text-gray-600 mb-4">{t('survey.subtitle')}</p>
+              <div className="space-y-4">
+                {offloadingItems.map((item) => (
+                  <div key={item.id} className="p-4 border border-gray-200 rounded-xl">
+                    <div className="font-medium text-gray-800 mb-3">{item.text}</div>
+                    <div className="grid grid-cols-6 gap-2 text-center">
+                      {[1, 2, 3, 4, 5, 6].map((value) => (
+                        <button
+                          key={value}
+                          type="button"
+                          className={`px-3 py-2 rounded-lg border font-semibold transition ${
+                            offloadingAnswers[item.id] === value
+                              ? 'bg-indigo-600 text-white border-indigo-600'
+                              : 'border-gray-200 hover:bg-gray-50'
+                          }`}
+                          onClick={() => setOffloadingAnswers((prev) => ({ ...prev, [item.id]: value }))}
+                        >
+                          {value}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+                <span>{Object.keys(offloadingAnswers).length}/{offloadingItems.length} {t('survey.answered')}</span>
+                <button
+                  className={`btn primary ${offloadingAllAnswered ? '' : 'opacity-50 cursor-not-allowed'}`}
+                  disabled={!offloadingAllAnswered || offloadingSubmitting}
+                  onClick={submitOffloading}
+                >
+                  {offloadingSubmitting ? 'Submitting...' : t('survey.submit')}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="text-center">
-            <a href={`${import.meta.env.BASE_URL || '/'}student`} className="btn primary px-6 py-3 inline-flex justify-center">
+            <a
+              href={`${import.meta.env.BASE_URL || '/'}student`}
+              className={`btn primary px-6 py-3 inline-flex justify-center ${offloadingDone ? '' : 'opacity-50 pointer-events-none'}`}
+            >
               Return to Home
             </a>
+            {!offloadingDone && (
+              <p className="text-xs text-gray-500 mt-2">Submit the questionnaire to finish.</p>
+            )}
           </div>
         </div>
       </div>

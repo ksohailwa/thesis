@@ -2032,12 +2032,9 @@ router.post(
     const intervention = await InterventionAttempt.findById(interventionId);
     if (!intervention) return res.status(404).json({ error: 'Intervention not found' });
 
-    // Check if all exercises are completed
-    if (
-      intervention.mcqCompleted &&
-      intervention.jumbleCompleted &&
-      intervention.sentenceCompleted
-    ) {
+    // Sentence formation is disabled for now; MCQ + jumble complete the intervention.
+    if (intervention.mcqCompleted && intervention.jumbleCompleted) {
+      intervention.sentenceCompleted = true;
       intervention.allExercisesCompleted = true;
       intervention.completedAt = new Date();
       intervention.totalTimeMs = Date.now() - intervention.startedAt.getTime();

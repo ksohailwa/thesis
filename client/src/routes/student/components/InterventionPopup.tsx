@@ -3,7 +3,6 @@ import { X, Target } from 'lucide-react';
 import { useIntervention } from '../../../store/intervention';
 import MCQExercise from './exercises/MCQExercise';
 import JumbleExercise from './exercises/JumbleExercise';
-import SentenceExercise from './exercises/SentenceExercise';
 import api from '../../../lib/api';
 
 type Props = {
@@ -19,22 +18,19 @@ export default function InterventionPopup({ onComplete }: Props) {
     currentExercise,
     mcqCompleted,
     jumbleCompleted,
-    sentenceCompleted,
-    selectedBaseWord,
     completeMCQ,
     completeJumble,
-    completeSentence,
     finishIntervention,
   } = useIntervention();
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Check if all exercises are done
+  // Check if the enabled exercises are done. Sentence formation is hidden for now.
   useEffect(() => {
-    if (mcqCompleted && jumbleCompleted && sentenceCompleted && interventionId) {
+    if (mcqCompleted && jumbleCompleted && interventionId) {
       handleCompleteIntervention();
     }
-  }, [mcqCompleted, jumbleCompleted, sentenceCompleted]);
+  }, [mcqCompleted, jumbleCompleted, interventionId]);
 
   const handleCompleteIntervention = async () => {
     if (!interventionId || isSubmitting) return;
@@ -92,26 +88,6 @@ export default function InterventionPopup({ onComplete }: Props) {
     completeJumble();
   };
 
-  // Sentence handlers
-  const handleSentenceAttempt = async (sentence: string, isValid: boolean, feedback: string) => {
-    if (!interventionId || !targetWord || !selectedBaseWord) return;
-
-    try {
-      await api.post('api/student/intervention/sentence', {
-        interventionId,
-        sentence,
-        targetWord,
-        baseWord: selectedBaseWord,
-      });
-    } catch (error) {
-      console.error('Failed to submit sentence attempt:', error);
-    }
-  };
-
-  const handleSentenceComplete = () => {
-    completeSentence();
-  };
-
   if (!isActive || !targetWord || !wordMetadata) {
     return null;
   }
@@ -127,31 +103,31 @@ export default function InterventionPopup({ onComplete }: Props) {
               <h2 className="text-lg font-bold">Let's Practice!</h2>
             </div>
             <div className="text-sm opacity-80">
-              Exercise {currentExercise}/3
+              Exercise {Math.min(currentExercise, 2)}/2
             </div>
           </div>
 
           {/* Progress indicator */}
           <div className="flex items-center justify-center gap-3 mt-4">
-            {[1, 2, 3].map((step) => (
+            {[1, 2].map((step) => (
               <div key={step} className="flex items-center">
                 <div
                   className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
-                    step < currentExercise || (step === 1 && mcqCompleted) || (step === 2 && jumbleCompleted) || (step === 3 && sentenceCompleted)
+                    step < currentExercise || (step === 1 && mcqCompleted) || (step === 2 && jumbleCompleted)
                       ? 'bg-green-400 text-white'
                       : step === currentExercise
                         ? 'bg-white text-purple-600'
                         : 'bg-white/30 text-white/60'
                   }`}
                 >
-                  {(step === 1 && mcqCompleted) || (step === 2 && jumbleCompleted) || (step === 3 && sentenceCompleted)
+                  {(step === 1 && mcqCompleted) || (step === 2 && jumbleCompleted)
                     ? '✓'
                     : step}
                 </div>
-                {step < 3 && (
+                {step < 2 && (
                   <div
                     className={`w-8 h-1 mx-1 rounded ${
-                      (step === 1 && mcqCompleted) || (step === 2 && jumbleCompleted)
+                      step === 1 && mcqCompleted
                         ? 'bg-green-400'
                         : 'bg-white/30'
                     }`}
@@ -163,7 +139,6 @@ export default function InterventionPopup({ onComplete }: Props) {
           <div className="flex justify-center gap-6 mt-2 text-xs opacity-80">
             <span>Definition</span>
             <span>Spelling</span>
-            <span>Sentence</span>
           </div>
         </div>
 
@@ -189,27 +164,15 @@ export default function InterventionPopup({ onComplete }: Props) {
             />
           )}
 
-          {currentExercise === 3 && jumbleCompleted && !sentenceCompleted && interventionId && (
-            <SentenceExercise
-              targetWord={targetWord}
-              definition={wordMetadata.definition}
-              companionWords={wordMetadata.commonCollocations || ['always', 'often', 'really']}
-              exampleSentences={wordMetadata.exampleSentences}
-              interventionId={interventionId}
-              onComplete={handleSentenceComplete}
-              onAttempt={handleSentenceAttempt}
-            />
-          )}
-
           {/* Completion state */}
-          {mcqCompleted && jumbleCompleted && sentenceCompleted && (
+          {mcqCompleted && jumbleCompleted && (
             <div className="text-center py-8">
               <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <span className="text-3xl">🎉</span>
+                <span className="text-3xl">✓</span>
               </div>
               <h3 className="text-xl font-bold text-gray-800 mb-2">All Done!</h3>
               <p className="text-gray-600">
-                Great job completing all exercises!
+                Great job completing both exercises!
               </p>
               {isSubmitting && (
                 <p className="text-sm text-gray-400 mt-4">Saving progress...</p>
