@@ -1607,8 +1607,14 @@ router.get('/:id/story/:label', requireAuth, requireRole('teacher'), async (req,
   );
 
   // Find noise word occurrences - ONLY from teacher-selected noise words
-  const teacherNoiseWords: string[] = (exp as any).noiseWords || [];
-  if ((!story.noiseOccurrences || story.noiseOccurrences.length === 0) && story.paragraphs.length && teacherNoiseWords.length > 0) {
+  const storyKey = map === 'A' ? 'story1' : 'story2';
+  const teacherNoiseWords: string[] = Array.from(
+    new Set([
+      ...(((exp as any).stories?.[storyKey]?.noiseWords || []) as string[]),
+      ...(((exp as any).noiseWords || []) as string[]),
+    ])
+  );
+  if (story.paragraphs.length && teacherNoiseWords.length > 0) {
     const sentencesPerParagraph = story.paragraphs.map((p) => {
       const parts = p.split(/(?<=[.!?])\s+/).filter(Boolean);
       return parts.length ? parts : [p];
@@ -1629,7 +1635,7 @@ router.get('/:id/story/:label', requireAuth, requireRole('teacher'), async (req,
         return Math.max(0, sentences.length - 1);
       };
 
-      // For each teacher-selected noise word, find its first occurrence in this paragraph
+      // For each teacher-selected noise word, find every occurrence in this paragraph.
       for (const noiseWord of teacherNoiseWords) {
         const lower = p.toLowerCase();
         const w = noiseWord.toLowerCase();
@@ -1648,7 +1654,6 @@ router.get('/:id/story/:label', requireAuth, requireRole('teacher'), async (req,
               charStart: at,
               charEnd: at + w.length,
             });
-            break; // Only take first occurrence per paragraph per word
           }
           idx = at + w.length;
         }

@@ -42,8 +42,7 @@ type Props = {
 }
 
 export default function StoryReader({
-  allBlanks,
-  currentStory,
+  parsedStory,
   sentenceClips,
   currentSentenceId,
   activeParagraph,
@@ -59,109 +58,27 @@ export default function StoryReader({
   return (
     <div className={`${readMode ? 'lg:col-span-4' : 'lg:col-span-3'} space-y-6`}>
       <div className="bg-white rounded-2xl shadow-sm border border-neutral-200 p-6 md:p-8 leading-relaxed text-[1.05rem] text-neutral-800 font-sans">
-        {currentStory.paragraphs && currentStory.paragraphs.map((paragraphText: string, pIdx: number) => {
+        {parsedStory.map((paragraph, pIdx: number) => {
           if (pIdx !== activeParagraph) return null
-          const sentences = splitSentences(paragraphText)
-          let sentenceCursor = 0
-          const sentenceRanges = sentences.map((sentence) => {
-            const foundAt = paragraphText.indexOf(sentence, sentenceCursor)
-            const start = foundAt >= 0 ? foundAt : sentenceCursor
-            const end = start + sentence.length
-            sentenceCursor = end
-            return { start, end }
-          })
+          const activeClip = sentenceClips.find((clip) => currentSentenceId === clip.id)
           return (
             <div key={pIdx} className="mb-6 last:mb-0">
               <div className="mb-2 flex items-center justify-between">
                 <div className="text-xs uppercase tracking-wide text-gray-400">Paragraph {pIdx + 1}</div>
               </div>
-              {sentences.map((sentenceText, sIdx) => {
-                const sentenceRange = sentenceRanges[sIdx] || { start: 0, end: sentenceText.length }
-                const clip = sentenceClips.find(
-                  (c) => c.paragraphIndex === pIdx && c.sentenceIndex === sIdx
-                )
-                const isCurrentPlayingSentence = currentSentenceId === clip?.id
-                
-                // Filter blanks that belong to this specific sentence
-                // Using sentenceIndex ensures same word in different sentences gets correct blank
-                const sentenceBlanks = allBlanks.filter((b) => {
-                  if (b.paragraphIndex !== pIdx) return false
-                  // If sentenceIndex is defined, use it for precise filtering
-                  if (typeof b.sentenceIndex === 'number') return b.sentenceIndex === sIdx
-                  if (typeof b.charStart === 'number') {
-                    return b.charStart >= sentenceRange.start && b.charStart < sentenceRange.end
-                  }
-                  // Fallback for legacy bold marker mode: include all paragraph blanks
-                  // (less precise but maintains backwards compatibility)
-                  return true
-                })
-
-                // Sort blanks by charStart (ascending) for correct left-to-right processing
-                // This ensures indexOf finds the correct occurrence when same word appears multiple times
-                const sortedBlanks = [...sentenceBlanks].sort((a, b) => (a.charStart || 0) - (b.charStart || 0))
-
-                let currentSentenceSegments: (string | Blank)[] = []
-                const canUseExactPositions = sortedBlanks.every(
-                  (blank) => typeof blank.charStart === 'number'
-                )
-
-                if (canUseExactPositions) {
-                  let cursor = 0
-                  sortedBlanks.forEach((blank) => {
-                    const localStart = Math.max(0, (blank.charStart || 0) - sentenceRange.start)
-                    const localEnd = Math.min(
-                      sentenceText.length,
-                      (blank.charEnd || (blank.charStart || 0) + blank.word.length) - sentenceRange.start
-                    )
-                    if (localStart < cursor || localEnd <= localStart) return
-                    if (localStart > cursor) currentSentenceSegments.push(sentenceText.slice(cursor, localStart))
-                    currentSentenceSegments.push(blank)
-                    cursor = localEnd
-                  })
-                  if (cursor < sentenceText.length) currentSentenceSegments.push(sentenceText.slice(cursor))
-                } else {
-                  currentSentenceSegments = [sentenceText]
-                  sortedBlanks.forEach(blank => {
-                    for (let i = 0; i < currentSentenceSegments.length; i++) {
-                      const seg = currentSentenceSegments[i]
-                      if (typeof seg === 'string') {
-                        const pos = seg.toLowerCase().indexOf(blank.word.toLowerCase())
-                        if (pos >= 0) {
-                          const before = seg.slice(0, pos)
-                          const after = seg.slice(pos + blank.word.length)
-                          currentSentenceSegments = [
-                            ...currentSentenceSegments.slice(0, i),
-                            before,
-                            blank,
-                            after,
-                            ...currentSentenceSegments.slice(i + 1)
-                          ]
-                          break
-                        }
-                      }
-                    }
-                  })
-                }
-
-                return (
-                  <span
-                    key={`${pIdx}-${sIdx}`}
-                    className={`inline-block group relative cursor-pointer pr-1 transition-all rounded-md px-1
-                      ${isCurrentPlayingSentence ? 'bg-purple-100 ring-2 ring-purple-200' : 'hover:bg-gray-50'}
-                    `}
-                    onClick={() => onPlaySentence(pIdx, sIdx)}
-                  >
-                    {currentSentenceSegments.map((seg, segIdx) => (
-                      typeof seg === 'string' ? <span key={segIdx}>{seg}</span> : renderBlank(seg)
-                    ))}
-                    {isCurrentPlayingSentence && (
-                      <span className="absolute -left-4 top-1 text-purple-600 animate-pulse">
-                        <Play size={10} fill="currentColor" />
-                      </span>
-                    )}
+              <div
+                className={`group relative rounded-md px-1 ${activeClip?.paragraphIndex === pIdx ? 'bg-purple-50 ring-2 ring-purple-100' : ''}`}
+                onClick={() => onPlaySentence(pIdx, 0)}
+              >
+                {paragraph.segments.map((seg, segIdx) => (
+                  typeof seg === 'string' ? <span key={segIdx}>{seg}</span> : renderBlank(seg)
+                ))}
+                {activeClip?.paragraphIndex === pIdx && (
+                  <span className="absolute -left-4 top-1 text-purple-600 animate-pulse">
+                    <Play size={10} fill="currentColor" />
                   </span>
-                )
-              })}
+                )}
+              </div>
             </div>
           )
         })}
