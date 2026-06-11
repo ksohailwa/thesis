@@ -6,6 +6,7 @@ import { toast } from '../../store/toasts'
 import ErrorBoundaryComponent from '../../components/ErrorBoundary'
 import { hydrateStudentSession, loadSavedStudentSession, persistStudentSession } from '../../lib/studentSession'
 import { useIntervention, type WordMetadata } from '../../store/intervention'
+import { Navigate } from 'react-router-dom'
 
 // Types and utilities
 import type { Blank, StoryPayload, BlankState, SentenceClip } from './types'
@@ -35,6 +36,7 @@ function RunFull() {
   hydrateStudentSession()
   const expId = sessionStorage.getItem('exp.experimentId') || sessionStorage.getItem('sessionId') || ''
   const assignmentId = sessionStorage.getItem('assignmentId') || ''
+  const story2Done = sessionStorage.getItem('exp.story2Complete') === 'true'
   const rawCondition = sessionStorage.getItem('exp.condition') || 'with_hints'
   const condition = rawCondition.replace('_', '-') as 'with-hints' | 'without-hints'
   const storyOrder = (sessionStorage.getItem('exp.storyOrder') || 'A-first') as 'A-first' | 'B-first'
@@ -68,6 +70,10 @@ function RunFull() {
         </div>
       </div>
     )
+  }
+
+  if (story2Done) {
+    return <Navigate to="/student/test" replace />
   }
 
   const [storyIndex, setStoryIndex] = useState(0)
