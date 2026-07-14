@@ -15,6 +15,7 @@ import RunFull from "./student/RunFull";
 import StudentTest from "./student/StudentTest";
 import StudentLogin from "./StudentLogin";
 import StudentSurvey from "./student/StudentSurvey";
+import StudentTutorial from "./student/StudentTutorial";
 import Toaster from "../components/Toaster";
 import Layout from "../components/Layout";
 
@@ -93,6 +94,7 @@ export default function App() {
 
           <Route path="/student" element={<RequireRole role="student"><StudentJoin /></RequireRole>} />
           <Route path="/student/consent" element={<RequireRole role="student"><StudentConsentForm /></RequireRole>} />
+          <Route path="/student/tutorial" element={<RequireRole role="student"><StudentTutorial /></RequireRole>} />
           <Route path="/student/survey" element={<RequireRole role="student"><StudentSurvey /></RequireRole>} />
           <Route path="/student/join" element={<Navigate to="/student" replace />} />
           <Route path="/student/exp" element={<Navigate to="/student/run" replace />} />
@@ -111,11 +113,11 @@ export default function App() {
           <div className="bg-[var(--panel)] text-[var(--text)] p-4 rounded shadow max-w-lg w-full border border-[var(--panel-border)]" onClick={e=>e.stopPropagation()}>
             <h3 className="font-semibold mb-2">How it works</h3>
             <ul className="list-disc pl-5 text-sm text-[var(--muted)] space-y-1">
-              <li>Play the story audio at the top (pause/seek as needed).</li>
-              <li>Type answers directly into the blanks; press Enter to check.</li>
-              <li>Green input = correct; red = try again. Incorrect checks pause audio.</li>
-              <li>Use the Hint button or Ctrl/Cmd+H for a helpful nudge.</li>
-              <li>Progress shows how many blanks you have mastered.</li>
+              <li>Use the audio button beside each sentence to listen before answering.</li>
+              <li>Type answers directly into the letter boxes; press Enter or Check to submit.</li>
+              <li>Green letters are correct. Red letters show positions to review before trying again.</li>
+              <li>If a practice window opens, complete both activities to continue.</li>
+              <li>In the final activity, answer directly without practice windows.</li>
             </ul>
             <div className="mt-3 text-right"><button className="px-3 py-1 border rounded" onClick={()=>setShowHelp(false)}>Close</button></div>
           </div>

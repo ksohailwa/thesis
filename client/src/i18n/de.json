@@ -37,7 +37,6 @@
   ,
   "common": {
     "check": "Prüfen",
-    "hint": "Hinweis",
     "reveal": "Aufdecken",
     "confirm": "Bestätigen",
     "back": "Zurück",
@@ -48,13 +47,11 @@
   "gapFill": {
     "tutorial": {
       "title": "Kurzanleitung",
-      "1": "Höre dir oben das Audio an. Du kannst pausieren und springen.",
+      "1": "Nutze den Audio-Button neben jedem Satz, bevor du antwortest.",
       "2": "Tippe direkt in die Lücken. Drücke Enter zum Prüfen.",
       "3": "Grün ist korrekt. Rot bedeutet: versuche es erneut.",
-      "4": "Brauchst du Hilfe? Nutze den Hinweis-Button oder Strg/Cmd+H."
+      "4": "Wenn ein Uebungsfenster erscheint, bearbeite die dort gezeigten Aufgaben."
     },
-    "showHints": "Hinweise anzeigen",
-    "hideHints": "Hinweise ausblenden",
     "finish": "Lückentext beenden",
     "jumpNext": "Zur nächsten unvollständigen springen"
   },
@@ -72,4 +69,3 @@
     "previewReadonly": "Eingaben sind hier schreibgeschützt; Schüler tippen in ihrer Sitzung."
   }
 }
-

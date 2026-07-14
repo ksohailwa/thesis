@@ -34,7 +34,7 @@ export default function SentenceExercise({
   const [isValid, setIsValid] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [isChecking, setIsChecking] = useState(false);
-  const [showHint, setShowHint] = useState(false);
+  const [showExample, setShowExample] = useState(false);
   const [spellingErrorCount, setSpellingErrorCount] = useState(0);
   const [companionIndex, setCompanionIndex] = useState(0);
 
@@ -221,7 +221,7 @@ export default function SentenceExercise({
         </div>
       </div>
 
-      {/* Spelling error hint */}
+      {/* Spelling reminder */}
       {spellingErrorCount > 0 && spellingErrorCount < 2 && (
         <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-center">
           <p className="text-sm text-amber-700">
@@ -230,18 +230,18 @@ export default function SentenceExercise({
         </div>
       )}
 
-      {/* Hint toggle */}
+      {/* Example toggle */}
       {exampleSentences.length > 0 && (
         <button
-          onClick={() => setShowHint(!showHint)}
+          onClick={() => setShowExample(!showExample)}
           className="w-full py-2 text-sm text-amber-600 hover:text-amber-700 flex items-center justify-center gap-1"
         >
           <Lightbulb className="w-4 h-4" />
-          {showHint ? 'Hide example' : 'Show example for inspiration'}
+          {showExample ? 'Hide example' : 'Show example for inspiration'}
         </button>
       )}
 
-      {showHint && exampleSentences.length > 0 && (
+      {showExample && exampleSentences.length > 0 && (
         <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
           <p className="text-xs text-amber-600 font-semibold mb-1">Example:</p>
           <p className="text-sm text-amber-800 italic">"{exampleSentences[0]}"</p>

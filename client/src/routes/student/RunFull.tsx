@@ -14,7 +14,6 @@ import { splitSentences, parseParagraph, buildLetterFeedback } from './utils'
 
 // Sub-components
 import StudentHeader from './components/StudentHeader'
-import Sidebar from './components/Sidebar'
 import StoryReader from './components/StoryReader'
 import FeedbackModal from './components/FeedbackModal'
 import Confetti from './components/Confetti'
@@ -55,8 +54,6 @@ function RunFull() {
   const story2 = JSON.parse(sessionStorage.getItem('exp.story2') || '{}') as StoryPayload
   const tts1Segments = JSON.parse(sessionStorage.getItem('exp.tts1Segments') || '[]')
   const tts2Segments = JSON.parse(sessionStorage.getItem('exp.tts2Segments') || '[]')
-  const tts1 = sessionStorage.getItem('exp.tts1') || ''
-  const tts2 = sessionStorage.getItem('exp.tts2') || ''
 
   if (!expId && !assignmentId) {
     return (
@@ -70,10 +67,6 @@ function RunFull() {
         </div>
       </div>
     )
-  }
-
-  if (story2Done) {
-    return <Navigate to="/student/test" replace />
   }
 
   const [storyIndex, setStoryIndex] = useState(0)
@@ -97,7 +90,6 @@ function RunFull() {
   })
   const [submitting, setSubmitting] = useState(false)
   const [autoAdvance, setAutoAdvance] = useState(false)
-  const [isPlaying, setIsPlaying] = useState(false)
   const [breakUntil, setBreakUntil] = useState<string | null>(() =>
     sessionStorage.getItem('exp.breakUntil')
   )
@@ -109,7 +101,6 @@ function RunFull() {
   const [storySubmitted, setStorySubmitted] = useState(false)
   const wordTimerRef = useRef<Record<string, number>>({})
 
-  const audioRef = useRef<HTMLAudioElement>(null)
   const sentenceAudioRef = useRef<HTMLAudioElement>(null)
   const [currentSentenceId, setCurrentSentenceId] = useState<string | null>(null)
 
@@ -124,11 +115,9 @@ function RunFull() {
   const storySequence = storyOrder === 'B-first' ? (['B', 'A'] as const) : (['A', 'B'] as const)
   const storyByLabel = { A: story1, B: story2 } as const
   const segmentsByLabel = { A: tts1Segments, B: tts2Segments } as const
-  const ttsByLabel = { A: tts1, B: tts2 } as const
   const currentStoryLabel = storySequence[storyIndex]
   const currentStory = storyByLabel[currentStoryLabel]
   const currentSegments = segmentsByLabel[currentStoryLabel]
-  const currentTts = ttsByLabel[currentStoryLabel]
 
   // Noise words come ONLY from teacher selection - no random fallback
   const noiseOccurrences = useMemo(() => {
@@ -185,7 +174,6 @@ function RunFull() {
   const isStoryComplete = solvedCount === totalBlanks && totalBlanks > 0
 
   const [currentParagraph, setCurrentParagraph] = useState(0)
-  const [readMode, setReadMode] = useState(false)
   const [showMentalEffort, setShowMentalEffort] = useState(false)
   const [pendingEffortContext, setPendingEffortContext] = useState<{
     completedPara: number
@@ -218,17 +206,6 @@ function RunFull() {
   const currentParagraphComplete = visibleBlanks.every((b) => blanksState[b.key]?.correct)
 
   // Effects
-  useEffect(() => {
-    if (audioRef.current && currentTts) {
-      const src = resolveAssetUrl(currentTts)
-      const path = audioRef.current.src.split(window.location.origin)[1] || audioRef.current.src
-      if (!path.includes(currentTts)) {
-        audioRef.current.src = src
-        audioRef.current.load()
-      }
-    }
-  }, [currentTts])
-
   useEffect(() => {
     if (!breakUntil) return
     const id = setInterval(() => setNow(Date.now()), 1000)
@@ -333,10 +310,6 @@ function RunFull() {
 
   // Audio functions
   function softPause(clearPlaybackState = true) {
-    if (audioRef.current && !audioRef.current.paused) {
-      audioRef.current.pause()
-      setIsPlaying(false)
-    }
     if (sentenceAudioRef.current && !sentenceAudioRef.current.paused) {
       sentenceAudioRef.current.pause()
     }
@@ -371,11 +344,6 @@ function RunFull() {
   function playSentence(pIdx: number, sIdx: number, autoContinue = false) {
     const clip = sentenceClips.find((c) => c.paragraphIndex === pIdx && c.sentenceIndex === sIdx)
     if (!clip) return
-
-    if (audioRef.current) {
-      audioRef.current.pause()
-      setIsPlaying(false)
-    }
 
     if (sentenceAudioRef.current) {
       const segUrl = currentSegments[clip.globalIndex]
@@ -418,11 +386,6 @@ function RunFull() {
     const clips = sentenceClips.filter((c) => c.paragraphIndex === pIdx)
     if (!clips.length || !sentenceAudioRef.current) return
 
-    if (audioRef.current) {
-      audioRef.current.pause()
-    }
-    setIsPlaying(true)
-
     // Track playback state for resuming
     paragraphPlaybackRef.current = {
       active: true,
@@ -436,7 +399,6 @@ function RunFull() {
       const clip = clips[idx]
       if (!clip) {
         setCurrentSentenceId(null)
-        setIsPlaying(false)
         paragraphPlaybackRef.current = null
         return
       }
@@ -455,9 +417,8 @@ function RunFull() {
       sentenceAudioRef.current!.src = src
       sentenceAudioRef.current!.currentTime = 0
       sentenceAudioRef.current!.onerror = () => {
-        toast.error('Paragraph audio is unavailable.')
+        toast.error('Sentence audio is unavailable.')
         setCurrentSentenceId(null)
-        setIsPlaying(false)
         paragraphPlaybackRef.current = null
       }
       sentenceAudioRef.current!.onended = () => {
@@ -470,7 +431,6 @@ function RunFull() {
         if (hasUnsolvedBlank) {
           // Pause playback - keep tracking state for resume
           setCurrentSentenceId(null)
-          setIsPlaying(false)
           // Focus the first unsolved blank in this sentence
           const firstUnsolved = sentenceBlanks.find((b) => !blanksState[b.key]?.correct)
           if (firstUnsolved) {
@@ -902,6 +862,10 @@ function RunFull() {
   }, [blanksState, locked, checkBlank, handleBlankFocus, handleBlankBlur, focusNextBlank, handleUpdateValue, lastParagraphIndex])
 
   // Conditional renders
+  if (story2Done) {
+    return <Navigate to="/student/test" replace />
+  }
+
   if (showMentalEffort) {
     const targetPara = pendingEffortContext?.completedPara ?? currentParagraph
     return (
@@ -931,28 +895,11 @@ function RunFull() {
         solvedCount={solvedCount}
         totalBlanks={totalBlanks}
         progressPct={progressPct}
-        isPlaying={isPlaying}
-        onTogglePlay={() => {
-          if (sentenceAudioRef.current && !sentenceAudioRef.current.paused) {
-            sentenceAudioRef.current.pause()
-            setIsPlaying(false)
-            return
-          }
-          if (audioRef.current && !audioRef.current.paused) {
-            audioRef.current.pause()
-          }
-          playParagraph(currentParagraph)
-        }}
-        onSkip={(secs) => {
-          if (sentenceAudioRef.current) sentenceAudioRef.current.currentTime += secs
-        }}
         isStoryComplete={isStoryComplete}
-        readMode={readMode}
-        onToggleReadMode={() => setReadMode((v) => !v)}
       />
 
       <div className="container mx-auto px-4 py-8 grid lg:grid-cols-4 gap-8">
-        <div className={`${readMode ? 'lg:col-span-4' : 'lg:col-span-3'} flex items-center justify-between mb-2`}>
+        <div className="lg:col-span-4 flex items-center justify-between mb-2">
           <div className="space-x-2">
             <button
               className="btn"
@@ -1046,17 +993,7 @@ function RunFull() {
           onGoToStory={restartStory}
           renderBlank={renderBlankInput}
           splitSentences={splitSentences}
-          readMode={readMode}
         />
-
-        {!readMode && (
-          <Sidebar
-            streak={streak}
-            sentenceClips={visibleClips}
-            currentSentenceId={currentSentenceId}
-            onPlaySentence={playSentence}
-          />
-        )}
       </div>
 
       {showFeedback && (
@@ -1086,7 +1023,6 @@ function RunFull() {
         <InterventionPopup onComplete={handleInterventionComplete} />
       )}
 
-      <audio ref={audioRef} className="hidden" onEnded={() => setIsPlaying(false)} />
       <audio ref={sentenceAudioRef} className="hidden" />
     </div>
   )

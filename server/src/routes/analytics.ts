@@ -441,7 +441,7 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
   const [assignments, events, effortResponses] = await Promise.all([
     Assignment.find({ experiment: experimentId }).populate('condition', 'type').lean(),
     Event.find({ experiment: experimentId }).lean(),
-    EffortResponse.find({}).lean(), // Query all, then filter by student
+    EffortResponse.find({ experiment: experimentId }).lean(),
   ]);
   let allowedAssignments = assignments.slice();
   if (filters.condition) {
@@ -546,6 +546,12 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
         defTotal: 0,
         defCorrect: 0,
         recallScores: [],
+        delayedOrthographicScores: [],
+        delayedSemanticScores: [],
+        baselineTotal: 0,
+        baselineScoreSum: 0,
+        immediateTotal: 0,
+        immediateScoreSum: 0,
         delayedTestCompleted: false,
         delayedTestScore: null as number | null,
         // Intervention metrics per student
@@ -635,6 +641,23 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
       };
       comparisons[cmpKey].attempts += 1;
       if (correct) comparisons[cmpKey].correct += 1;
+
+      const occurrenceIndex = Number((e.payload as any)?.occurrenceIndex || 0);
+      const isNoise = Boolean((e.payload as any)?.isNoise);
+      const spellingScore =
+        typeof (e.payload as any)?.spellingScore === 'number'
+          ? (e.payload as any).spellingScore
+          : correct
+            ? 1
+            : 0;
+      if (!isNoise && occurrenceIndex === 1) {
+        student.baselineTotal += 1;
+        student.baselineScoreSum += spellingScore;
+      }
+      if (!isNoise && occurrenceIndex === 4) {
+        student.immediateTotal += 1;
+        student.immediateScoreSum += spellingScore;
+      }
     }
 
     if (e.type === 'hint_request') {
@@ -677,15 +700,37 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
       const scores = (e.payload as any)?.scores || [];
       const isDelayed = (e.taskType as any) === 'delayed-recall' || (e.payload as any)?.delayed;
       if (Array.isArray(scores) && scores.length) {
-        const avg = scores.reduce((s: number, i: any) => s + (i.score || 0), 0) / scores.length;
+        const avg =
+          typeof (e.payload as any)?.combinedAvg === 'number'
+            ? (e.payload as any).combinedAvg
+            : scores.reduce(
+                (s: number, i: any) =>
+                  s +
+                  (typeof i.combinedScore === 'number'
+                    ? i.combinedScore
+                    : typeof i.score === 'number'
+                      ? i.score
+                      : 0),
+                0
+              ) / scores.length;
         recallScores.push(avg);
         student.recallScores.push(avg);
         bucket.recall += scores.length;
         funnel.recall += 1;
         // Track delayed test completion
         if (isDelayed) {
+          const spellingAvg =
+            typeof (e.payload as any)?.spellingAvg === 'number'
+              ? (e.payload as any).spellingAvg
+              : scores.reduce((s: number, i: any) => s + (typeof i.spellingScore === 'number' ? i.spellingScore : 0), 0) / scores.length;
+          const definitionAvg =
+            typeof (e.payload as any)?.definitionAvg === 'number'
+              ? (e.payload as any).definitionAvg
+              : scores.reduce((s: number, i: any) => s + (typeof i.definitionScore === 'number' ? i.definitionScore : 0), 0) / scores.length;
           student.delayedTestCompleted = true;
           student.delayedTestScore = Math.round(avg * 100) / 100;
+          student.delayedOrthographicScores.push(spellingAvg);
+          student.delayedSemanticScores.push(definitionAvg);
         }
       }
     }
@@ -803,12 +848,18 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
   });
 
   // Build effort response map per student
-  const effortByStudent: Record<string, number[]> = {};
+  const effortByStudent: Record<string, { all: number[]; intervention: number[]; control: number[] }> = {};
   effortResponses.forEach((e: any) => {
     const sid = String(e.student);
     if (!allowedStudentIds.includes(sid)) return;
-    effortByStudent[sid] = effortByStudent[sid] || [];
-    effortByStudent[sid].push(e.score);
+    if (e.taskType === 'difficulty') return;
+    const assignment = assignmentMap.get(sid) as any;
+    effortByStudent[sid] = effortByStudent[sid] || { all: [], intervention: [], control: [] };
+    effortByStudent[sid].all.push(e.score);
+    if (e.storyLabel && assignment?.hintsStory) {
+      const key = e.storyLabel === assignment.hintsStory ? 'intervention' : 'control';
+      effortByStudent[sid][key].push(e.score);
+    }
   });
 
   const students = Object.values(perStudent).map((s: any) => {
@@ -836,10 +887,30 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
       : 0;
 
     // Mental effort average
-    const efforts = effortByStudent[s.studentId] || [];
-    const avgMentalEffort = efforts.length
-      ? Math.round((efforts.reduce((sum, e) => sum + e, 0) / efforts.length) * 10) / 10
+    const efforts = effortByStudent[s.studentId] || { all: [], intervention: [], control: [] };
+    const avg = (values: number[]) =>
+      values.length
+        ? Math.round((values.reduce((sum, e) => sum + e, 0) / values.length) * 10) / 10
+        : null;
+    const avgMentalEffort = avg(efforts.all);
+    const avgMentalEffortIntervention = avg(efforts.intervention);
+    const avgMentalEffortControl = avg(efforts.control);
+    const baselineAccuracy = s.baselineTotal
+      ? Math.round((s.baselineScoreSum / s.baselineTotal) * 100) / 100
       : null;
+    const immediateOrthographicScore = s.immediateTotal
+      ? Math.round((s.immediateScoreSum / s.immediateTotal) * 100) / 100
+      : null;
+    const delayedOrthographicScore = s.delayedOrthographicScores.length
+      ? Math.round((s.delayedOrthographicScores.reduce((sum: number, score: number) => sum + score, 0) / s.delayedOrthographicScores.length) * 100) / 100
+      : null;
+    const delayedSemanticScore = s.delayedSemanticScores.length
+      ? Math.round((s.delayedSemanticScores.reduce((sum: number, score: number) => sum + score, 0) / s.delayedSemanticScores.length) * 100) / 100
+      : null;
+    const learningGain =
+      baselineAccuracy !== null && delayedOrthographicScore !== null
+        ? Math.round((delayedOrthographicScore - baselineAccuracy) * 100) / 100
+        : null;
 
     // Determine phase conditions based on storyOrder and hintsStory
     let phase1Condition: 'treatment' | 'control' | null = null;
@@ -881,6 +952,14 @@ async function computeExperimentAnalytics(experimentId: string, filters: Analyti
       timeOnTaskMin: minutes,
       // Mental effort
       avgMentalEffort,
+      avgMentalEffortIntervention,
+      avgMentalEffortControl,
+      // Research variables
+      baselineAccuracy,
+      immediateOrthographicScore,
+      delayedOrthographicScore,
+      delayedSemanticScore,
+      learningGain,
       // Delayed test
       delayedTestCompleted: s.delayedTestCompleted,
       delayedTestScore: s.delayedTestScore,
@@ -1317,12 +1396,18 @@ router.get('/experiment/:id/research-export', requireAuth, requireRole('teacher'
     ]);
 
     // Build CSV strings using existing toCsv helper
+    const offloadingByStudent = new Map(
+      offloading.perStudent.map((r: any) => [r.studentId, r])
+    );
     const studentsHeader = [
-      'studentId','username','condition','attempts','accuracy','hints','definitionAccuracy','recallAvg','timeOnTaskMin','avgMentalEffort','delayedTestCompleted','delayedTestScore','phase1Condition','phase1Story','phase2Condition','phase2Story'
+      'studentId','username','condition','storyOrder','hintsStory','phase1Condition','phase1Story','phase2Condition','phase2Story','attempts','accuracy','baselineAccuracy','immediateOrthographicScore','delayedOrthographicScore','delayedSemanticScore','learningGain','hints','definitionAccuracy','recallAvg','timeOnTaskMin','avgMentalEffort','avgMentalEffortIntervention','avgMentalEffortControl','offloadingScore','delayedTestCompleted','delayedTestScore'
     ];
-    const studentsRows = summaryData.students.map((s: any) => [
-      s.studentId, s.username, s.condition, s.attempts, s.accuracy, s.hints, s.definitionAccuracy, s.recallAvg, s.timeOnTaskMin ?? '', s.avgMentalEffort ?? '', s.delayedTestCompleted, s.delayedTestScore ?? '', s.phase1Condition ?? '', s.phase1Story ?? '', s.phase2Condition ?? '', s.phase2Story ?? ''
-    ]);
+    const studentsRows = summaryData.students.map((s: any) => {
+      const off = offloadingByStudent.get(s.studentId) as any;
+      return [
+        s.studentId, s.username, s.condition, s.storyOrder ?? '', s.hintsStory ?? '', s.phase1Condition ?? '', s.phase1Story ?? '', s.phase2Condition ?? '', s.phase2Story ?? '', s.attempts, s.accuracy, s.baselineAccuracy ?? '', s.immediateOrthographicScore ?? '', s.delayedOrthographicScore ?? '', s.delayedSemanticScore ?? '', s.learningGain ?? '', s.hints, s.definitionAccuracy, s.recallAvg, s.timeOnTaskMin ?? '', s.avgMentalEffort ?? '', s.avgMentalEffortIntervention ?? '', s.avgMentalEffortControl ?? '', off?.offloadingScore ?? '', s.delayedTestCompleted, s.delayedTestScore ?? ''
+      ];
+    });
     const studentsCsv = toCsv([studentsHeader, ...studentsRows]);
 
     const wordsHeader = ['word','attempts','accuracy'];
@@ -1344,7 +1429,7 @@ router.get('/experiment/:id/research-export', requireAuth, requireRole('teacher'
     const userMap = new Map(users.map((u: any) => [String(u._id), u]));
     const assignmentMap = new Map(allowedAssignments.map((a: any) => [String(a.student), a]));
     const filtered = filterEvents(events, filters, allowedStudentIds);
-    const eventsHeader = ['ts','student','username','condition','type','taskType','story','word','attempt','correct','payload'];
+    const eventsHeader = ['ts','student','username','condition','type','taskType','story','word','attempt','correct','spellingScore','payload'];
     const eventsRows = filtered.map((e: any) => {
       const storyRaw = e.payload?.story || e.payload?.storyLabel || e.payload?.storyKey;
       const story = normalizeStoryLabel(storyRaw) || '';
@@ -1361,6 +1446,7 @@ router.get('/experiment/:id/research-export', requireAuth, requireRole('teacher'
         e.payload?.word || e.targetWord || '',
         e.payload?.attempt || '',
         e.payload?.correct ?? '',
+        e.payload?.spellingScore ?? '',
         JSON.stringify(e.payload || {}),
       ];
     });
@@ -1372,7 +1458,7 @@ router.get('/experiment/:id/research-export', requireAuth, requireRole('teacher'
     const offCsv = toCsv([offHeader, ...offRows]);
 
     // Codebook (markdown) - concise and practical
-    const codebook = `# Research Export Codebook\n\n- students.csv: One row per student in the experiment.\n  - studentId: MongoDB ObjectId as string\n  - username: pseudonymized username/email\n  - condition: treatment|control (presentation layer)\n  - attempts: total gap-fill attempts (events)\n  - accuracy: % correct (attempt-level)\n  - hints: hints requested (events)\n  - definitionAccuracy: % correct on definition checks (targets only)\n  - recallAvg: mean of recall scores (0-1)\n  - timeOnTaskMin: minutes between first and last event per student\n  - avgMentalEffort: 1–9 Paas average (if present)\n  - delayedTestCompleted: boolean\n  - delayedTestScore: average combined delayed recall (0-1)\n  - phase1Condition/phase2Condition: treatment|control by story order\n  - phase1Story/phase2Story: A|B\n\n- words.csv: Per-word aggregates.\n  - accuracy: % correct on attempts containing that word\n\n- timeline.csv: Daily aggregates.\n  - attempts, correct, hints, definitions, recall: daily counts\n\n- events.csv: Event log filtered by current UI filters.\n  - type: attempt|hint_request|definition|recall-attempt|...\n  - story: A|B (if applicable)\n  - payload: JSON with event-specific details\n\n- offloading.csv: Per-student offloading analytics.\n  - offloadingScore: 1–6 (Barr 5-item average)\n  - hintRate: hints/attempts; revealRate: revealed/attempt docs\n  - delayedRecallAvg: combined delayed recall (0-1)\n\nNotes:\n- Condition labels map internal with-hints/without-hints to treatment/control.\n- Recall averages are 0-1; multiply by 100 for %.\n- Offloading score computed from pre-survey (EN/DE items).\n`;
+    const codebook = `# Research Export Codebook\n\n- students.csv: One row per student in the experiment.\n  - baselineAccuracy: target-word spelling accuracy at first occurrence (0-1).\n  - immediateOrthographicScore: target-word spelling accuracy at fourth occurrence/immediate recall (0-1).\n  - delayedOrthographicScore: spelling score from delayed recall (0-1).\n  - delayedSemanticScore: definition score from delayed recall (0-1).\n  - learningGain: delayedOrthographicScore minus baselineAccuracy.\n  - avgMentalEffort: Paas effort average, excluding difficulty ratings.\n  - avgMentalEffortIntervention/control: Paas effort by story condition.\n  - offloadingScore: 1-6 cognitive offloading survey average.\n  - phase1Condition/phase2Condition: treatment|control by story order.\n\n- words.csv: Per-word aggregates.\n- timeline.csv: Daily aggregates.\n- events.csv: Event log filtered by current UI filters.\n- offloading.csv: Per-student offloading analytics.\n\nRQ mapping:\n- RQ1: delayedOrthographicScore and learningGain.\n- RQ2: delayedSemanticScore.\n- RQ3: avgMentalEffort with immediateOrthographicScore and delayedOrthographicScore/delayedSemanticScore.\n- RQ4: offloadingScore, avgMentalEffortIntervention, avgMentalEffortControl, learningGain, and condition.\n`;
 
     // Stream ZIP
     res.setHeader('Content-Type', 'application/zip');

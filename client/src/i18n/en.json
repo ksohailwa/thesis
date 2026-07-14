@@ -17,7 +17,6 @@
   },
   "common": {
     "check": "Check",
-    "hint": "Hint",
     "reveal": "Reveal",
     "confirm": "Confirm",
     "back": "Back",
@@ -28,13 +27,11 @@
   "gapFill": {
     "tutorial": {
       "title": "Quick Tutorial",
-      "1": "Listen to the story audio at the top. You can pause and seek.",
+      "1": "Use the audio button beside each sentence before answering.",
       "2": "Type directly into the blanks. Press Enter to Check.",
       "3": "Green means correct. Red means try again.",
-      "4": "Need help? Use the Hint button or Ctrl/Cmd+H."
+      "4": "If a practice window opens, complete the activities shown there."
     },
-    "showHints": "Show Hints",
-    "hideHints": "Hide Hints",
     "finish": "Finish Gap-Fill",
     "jumpNext": "Jump to next incomplete"
   },

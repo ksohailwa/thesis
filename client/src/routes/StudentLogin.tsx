@@ -28,7 +28,8 @@ export default function StudentLogin() {
       if (data?.newUser || !data?.consented) {
         nav('/student/consent')
       } else {
-        nav('/student')
+        const tutorialSeen = localStorage.getItem(`student-tutorial:${String(data.username || un).toLowerCase()}`) === 'true'
+        nav(tutorialSeen ? '/student' : '/student/tutorial')
       }
     } catch (e: any) {
       const serverErr = e?.response?.data?.error

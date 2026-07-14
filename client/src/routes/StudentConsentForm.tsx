@@ -28,7 +28,7 @@ export default function StudentConsent() {
       .then(() => {
         localStorage.setItem(consentKey, 'true')
         localStorage.setItem(`${consentKey}:date`, new Date().toISOString())
-        nav('/student')
+        nav('/student/tutorial')
       })
       .catch(() => toast.error('Could not save consent. Please try again.'))
   }

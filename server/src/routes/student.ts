@@ -678,6 +678,7 @@ router.post('/attempt', requireAuth, requireRole('student'), async (req: AuthedR
 
   if (parsedExp.success) {
     const { experimentId, word, attempt, correct, story, occurrenceIndex, isNoise } = parsedExp.data;
+    const spellingScore = normalizedLevenshtein(attempt.toLowerCase(), word.toLowerCase());
     try {
       await Event.create({
         session: req.user?.sub as any,
@@ -685,7 +686,15 @@ router.post('/attempt', requireAuth, requireRole('student'), async (req: AuthedR
         experiment: experimentId as any,
         taskType: 'gap-fill',
         type: 'attempt',
-        payload: { word, attempt, correct, story, occurrenceIndex, isNoise: Boolean(isNoise) },
+        payload: {
+          word,
+          attempt,
+          correct,
+          spellingScore,
+          story,
+          occurrenceIndex,
+          isNoise: Boolean(isNoise),
+        },
         ts: new Date(),
       });
       clearAnalyticsCache();

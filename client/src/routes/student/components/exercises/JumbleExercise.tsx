@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { Shuffle, CheckCircle, XCircle, RotateCcw, Volume2 } from 'lucide-react';
 import { resolveAssetUrl } from '../../../../lib/assetUrl';
 
@@ -8,6 +8,9 @@ type Props = {
   onComplete: () => void;
   onAttempt: (arrangement: string, isCorrect: boolean) => void;
 };
+
+type LetterItem = { letter: string; id: number };
+type LetterSlot = LetterItem | null;
 
 // Shuffle letters ensuring it's not the correct word
 function shuffleLetters(word: string): string[] {
@@ -34,11 +37,22 @@ export default function JumbleExercise({ word, audioUrl, onComplete, onAttempt }
   const [availableLetters, setAvailableLetters] = useState<{ letter: string; id: number }[]>(
     originalLetters.map((l, i) => ({ letter: l, id: i }))
   );
-  const [selectedLetters, setSelectedLetters] = useState<{ letter: string; id: number }[]>([]);
+  const [selectedLetters, setSelectedLetters] = useState<LetterSlot[]>(
+    Array.from({ length: word.length }, () => null)
+  );
   const [lockedPositions, setLockedPositions] = useState<Set<number>>(new Set());
   const [showResult, setShowResult] = useState(false);
   const [isCorrect, setIsCorrect] = useState(false);
   const [attemptCount, setAttemptCount] = useState(0);
+
+  useEffect(() => {
+    setAvailableLetters(originalLetters.map((l, i) => ({ letter: l, id: i })));
+    setSelectedLetters(Array.from({ length: word.length }, () => null));
+    setLockedPositions(new Set());
+    setShowResult(false);
+    setIsCorrect(false);
+    setAttemptCount(0);
+  }, [originalLetters, word.length]);
 
   const playAudio = () => {
     if (!audioUrl || !audioRef.current) return;
@@ -50,8 +64,15 @@ export default function JumbleExercise({ word, audioUrl, onComplete, onAttempt }
 
   const handleSelectLetter = (item: { letter: string; id: number }) => {
     if (showResult) return;
+    const nextEmptyIndex = selectedLetters.findIndex((slot) => slot === null);
+    if (nextEmptyIndex === -1) return;
+
     setAvailableLetters((prev) => prev.filter((l) => l.id !== item.id));
-    setSelectedLetters((prev) => [...prev, item]);
+    setSelectedLetters((prev) => {
+      const next = [...prev];
+      next[nextEmptyIndex] = item;
+      return next;
+    });
   };
 
   const handleRemoveLetter = (item: { letter: string; id: number }, index: number) => {
@@ -59,25 +80,30 @@ export default function JumbleExercise({ word, audioUrl, onComplete, onAttempt }
     // Don't allow removing locked letters
     if (lockedPositions.has(index)) return;
 
-    setSelectedLetters((prev) => prev.filter((l) => l.id !== item.id));
+    setSelectedLetters((prev) => {
+      const next = [...prev];
+      next[index] = null;
+      return next;
+    });
     setAvailableLetters((prev) => [...prev, item]);
   };
 
   const handleReset = () => {
     // Only reset non-locked letters
-    const lockedLetters = selectedLetters.filter((_, i) => lockedPositions.has(i));
-    const unlockedLetters = selectedLetters.filter((_, i) => !lockedPositions.has(i));
+    const unlockedLetters = selectedLetters.filter(
+      (item, i): item is LetterItem => !!item && !lockedPositions.has(i)
+    );
 
     // Return unlocked letters to available
     setAvailableLetters((prev) => [...prev, ...unlockedLetters]);
-    setSelectedLetters(lockedLetters);
+    setSelectedLetters((prev) => prev.map((item, i) => (lockedPositions.has(i) ? item : null)));
     setShowResult(false);
     setIsCorrect(false);
   };
 
   const handleFullReset = () => {
     setAvailableLetters(originalLetters.map((l, i) => ({ letter: l, id: i })));
-    setSelectedLetters([]);
+    setSelectedLetters(Array.from({ length: word.length }, () => null));
     setLockedPositions(new Set());
     setShowResult(false);
     setIsCorrect(false);
@@ -85,7 +111,7 @@ export default function JumbleExercise({ word, audioUrl, onComplete, onAttempt }
   };
 
   const handleCheck = () => {
-    const arrangement = selectedLetters.map((l) => l.letter).join('');
+    const arrangement = selectedLetters.map((l) => l?.letter || '').join('');
     const correct = arrangement.toLowerCase() === word.toLowerCase();
     setIsCorrect(correct);
     setShowResult(true);
@@ -102,7 +128,7 @@ export default function JumbleExercise({ word, audioUrl, onComplete, onAttempt }
       const correctLetters = word.toLowerCase().split('');
 
       selectedLetters.forEach((item, index) => {
-        if (item.letter.toLowerCase() === correctLetters[index]) {
+        if (item && item.letter.toLowerCase() === correctLetters[index]) {
           newLockedPositions.add(index);
         }
       });
@@ -125,19 +151,12 @@ export default function JumbleExercise({ word, audioUrl, onComplete, onAttempt }
 
   const handleRetry = () => {
     // Keep locked letters in place, reset others
-    const lockedLetters: { letter: string; id: number }[] = [];
-    const unlockedLetters: { letter: string; id: number }[] = [];
-
-    selectedLetters.forEach((item, index) => {
-      if (lockedPositions.has(index)) {
-        lockedLetters.push(item);
-      } else {
-        unlockedLetters.push(item);
-      }
-    });
+    const unlockedLetters = selectedLetters.filter(
+      (item, index): item is LetterItem => !!item && !lockedPositions.has(index)
+    );
 
     // Rebuild selected with locked letters in place, unlocked go back to available
-    setSelectedLetters(lockedLetters);
+    setSelectedLetters((prev) => prev.map((item, index) => (lockedPositions.has(index) ? item : null)));
     setAvailableLetters((prev) => [...prev, ...unlockedLetters]);
     setShowResult(false);
     setIsCorrect(false);
@@ -165,6 +184,7 @@ export default function JumbleExercise({ word, audioUrl, onComplete, onAttempt }
 
   const lockedCount = lockedPositions.size;
   const totalLetters = word.length;
+  const selectedCount = selectedLetters.filter(Boolean).length;
 
   return (
     <div className="space-y-4">
@@ -202,7 +222,7 @@ export default function JumbleExercise({ word, audioUrl, onComplete, onAttempt }
       <div className="min-h-[80px] p-3 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
         <p className="text-xs text-gray-400 mb-2">Your arrangement:</p>
         <div className="flex flex-wrap gap-2 justify-center min-h-[40px]">
-          {selectedLetters.length === 0 ? (
+          {selectedCount === 0 ? (
             <span className="text-gray-400 italic">Click letters below to start</span>
           ) : (
             <>
@@ -256,7 +276,7 @@ export default function JumbleExercise({ word, audioUrl, onComplete, onAttempt }
               <button
                 key={item.id}
                 onClick={() => handleSelectLetter(item)}
-                disabled={showResult || selectedLetters.length >= word.length}
+                disabled={showResult || selectedCount >= word.length}
                 className="w-10 h-10 rounded-lg bg-gray-100 border-2 border-gray-300 font-bold text-lg text-gray-700 flex items-center justify-center hover:bg-purple-100 hover:border-purple-400 hover:scale-105 active:scale-95 transition-all disabled:opacity-50"
               >
                 {item.letter.toUpperCase()}
@@ -304,7 +324,7 @@ export default function JumbleExercise({ word, audioUrl, onComplete, onAttempt }
         {!showResult ? (
           <button
             onClick={handleCheck}
-            disabled={selectedLetters.length !== word.length}
+            disabled={selectedCount !== word.length}
             className="flex-[2] py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold text-lg shadow-lg hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:hover:scale-100"
           >
             Check Spelling

@@ -281,7 +281,7 @@ export default function TeacherAnalytics() {
           { label: 'Students', value: summary.counts.students },
           { label: 'Attempts', value: summary.counts.attempts },
           { label: 'Correct Rate', value: `${summary.counts.correctRate}%` },
-          { label: 'Hints Used', value: summary.counts.hints },
+          { label: 'Intervention Events', value: summary.counts.hints },
           { label: 'Definition Accuracy', value: `${summary.counts.definitionAccuracy}%` },
           { label: 'Recall Avg', value: summary.counts.recallAvg },
         ]}
@@ -308,7 +308,7 @@ export default function TeacherAnalytics() {
         ))}
       </div>
 
-      {/* Trends (Attempts, Correct, Hints, Recall) */}
+      {/* Trends (Attempts, Correct, Intervention Events, Recall) */}
       <div className="bg-white rounded-2xl shadow-lg p-6 border-2 border-gray-100">
         <h2 className="text-xl font-bold text-gray-900 mb-4">Trends</h2>
         <div className="grid md:grid-cols-2 gap-6">
@@ -336,10 +336,10 @@ export default function TeacherAnalytics() {
               ))}
             </div>
           </div>
-          {/* Hints */}
+          {/* Intervention events */}
           <div>
             <div className="flex items-center justify-between mb-1">
-              <h3 className="text-sm font-semibold text-gray-800">Hints</h3>
+              <h3 className="text-sm font-semibold text-gray-800">Intervention Events</h3>
               <span className="text-xs text-gray-500">peak {timelineMaxHints}</span>
             </div>
             <div className="flex items-end gap-1 h-24">
@@ -582,7 +582,7 @@ export default function TeacherAnalytics() {
               <div className="bg-white rounded-xl border-2 border-gray-100 p-4">
                 <h3 className="text-sm font-semibold text-gray-800 mb-2">Correlations (Pearson r)</h3>
                 <div className="text-sm text-gray-700 space-y-1">
-                  <div>Offloading × Hint Rate: <span className="font-semibold">{offloading.correlations.offloading_hintRate ?? '—'}</span></div>
+                  <div>Offloading × Intervention Rate: <span className="font-semibold">{offloading.correlations.offloading_hintRate ?? '—'}</span></div>
                   <div>Offloading × Reveal Rate: <span className="font-semibold">{offloading.correlations.offloading_revealRate ?? '—'}</span></div>
                   <div>Offloading × Delayed Recall: <span className="font-semibold">{offloading.correlations.offloading_delayedRecall ?? '—'}</span></div>
                 </div>
@@ -685,9 +685,9 @@ export default function TeacherAnalytics() {
               })()}
             </div>
 
-            {/* Scatter: Hint Rate vs Delayed Recall by Condition */}
+            {/* Scatter: Intervention Rate vs Delayed Recall by Condition */}
             <div className="bg-white rounded-xl border-2 border-gray-100 p-4">
-              <h3 className="text-sm font-semibold text-gray-800 mb-3">Hint Rate vs Delayed Recall</h3>
+              <h3 className="text-sm font-semibold text-gray-800 mb-3">Intervention Rate vs Delayed Recall</h3>
               {(() => {
                 const ptsT = (offloading.perStudent as OffloadingRow[]).filter(r => r.condition==='treatment' && typeof r.delayedRecallAvg==='number').map(r => ({ x: r.hintRate, y: r.delayedRecallAvg as number }))
                 const ptsC = (offloading.perStudent as OffloadingRow[]).filter(r => r.condition==='control' && typeof r.delayedRecallAvg==='number').map(r => ({ x: r.hintRate, y: r.delayedRecallAvg as number }))
@@ -697,9 +697,9 @@ export default function TeacherAnalytics() {
                     <ResponsiveContainer>
                       <ScatterChart margin={{ left: 8, right: 16, top: 8, bottom: 8 }}>
                         <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis type="number" dataKey="x" name="Hint Rate" tickFormatter={(v)=>v.toFixed(2)} domain={[0, 'auto']} />
+                        <XAxis type="number" dataKey="x" name="Intervention Rate" tickFormatter={(v)=>v.toFixed(2)} domain={[0, 'auto']} />
                         <YAxis type="number" dataKey="y" name="Delayed Recall" tickFormatter={(v)=> (v*100).toFixed(0)+'%'} domain={[0,1]} />
-                        <RTooltip formatter={(v:any, n:any)=> n==='x' ? [v.toFixed(3),'Hint Rate'] : [(v*100).toFixed(1)+'%','Delayed Recall']} />
+                        <RTooltip formatter={(v:any, n:any)=> n==='x' ? [v.toFixed(3),'Intervention Rate'] : [(v*100).toFixed(1)+'%','Delayed Recall']} />
                         <RLegend />
                         <Scatter name="Treatment" data={ptsT} fill="#16a34a" />
                         <Scatter name="Control" data={ptsC} fill="#6b7280" />
@@ -717,7 +717,7 @@ export default function TeacherAnalytics() {
                 <table className="w-full border-collapse text-sm">
                   <thead>
                     <tr className="border-b-2 border-gray-300 text-left text-gray-600">
-                      {['Username','Condition','Offloading','Hint Rate','Reveal Rate','Delayed Recall','Attempts','Hints','Reveals'].map((h) => (
+                      {['Username','Condition','Offloading','Intervention Rate','Reveal Rate','Delayed Recall','Attempts','Intervention Events','Reveals'].map((h) => (
                         <th key={h} className="p-2 font-semibold">{h}</th>
                       ))}
                     </tr>
@@ -899,7 +899,7 @@ export default function TeacherAnalytics() {
                   <th className="p-3">Story</th>
                   <th className="p-3">Attempts</th>
                   <th className="p-3">Accuracy</th>
-                  <th className="p-3">Hints</th>
+                  <th className="p-3">Intervention Events</th>
                 </tr>
               </thead>
               <tbody>
@@ -944,7 +944,7 @@ export default function TeacherAnalytics() {
                     <th className="p-3">Day</th>
                     <th className="p-3">Attempts</th>
                     <th className="p-3">Correct</th>
-                    <th className="p-3">Hints</th>
+                    <th className="p-3">Intervention Events</th>
                     <th className="p-3">Definitions</th>
                     <th className="p-3">Recall</th>
                   </tr>

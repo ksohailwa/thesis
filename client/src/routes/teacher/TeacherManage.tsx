@@ -388,7 +388,7 @@ export default function TeacherManage() {
                   <strong>Correct Answers:</strong> {studentProgress.correctAnswers}
                 </div>
                 <div>
-                  <strong>Hints Used:</strong> {studentProgress.hintsUsed}
+                  <strong>Intervention Events:</strong> {studentProgress.hintsUsed}
                 </div>
               </div>
             ) : (

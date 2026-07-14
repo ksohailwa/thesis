@@ -94,7 +94,7 @@ export default function StudentDetailModal({
               {[
                 { label: 'Attempts', value: studentDetail.student.attempts },
                 { label: 'Accuracy', value: `${studentDetail.student.accuracy}%` },
-                { label: 'Hints', value: studentDetail.student.hints },
+                { label: 'Intervention Events', value: studentDetail.student.hints },
                 { label: 'Definition Accuracy', value: `${studentDetail.student.definitionAccuracy}%` },
                 { label: 'Recall Avg', value: studentDetail.student.recallAvg },
                 { label: 'Time on Task (min)', value: studentDetail.student.timeOnTaskMin ?? 0 },
@@ -221,7 +221,7 @@ export default function StudentDetailModal({
                           <th className="p-2">Day</th>
                           <th className="p-2">Attempts</th>
                           <th className="p-2">Correct</th>
-                          <th className="p-2">Hints</th>
+                          <th className="p-2">Intervention Events</th>
                           <th className="p-2">Definitions</th>
                           <th className="p-2">Recall</th>
                         </tr>

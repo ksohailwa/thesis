@@ -1,5 +1,5 @@
 import { memo, useMemo } from 'react'
-import { Play } from 'lucide-react'
+import { Play, Volume2 } from 'lucide-react'
 
 // Duplicated types for prop clarity, ideally import from shared types
 type Blank = {
@@ -38,12 +38,12 @@ type Props = {
   onGoToStory: (targetIndex: number) => void // NEW PROP
   renderBlank: (blank: Blank) => React.ReactNode
   splitSentences: (text: string) => string[]
-  readMode?: boolean
 }
 
 export default function StoryReader({
   parsedStory,
   sentenceClips,
+  currentStory,
   currentSentenceId,
   activeParagraph,
   storyIndex,
@@ -52,11 +52,57 @@ export default function StoryReader({
   onShowFeedback,
   onGoToStory, // NEW PROP
   renderBlank,
-  splitSentences,
-  readMode = false
+  splitSentences
 }: Props) {
+  const buildSentenceRows = (paragraph: ParsedParagraph, pIdx: number) => {
+    const source = currentStory.paragraphs?.[pIdx] || ''
+    const sentences = splitSentences(source)
+    const rows: Array<Array<string | Blank>> = sentences.map(() => [])
+    const sentenceBounds: Array<{ start: number; end: number }> = []
+    sentences.forEach((sentence, index) => {
+      const previousEnd = index > 0 ? sentenceBounds[index - 1].end : 0
+      const foundAt = source.indexOf(sentence, previousEnd)
+      const start = foundAt >= 0 ? foundAt : previousEnd
+      sentenceBounds.push({ start, end: start + sentence.length })
+    })
+    if (!sentenceBounds.length) {
+      sentenceBounds.push({ start: 0, end: source.length })
+      rows.push([])
+    }
+
+    const sentenceIndexAt = (position: number) => {
+      const index = sentenceBounds.findIndex((bound) => position >= bound.start && position <= bound.end)
+      return index >= 0 ? index : sentenceBounds.length - 1
+    }
+
+    let cursor = 0
+    paragraph.segments.forEach((segment) => {
+      if (typeof segment !== 'string') {
+        const rowIndex =
+          typeof segment.sentenceIndex === 'number'
+            ? segment.sentenceIndex
+            : sentenceIndexAt(cursor)
+        rows[Math.min(rowIndex, rows.length - 1)]?.push(segment)
+        cursor = typeof segment.charEnd === 'number' ? segment.charEnd : cursor + segment.word.length
+        return
+      }
+
+      let remaining = segment
+      while (remaining.length) {
+        const targetIndex = Math.min(sentenceIndexAt(cursor), rows.length - 1)
+        const bound = sentenceBounds[targetIndex]
+        const take = Math.max(1, Math.min(remaining.length, bound.end - cursor))
+        rows[targetIndex].push(remaining.slice(0, take))
+        remaining = remaining.slice(take)
+        cursor += take
+      }
+    })
+
+    return rows.filter((row) => row.length)
+  }
+
   return (
-    <div className={`${readMode ? 'lg:col-span-4' : 'lg:col-span-3'} space-y-6`}>
+    <div className="lg:col-span-4 space-y-6">
       <div className="bg-white rounded-2xl shadow-sm border border-neutral-200 p-6 md:p-8 leading-relaxed text-[1.05rem] text-neutral-800 font-sans">
         {parsedStory.map((paragraph, pIdx: number) => {
           if (pIdx !== activeParagraph) return null
@@ -66,18 +112,36 @@ export default function StoryReader({
               <div className="mb-2 flex items-center justify-between">
                 <div className="text-xs uppercase tracking-wide text-gray-400">Paragraph {pIdx + 1}</div>
               </div>
-              <div
-                className={`group relative rounded-md px-1 ${activeClip?.paragraphIndex === pIdx ? 'bg-purple-50 ring-2 ring-purple-100' : ''}`}
-                onClick={() => onPlaySentence(pIdx, 0)}
-              >
-                {paragraph.segments.map((seg, segIdx) => (
-                  typeof seg === 'string' ? <span key={segIdx}>{seg}</span> : renderBlank(seg)
-                ))}
-                {activeClip?.paragraphIndex === pIdx && (
-                  <span className="absolute -left-4 top-1 text-purple-600 animate-pulse">
-                    <Play size={10} fill="currentColor" />
-                  </span>
-                )}
+              <div className="space-y-3">
+                {buildSentenceRows(paragraph, pIdx).map((sentenceParts, sIdx) => {
+                  const active = activeClip?.paragraphIndex === pIdx && activeClip?.sentenceIndex === sIdx
+                  return (
+                    <div
+                      key={`${pIdx}-${sIdx}`}
+                      className={`relative flex items-start gap-3 rounded-md px-2 py-1 ${active ? 'bg-purple-50 ring-2 ring-purple-100' : ''}`}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => onPlaySentence(pIdx, sIdx)}
+                        className="mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-purple-200 bg-white text-purple-700 shadow-sm transition hover:bg-purple-50"
+                        aria-label={`Play sentence ${sIdx + 1}`}
+                        title={`Play sentence ${sIdx + 1}`}
+                      >
+                        <Volume2 size={16} />
+                      </button>
+                      <span className="flex-1">
+                        {sentenceParts.map((seg, segIdx) => (
+                          typeof seg === 'string' ? <span key={segIdx}>{seg}</span> : renderBlank(seg)
+                        ))}
+                      </span>
+                      {active && (
+                        <span className="absolute -left-4 top-3 text-purple-600 animate-pulse">
+                          <Play size={10} fill="currentColor" />
+                        </span>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             </div>
           )

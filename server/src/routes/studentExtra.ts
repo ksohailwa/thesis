@@ -5,6 +5,7 @@ import { Event } from '../models/Event';
 import { User } from '../models/User';
 import { Assignment } from '../models/Assignment';
 import { getPhaseForOccurrence } from '../utils/phaseMapper';
+import { normalizedLevenshtein } from '../utils/levenshtein';
 import { StoryLabel, toConditionLabel } from '../utils/labelMapper';
 import logger from '../utils/logger';
 import { requireAuth, requireRole, AuthedRequest } from '../middleware/auth';
@@ -48,6 +49,7 @@ router.post('/attempt', requireAuth, requireRole('student'), async (req: AuthedR
 
   // Minimal: store attempt entry
   const phase = getPhaseForOccurrence(occurrenceIndex);
+  const spellingScore = normalizedLevenshtein(text.toLowerCase(), targetWord.toLowerCase());
   const attempt = await Attempt.create({
     session: studentId,
     experiment: experimentId,
@@ -62,7 +64,7 @@ router.post('/attempt', requireAuth, requireRole('student'), async (req: AuthedR
     revealed: false,
     hintCount: 0,
     finalText: text,
-    score: 0,
+    score: spellingScore,
   });
 
   // For H, return positional feedback hints (simple prefix match)
