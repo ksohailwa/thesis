@@ -163,22 +163,6 @@ export default function StoryReader({
         </div>
       )}
 
-      {/* Go to Story 1 Button - Visible when on Story 2 */}
-      {storyIndex === 1 && (
-        <div className="mt-6 p-6 bg-gray-50 border border-gray-100 rounded-xl flex items-center justify-between">
-          <div>
-            <h3 className="text-xl font-bold text-gray-900">Review Story 1?</h3>
-            <p className="text-gray-700">Go back and practice Story 1 again.</p>
-          </div>
-          <button 
-            onClick={() => onGoToStory(0)}
-            className="px-6 py-2 bg-white text-gray-700 font-bold rounded-lg shadow hover:scale-105 transition"
-          >
-            Go to Story 1
-          </button>
-        </div>
-      )}
-
       {/* Final Submission Button - Visible only when Story 2 is complete */}
       {isStoryComplete && storyIndex === 1 && (
         <div className="mt-6 p-6 bg-gradient-to-r from-green-100 to-emerald-100 rounded-xl border-2 border-green-300 text-center transition-colors">

@@ -117,6 +117,34 @@ export function hydrateStudentSession(): boolean {
   return true
 }
 
+export function ensureStudentSessionAuth(): boolean {
+  if (typeof window === 'undefined') return false
+
+  const authState = useAuth.getState()
+  const hasUsableToken =
+    !!authState.accessToken &&
+    authState.accessToken !== 'student-session' &&
+    authState.role === 'student'
+
+  if (hasUsableToken) {
+    return true
+  }
+
+  const saved = loadSavedStudentSession()
+  if (!saved?.accessToken) {
+    return false
+  }
+
+  useAuth.getState().setAuth({
+    accessToken: saved.accessToken,
+    refreshToken: saved.refreshToken || null,
+    role: 'student',
+    username: saved.username || authState.username || 'student',
+  })
+
+  return true
+}
+
 export function clearStudentSession() {
   if (typeof window === 'undefined') return
   localStorage.removeItem(KEY)

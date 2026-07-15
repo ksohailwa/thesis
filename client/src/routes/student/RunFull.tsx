@@ -4,7 +4,12 @@ import { resolveAssetUrl } from '../../lib/assetUrl'
 import { logger } from '../../lib/logger'
 import { toast } from '../../store/toasts'
 import ErrorBoundaryComponent from '../../components/ErrorBoundary'
-import { hydrateStudentSession, loadSavedStudentSession, persistStudentSession } from '../../lib/studentSession'
+import {
+  ensureStudentSessionAuth,
+  hydrateStudentSession,
+  loadSavedStudentSession,
+  persistStudentSession,
+} from '../../lib/studentSession'
 import { useIntervention, type WordMetadata } from '../../store/intervention'
 import { Navigate } from 'react-router-dom'
 
@@ -628,6 +633,7 @@ function RunFull() {
   // With-hints group: Start intervention
   async function triggerIntervention(blank: Blank) {
     try {
+      ensureStudentSessionAuth()
       // Fetch word metadata
       const { data: metadata } = await api.get(`api/student/word-metadata/${expId}/${blank.word}`)
 
@@ -686,6 +692,7 @@ function RunFull() {
 
   async function submitFeedback() {
     try {
+      ensureStudentSessionAuth()
       const feedbackRes = await api.post('api/student/feedback', {
         experimentId: expId,
         storyKey: currentStoryLabel,
@@ -729,6 +736,7 @@ function RunFull() {
 
   async function submitMentalEffort(scores: { difficulty: number; effort: number }) {
     try {
+      ensureStudentSessionAuth()
       const context = pendingEffortContext || {
         completedPara: currentParagraph,
         nextPara: null,

@@ -92,6 +92,8 @@ function BlankInput({
           const status = feedbackEnabled ? letterFeedback[i] : undefined
           const baseClass = isLocked
             ? 'border-green-500 text-green-700 bg-green-50'
+            : state.correct
+              ? 'border-green-500 text-green-700 bg-green-50'
             : status === true
               ? 'border-green-500 text-green-700 bg-green-50'
               : status === false

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import api from '../../lib/api'
 import { resolveAssetUrl } from '../../lib/assetUrl'
 import { toast } from '../../store/toasts'
-import { hydrateStudentSession } from '../../lib/studentSession'
+import { ensureStudentSessionAuth, hydrateStudentSession } from '../../lib/studentSession'
 import { Clock, Volume2, CheckCircle, XCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -184,6 +184,7 @@ export default function StudentTest() {
     if (!effortSelected) return
     setEffortSubmitting(true)
     try {
+      ensureStudentSessionAuth()
       await api.post('api/student/effort', {
         experimentId: expId,
         taskType: 'delayed-recall',
