@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import api from '../../lib/api'
 import { resolveAssetUrl } from '../../lib/assetUrl'
 import { toast } from '../../store/toasts'
-import { ensureStudentSessionAuth, hydrateStudentSession } from '../../lib/studentSession'
+import { ensureStudentSessionAuth, hydrateStudentSession, updateStoredStudentSession } from '../../lib/studentSession'
 import { Clock, Volume2, CheckCircle, XCircle } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -79,9 +79,11 @@ export default function StudentTest() {
         if (data?.unlocked) {
           setRecallUnlockAt(null)
           sessionStorage.removeItem('exp.recallUnlockAt')
+          updateStoredStudentSession({ recallUnlockAt: undefined })
         } else if (typeof data?.unlocksAt === 'string') {
           setRecallUnlockAt(data.unlocksAt)
           sessionStorage.setItem('exp.recallUnlockAt', data.unlocksAt)
+          updateStoredStudentSession({ recallUnlockAt: data.unlocksAt })
         }
       })
       .catch(() => { /* ignore; fallback to stored value */ })
@@ -108,6 +110,7 @@ export default function StudentTest() {
         if (until) {
           sessionStorage.setItem('exp.recallUnlockAt', until)
           setRecallUnlockAt(until)
+          updateStoredStudentSession({ recallUnlockAt: until })
           toast.error('Recall test is not yet available. Please come back later.')
         } else {
           toast.error('Failed to load recall list')
@@ -161,6 +164,7 @@ export default function StudentTest() {
 
     setSubmitting(true)
     try {
+      ensureStudentSessionAuth()
       const { data } = await api.post('api/student/recall-attempt', { assignmentId, items: payload })
       setScores(data?.scores || [])
       setAverages({
@@ -193,6 +197,7 @@ export default function StudentTest() {
       })
       setEffortDone(true)
       sessionStorage.setItem('exp.delayedEffortSubmitted', 'true')
+      updateStoredStudentSession({ delayedEffortSubmitted: true })
       toast.success('Thanks for your response!')
     } catch {
       toast.error('Failed to save effort rating')
@@ -205,6 +210,7 @@ export default function StudentTest() {
     if (!expId || !offloadingAllAnswered) return
     setOffloadingSubmitting(true)
     try {
+      ensureStudentSessionAuth()
       await api.post('api/student/survey/pre', {
         experimentId: expId,
         offloadingItems: offloadingItems.map((item) => Number(offloadingAnswers[item.id])),
@@ -212,6 +218,7 @@ export default function StudentTest() {
       setOffloadingDone(true)
       sessionStorage.setItem('exp.offloadingSubmitted', 'true')
       sessionStorage.setItem('exp.preSurveyCompleted', 'true')
+      updateStoredStudentSession({ offloadingSubmitted: true })
       toast.success('Questionnaire submitted!')
     } catch {
       toast.error('Failed to save questionnaire')

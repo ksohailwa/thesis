@@ -9,6 +9,7 @@ import {
   hydrateStudentSession,
   loadSavedStudentSession,
   persistStudentSession,
+  updateStoredStudentSession,
 } from '../../lib/studentSession'
 import { useIntervention, type WordMetadata } from '../../store/intervention'
 import { Navigate } from 'react-router-dom'
@@ -38,23 +39,43 @@ export default function RunFullWrapper() {
 
 function RunFull() {
   hydrateStudentSession()
+  const savedSession = loadSavedStudentSession()
   const expId = sessionStorage.getItem('exp.experimentId') || sessionStorage.getItem('sessionId') || ''
   const assignmentId = sessionStorage.getItem('assignmentId') || ''
   const story2Done = sessionStorage.getItem('exp.story2Complete') === 'true'
+  const story1Done = sessionStorage.getItem('exp.story1Complete') === 'true'
   const rawCondition = sessionStorage.getItem('exp.condition') || 'with_hints'
   const condition = rawCondition.replace('_', '-') as 'with-hints' | 'without-hints'
   const storyOrder = (sessionStorage.getItem('exp.storyOrder') || 'A-first') as 'A-first' | 'B-first'
-  const hintsByStory = (() => {
+  const storedProgress = (() => {
     try {
-      return JSON.parse(sessionStorage.getItem('exp.hintsEnabledByStory') || 'null') as {
-        A: boolean
-        B: boolean
-      } | null
+      const raw = sessionStorage.getItem('exp.progress') || (savedSession?.progress ? JSON.stringify(savedSession.progress) : null)
+      return raw ? (JSON.parse(raw) as { storyIndex?: number; currentParagraph?: number } | null) : null
     } catch {
       return null
     }
   })()
-
+  const initialBreakUntil = sessionStorage.getItem('exp.breakUntil') || savedSession?.breakUntil || null
+  const initialBreakStartTime = (() => {
+    const raw = sessionStorage.getItem('exp.breakStartTime')
+    if (raw) {
+      const parsed = parseInt(raw, 10)
+      if (!Number.isNaN(parsed)) return parsed
+    }
+    return typeof savedSession?.breakStartTime === 'number' ? savedSession.breakStartTime : Date.now()
+  })()
+  const initialStoryIndex = (() => {
+    if (initialBreakUntil && story1Done && !story2Done) return 1
+    const progressStoryIndex = storedProgress?.storyIndex
+    if (typeof progressStoryIndex === 'number') return progressStoryIndex
+    return 0
+  })()
+  const initialParagraphIndex = (() => {
+    const progressParagraph = storedProgress?.currentParagraph
+    if (typeof progressParagraph === 'number') return progressParagraph
+    if (initialBreakUntil && story1Done && !story2Done) return 0
+    return 0
+  })()
   const story1 = JSON.parse(sessionStorage.getItem('exp.story1') || '{}') as StoryPayload
   const story2 = JSON.parse(sessionStorage.getItem('exp.story2') || '{}') as StoryPayload
   const tts1Segments = JSON.parse(sessionStorage.getItem('exp.tts1Segments') || '[]')
@@ -74,7 +95,7 @@ function RunFull() {
     )
   }
 
-  const [storyIndex, setStoryIndex] = useState(0)
+  const [storyIndex, setStoryIndex] = useState(initialStoryIndex)
   const [blanksState, setBlanksState] = useState<Record<string, BlankState>>({})
   const [locked, setLocked] = useState<Record<string, boolean>>({})
   const [attemptsByWord, setAttemptsByWord] = useState<Record<string, number>>({})
@@ -95,13 +116,8 @@ function RunFull() {
   })
   const [submitting, setSubmitting] = useState(false)
   const [autoAdvance, setAutoAdvance] = useState(false)
-  const [breakUntil, setBreakUntil] = useState<string | null>(() =>
-    sessionStorage.getItem('exp.breakUntil')
-  )
-  const [breakStartTime, setBreakStartTime] = useState<number>(() => {
-    const stored = sessionStorage.getItem('exp.breakStartTime')
-    return stored ? parseInt(stored, 10) : Date.now()
-  })
+  const [breakUntil, setBreakUntil] = useState<string | null>(() => initialBreakUntil)
+  const [breakStartTime, setBreakStartTime] = useState<number>(() => initialBreakStartTime)
   const [now, setNow] = useState(Date.now())
   const [storySubmitted, setStorySubmitted] = useState(false)
   const wordTimerRef = useRef<Record<string, number>>({})
@@ -127,7 +143,6 @@ function RunFull() {
   // Noise words come ONLY from teacher selection - no random fallback
   const noiseOccurrences = useMemo(() => {
     const noise = (currentStory as any).noiseOccurrences || []
-    console.log('🔊 Noise occurrences:', noise.length, noise)
     return noise
   }, [currentStory])
 
@@ -146,14 +161,13 @@ function RunFull() {
 
   const allBlanks = useMemo(() => {
     const blanks = parsedStory.flatMap((p) => p.blanks)
-    console.log('📝 Total blanks:', blanks.length, '| Target:', blanks.filter(b => !b.isNoise).length, '| Noise:', blanks.filter(b => b.isNoise).length)
     return blanks
   }, [parsedStory])
   const activeBlank = useMemo(
     () => allBlanks.find((b) => b.key === activeBlankKey) || null,
     [allBlanks, activeBlankKey]
   )
-  const hintsEnabled = hintsByStory ? !!hintsByStory[currentStoryLabel] : condition === 'with-hints'
+  const interventionEnabled = condition === 'with-hints'
 
   const sentenceClips = useMemo(() => {
     const clips: SentenceClip[] = []
@@ -178,7 +192,7 @@ function RunFull() {
   const progressPct = totalBlanks ? (solvedCount / totalBlanks) * 100 : 0
   const isStoryComplete = solvedCount === totalBlanks && totalBlanks > 0
 
-  const [currentParagraph, setCurrentParagraph] = useState(0)
+  const [currentParagraph, setCurrentParagraph] = useState(initialParagraphIndex)
   const [showMentalEffort, setShowMentalEffort] = useState(false)
   const [pendingEffortContext, setPendingEffortContext] = useState<{
     completedPara: number
@@ -247,14 +261,11 @@ function RunFull() {
     if (savedProgress) {
       try {
         const progress = JSON.parse(savedProgress)
-        console.log('📦 Progress data:', progress)
         if (progress.currentParagraph !== undefined) {
           setCurrentParagraph(progress.currentParagraph)
-          console.log('✅ Restored paragraph:', progress.currentParagraph)
         }
         if (progress.blanksState && Object.keys(progress.blanksState).length > 0) {
           setBlanksState(progress.blanksState)
-          console.log('✅ Restored blanksState:', Object.keys(progress.blanksState).length, 'entries')
         }
         if (progress.storyIndex !== undefined) {
           setStoryIndex(progress.storyIndex)
@@ -286,7 +297,16 @@ function RunFull() {
   useEffect(() => {
     // Skip saving until initial restoration is complete to prevent overwriting saved data
     if (!hasRestoredRef.current) {
-      console.log('⏳ Skipping save - restoration not complete')
+      return
+    }
+    if (
+      breakUntil &&
+      story1Done &&
+      !story2Done &&
+      storyIndex === 1 &&
+      currentParagraph === 0 &&
+      Object.keys(blanksState).length === 0
+    ) {
       return
     }
 
@@ -301,7 +321,6 @@ function RunFull() {
       attemptsByWord,
       timeByWordMs,
     }
-    console.log('💾 Saving progress:', Object.keys(blanksState).length, 'blanks')
 
     // Save to sessionStorage (fast access for current tab)
     sessionStorage.setItem('exp.progress', JSON.stringify(progress))
@@ -309,9 +328,19 @@ function RunFull() {
     // Also persist to localStorage (survives page refresh)
     const existingSession = loadSavedStudentSession()
     if (existingSession) {
-      persistStudentSession({ ...existingSession, progress })
+      persistStudentSession({
+        ...existingSession,
+        progress,
+        breakUntil: breakUntil || undefined,
+        breakStartTime: breakStartTime || undefined,
+        story1Complete: sessionStorage.getItem('exp.story1Complete') === 'true',
+        story2Complete: sessionStorage.getItem('exp.story2Complete') === 'true',
+        recallUnlockAt: sessionStorage.getItem('exp.recallUnlockAt') || undefined,
+        delayedEffortSubmitted: sessionStorage.getItem('exp.delayedEffortSubmitted') === 'true',
+        offloadingSubmitted: sessionStorage.getItem('exp.offloadingSubmitted') === 'true',
+      })
     }
-  }, [currentParagraph, blanksState, storyIndex, currentStoryLabel, wordsInStreak, streak, maxStreak, attemptsByWord, timeByWordMs])
+  }, [currentParagraph, blanksState, storyIndex, currentStoryLabel, wordsInStreak, streak, maxStreak, attemptsByWord, timeByWordMs, breakUntil, breakStartTime, story1Done, story2Done])
 
   // Audio functions
   function softPause(clearPlaybackState = true) {
@@ -579,7 +608,7 @@ function RunFull() {
         .catch((e) => logger.error('Failed to submit attempt', e))
 
       // Handle based on condition
-      if (!hintsEnabled) {
+      if (!interventionEnabled) {
         // Control group (without-hints): Show correct answer + definition
         triggerControlGroupFeedback(blank, val)
       } else {
@@ -696,7 +725,7 @@ function RunFull() {
       const feedbackRes = await api.post('api/student/feedback', {
         experimentId: expId,
         storyKey: currentStoryLabel,
-        condition: hintsEnabled ? 'with-hints' : 'without-hints',
+        condition,
         storyIndex,
         ...feedbackData,
       })
@@ -707,6 +736,11 @@ function RunFull() {
         const breakStart = Date.now()
         sessionStorage.setItem('exp.breakUntil', breakUntilValue)
         sessionStorage.setItem('exp.breakStartTime', String(breakStart))
+        updateStoredStudentSession({
+          story1Complete: true,
+          breakUntil: breakUntilValue,
+          breakStartTime: breakStart,
+        })
         setBreakUntil(breakUntilValue)
         setBreakStartTime(breakStart)
         restartStory(1)
@@ -716,6 +750,10 @@ function RunFull() {
         const recallUnlockValue =
           feedbackRes?.data?.recallUnlockAt || new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString()
         sessionStorage.setItem('exp.recallUnlockAt', recallUnlockValue)
+        updateStoredStudentSession({
+          story2Complete: true,
+          recallUnlockAt: recallUnlockValue,
+        })
         setSubmitting(true)
         try {
           await api.post('api/student/submit', {
@@ -827,6 +865,10 @@ function RunFull() {
 
     sessionStorage.removeItem('exp.breakUntil')
     sessionStorage.removeItem('exp.breakStartTime')
+    updateStoredStudentSession({
+      breakUntil: undefined,
+      breakStartTime: undefined,
+    })
     setBreakUntil(null)
   }
 
@@ -907,7 +949,38 @@ function RunFull() {
       />
 
       <div className="container mx-auto px-4 py-8 grid lg:grid-cols-4 gap-8">
-        <div className="lg:col-span-4 flex items-center justify-between mb-2">
+        <StoryReader
+          parsedStory={displayParsedStory}
+          allBlanks={visibleBlanks}
+          currentStory={displayStory}
+          activeParagraph={currentParagraph}
+          sentenceClips={visibleClips}
+          currentSentenceId={currentSentenceId}
+          storyIndex={storyIndex}
+          isStoryComplete={isStoryComplete}
+          onPlaySentence={playSentence}
+          onShowFeedback={() => {
+            if (!isStoryComplete) {
+              toast.error('Please complete every blank before submitting the story.')
+              return
+            }
+            if (!effortDoneByKey[effortKey(lastParagraphIndex)]) {
+              setPendingEffortContext({
+                completedPara: lastParagraphIndex,
+                nextPara: null,
+                final: true,
+              })
+              setShowMentalEffort(true)
+            } else {
+              setShowFeedback(true)
+            }
+          }}
+          onGoToStory={restartStory}
+          renderBlank={renderBlankInput}
+          splitSentences={splitSentences}
+        />
+
+        <div className="lg:col-span-4 flex items-center justify-between mt-2">
           <div className="space-x-2">
             <button
               className="btn"
@@ -971,37 +1044,6 @@ function RunFull() {
           </div>
           <div className="text-sm text-gray-600">Paragraph {currentParagraph + 1} / {paragraphCount}</div>
         </div>
-
-        <StoryReader
-          parsedStory={displayParsedStory}
-          allBlanks={visibleBlanks}
-          currentStory={displayStory}
-          activeParagraph={currentParagraph}
-          sentenceClips={visibleClips}
-          currentSentenceId={currentSentenceId}
-          storyIndex={storyIndex}
-          isStoryComplete={isStoryComplete}
-          onPlaySentence={playSentence}
-          onShowFeedback={() => {
-            if (!isStoryComplete) {
-              toast.error('Please complete every blank before submitting the story.')
-              return
-            }
-            if (!effortDoneByKey[effortKey(lastParagraphIndex)]) {
-              setPendingEffortContext({
-                completedPara: lastParagraphIndex,
-                nextPara: null,
-                final: true,
-              })
-              setShowMentalEffort(true)
-            } else {
-              setShowFeedback(true)
-            }
-          }}
-          onGoToStory={restartStory}
-          renderBlank={renderBlankInput}
-          splitSentences={splitSentences}
-        />
       </div>
 
       {showFeedback && (

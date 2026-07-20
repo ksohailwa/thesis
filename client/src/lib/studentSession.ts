@@ -19,6 +19,12 @@ export type StoredStudentSession = {
   storyOrder?: 'A-first' | 'B-first'
   hintsEnabledByStory?: { A: boolean; B: boolean }
   breakUntil?: string
+  breakStartTime?: number
+  story1Complete?: boolean
+  story2Complete?: boolean
+  recallUnlockAt?: string
+  delayedEffortSubmitted?: boolean
+  offloadingSubmitted?: boolean
   story1?: any
   story2?: any
   tts1?: string
@@ -70,17 +76,18 @@ export function hydrateStudentSession(): boolean {
 
   // Already have an active session in sessionStorage
   if (sessionStorage.getItem('assignmentId')) {
-    const authState = useAuth.getState()
-    // Only set auth if not already set as student
-    if (authState.role !== 'student') {
-      // Try to get tokens from localStorage backup
-      const saved = loadSavedStudentSession()
-      useAuth.getState().setAuth({
-        accessToken: saved?.accessToken || authState.accessToken || 'student-session',
-        refreshToken: saved?.refreshToken || authState.refreshToken || null,
-        role: 'student',
-        username: saved?.username || authState.username || 'student',
-      })
+    ensureStudentSessionAuth()
+    const saved = loadSavedStudentSession()
+    if (saved) {
+      if (saved.breakUntil) sessionStorage.setItem('exp.breakUntil', saved.breakUntil)
+      if (typeof saved.breakStartTime === 'number') {
+        sessionStorage.setItem('exp.breakStartTime', String(saved.breakStartTime))
+      }
+      if (saved.story1Complete) sessionStorage.setItem('exp.story1Complete', 'true')
+      if (saved.story2Complete) sessionStorage.setItem('exp.story2Complete', 'true')
+      if (saved.recallUnlockAt) sessionStorage.setItem('exp.recallUnlockAt', saved.recallUnlockAt)
+      if (saved.delayedEffortSubmitted) sessionStorage.setItem('exp.delayedEffortSubmitted', 'true')
+      if (saved.offloadingSubmitted) sessionStorage.setItem('exp.offloadingSubmitted', 'true')
     }
     return true
   }
@@ -95,6 +102,12 @@ export function hydrateStudentSession(): boolean {
   if (saved.storyOrder) sessionStorage.setItem('exp.storyOrder', saved.storyOrder)
   if (saved.hintsEnabledByStory) sessionStorage.setItem('exp.hintsEnabledByStory', JSON.stringify(saved.hintsEnabledByStory))
   if (saved.breakUntil) sessionStorage.setItem('exp.breakUntil', saved.breakUntil)
+  if (typeof saved.breakStartTime === 'number') sessionStorage.setItem('exp.breakStartTime', String(saved.breakStartTime))
+  if (saved.story1Complete) sessionStorage.setItem('exp.story1Complete', 'true')
+  if (saved.story2Complete) sessionStorage.setItem('exp.story2Complete', 'true')
+  if (saved.recallUnlockAt) sessionStorage.setItem('exp.recallUnlockAt', saved.recallUnlockAt)
+  if (saved.delayedEffortSubmitted) sessionStorage.setItem('exp.delayedEffortSubmitted', 'true')
+  if (saved.offloadingSubmitted) sessionStorage.setItem('exp.offloadingSubmitted', 'true')
   if (saved.story1) sessionStorage.setItem('exp.story1', JSON.stringify(saved.story1))
   if (saved.story2) sessionStorage.setItem('exp.story2', JSON.stringify(saved.story2))
   if (saved.tts1) sessionStorage.setItem('exp.tts1', saved.tts1)
@@ -143,6 +156,31 @@ export function ensureStudentSessionAuth(): boolean {
   })
 
   return true
+}
+
+export function updateStoredStudentSessionAuth(auth: {
+  accessToken: string
+  refreshToken?: string | null
+  username?: string | null
+}) {
+  updateStoredStudentSession({
+    accessToken: auth.accessToken,
+    refreshToken: auth.refreshToken ?? undefined,
+    username: auth.username ?? undefined,
+  })
+}
+
+export function updateStoredStudentSession(
+  patch: Partial<Omit<StoredStudentSession, 'savedAt'>>
+) {
+  if (typeof window === 'undefined') return
+  const saved = loadSavedStudentSession()
+  if (!saved) return
+
+  persistStudentSession({
+    ...saved,
+    ...patch,
+  })
 }
 
 export function clearStudentSession() {

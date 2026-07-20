@@ -1,6 +1,7 @@
 import axios from 'axios'
 import { useAuth } from '../store/auth'
 import { logger } from './logger'
+import { updateStoredStudentSessionAuth } from './studentSession'
 
 const AUTH_KEY = 'spellwise-auth'
 
@@ -67,14 +68,11 @@ api.interceptors.response.use(
       const state = useAuth.getState?.()
       const stored = readStoredAuth() as any
       const refresh = state?.refreshToken || stored.refreshToken || localStorage.getItem('refreshToken')
-      // Only try refresh if we have a refresh token
-      if (!refresh) {
-        return Promise.reject(error)
-      }
       try {
-        const { data } = await api.post('api/auth/refresh', undefined, {
-          headers: { 'x-refresh': refresh },
-        })
+        const refreshConfig = refresh
+          ? { headers: { 'x-refresh': refresh } }
+          : undefined
+        const { data } = await api.post('api/auth/refresh', undefined, refreshConfig)
         if (data?.accessToken) {
           if (state?.setAuth && state.role && state.username) {
             state.setAuth({
@@ -86,6 +84,13 @@ api.interceptors.response.use(
           } else {
             localStorage.setItem('accessToken', data.accessToken)
             if (data.refreshToken) localStorage.setItem('refreshToken', data.refreshToken)
+          }
+          if (state?.role === 'student') {
+            updateStoredStudentSessionAuth({
+              accessToken: data.accessToken,
+              refreshToken: data.refreshToken || state.refreshToken || refresh || null,
+              username: state.username,
+            })
           }
           originalRequest.headers = originalRequest.headers || {}
           originalRequest.headers.Authorization = `Bearer ${data.accessToken}`
