@@ -167,7 +167,15 @@ function RunFull() {
     () => allBlanks.find((b) => b.key === activeBlankKey) || null,
     [allBlanks, activeBlankKey]
   )
-  const interventionEnabled = condition === 'with-hints'
+  const hintsEnabledByStory = (() => {
+    try {
+      const raw = sessionStorage.getItem('exp.hintsEnabledByStory')
+      return raw ? (JSON.parse(raw) as { A?: boolean; B?: boolean }) : null
+    } catch {
+      return null
+    }
+  })()
+  const interventionEnabled = hintsEnabledByStory?.[currentStoryLabel] ?? condition === 'with-hints'
 
   const sentenceClips = useMemo(() => {
     const clips: SentenceClip[] = []
