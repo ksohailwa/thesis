@@ -134,7 +134,7 @@ function BlankInput({
           Check
         </button>
       </div>
-      {isLocked && (
+      {(isLocked || state.correct) && (
         <span className="absolute -top-3 -right-2 text-green-500 text-xs">
           OK
         </span>

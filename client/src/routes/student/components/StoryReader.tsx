@@ -152,14 +152,8 @@ export default function StoryReader({
         <div className="p-6 bg-gradient-to-r from-purple-100 to-pink-100 rounded-xl flex items-center justify-between animate-fadeIn">
           <div>
             <h3 className="text-xl font-bold text-purple-900">Story 1 Complete!</h3>
-            <p className="text-purple-700">Ready for the next challenge?</p>
+            <p className="text-purple-700">Proceed using the button below.</p>
           </div>
-          <button 
-            onClick={onShowFeedback}
-            className="px-6 py-2 bg-white text-purple-700 font-bold rounded-lg shadow hover:scale-105 transition"
-          >
-            Continue to Story 2
-          </button>
         </div>
       )}
 
