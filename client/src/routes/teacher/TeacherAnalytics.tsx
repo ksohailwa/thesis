@@ -231,23 +231,23 @@ export default function TeacherAnalytics() {
               className="px-4 py-2 border-2 border-gray-200 rounded-lg text-sm font-semibold hover:border-gray-300 transition"
               onClick={async () => {
               try {
-                const url = `api/analytics/experiment/${summary.experiment._id}/research-export${buildQuery()}`
+                const url = `api/analytics/experiment/${summary.experiment._id}/research-export/csv${buildQuery()}`
                 const { data } = await api.get(url, { responseType: 'blob' })
-                const blob = new Blob([data], { type: 'application/zip' })
+                const blob = new Blob([data], { type: 'text/csv' })
                 const link = document.createElement('a')
                 link.href = URL.createObjectURL(blob)
-                link.download = `experiment_${summary.experiment._id}_research_export.zip`
+                link.download = `experiment_${summary.experiment._id}_master_export.csv`
                 document.body.appendChild(link)
                 link.click()
                 link.remove()
                 URL.revokeObjectURL(link.href)
               } catch {
-                toast.error('Failed to download research export')
+                toast.error('Failed to download master CSV')
               }
               }}
             >
             <span className="inline-flex items-center gap-2">
-              <Download size={16} /> Research Export (ZIP)
+              <Download size={16} /> Master CSV
             </span>
           </button>
             <button

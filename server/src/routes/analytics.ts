@@ -107,6 +107,202 @@ function pearson(x: number[], y: number[]) {
   return Math.round((num / den) * 1000) / 1000;
 }
 
+type MasterCsvRow = (string | number | boolean | null | undefined)[];
+
+function buildMasterResearchCsv(params: {
+  summaryData: Awaited<ReturnType<typeof computeExperimentAnalytics>>;
+  offloading: Awaited<ReturnType<typeof computeOffloadingAnalytics>>;
+  assignments: any[];
+  events: any[];
+  filters: AnalyticsFilters;
+}) {
+  const { summaryData, offloading, assignments, events, filters } = params;
+  const allowedStudentIds = Array.from(new Set(assignments.map((a: any) => String(a.student))));
+  const userMap = new Map(
+    summaryData.students.map((s: any) => [String(s.studentId), s.username])
+  );
+  const assignmentMap = new Map(assignments.map((a: any) => [String(a.student), a]));
+  const offloadingByStudent = new Map(offloading.perStudent.map((r: any) => [String(r.studentId), r]));
+  const summaryByStudent = new Map(summaryData.students.map((s: any) => [String(s.studentId), s]));
+
+  const rows: MasterCsvRow[] = [];
+  const header = [
+    'eventTs',
+    'eventType',
+    'taskType',
+    'studentId',
+    'username',
+    'condition',
+    'storyOrder',
+    'hintsStory',
+    'phase1Condition',
+    'phase1Story',
+    'phase2Condition',
+    'phase2Story',
+    'storyLabel',
+    'storyIndex',
+    'paragraphIndex',
+    'sentenceIndex',
+    'occurrenceIndex',
+    'word',
+    'attemptText',
+    'correct',
+    'spellingScore',
+    'definitionCorrect',
+    'definitionScore',
+    'combinedScore',
+    'isNoise',
+    'attemptCount',
+    'effortPosition',
+    'effortScore',
+    'difficultyScore',
+    'interventionId',
+    'interventionTriggered',
+    'interventionCompleted',
+    'interventionExercises',
+    'baselineAccuracy',
+    'immediateOrthographicScore',
+    'delayedOrthographicScore',
+    'delayedSemanticScore',
+    'learningGain',
+    'avgMentalEffort',
+    'avgMentalEffortIntervention',
+    'avgMentalEffortControl',
+    'offloadingScore',
+    'delayedTestCompleted',
+    'delayedTestScore',
+    'timeOnTaskMin',
+  ];
+
+  const rowsForStudent = new Map<string, any[]>();
+  for (const e of events) {
+    const sid = String((e as any).student || '');
+    if (!sid || !allowedStudentIds.includes(sid)) continue;
+    const arr = rowsForStudent.get(sid) || [];
+    arr.push(e);
+    rowsForStudent.set(sid, arr);
+  }
+
+  const sortEvents = (a: any, b: any) => {
+    const at = new Date(a.ts || 0).getTime();
+    const bt = new Date(b.ts || 0).getTime();
+    if (at !== bt) return at - bt;
+    return String(a.type || '').localeCompare(String(b.type || ''));
+  };
+
+  for (const sid of allowedStudentIds) {
+    const assignment = assignmentMap.get(sid) as any;
+    const student = summaryByStudent.get(sid) as any;
+    const username = userMap.get(sid) || 'unknown';
+    const off = offloadingByStudent.get(sid) as any;
+    const studentEvents = (rowsForStudent.get(sid) || []).slice().sort(sortEvents);
+
+    for (const e of studentEvents) {
+      const payload = (e as any).payload || {};
+      const story = normalizeStoryLabel(payload.story || payload.storyLabel || payload.storyKey) || '';
+      const row: MasterCsvRow = [
+        e.ts ? new Date(e.ts).toISOString() : '',
+        e.type || '',
+        e.taskType || '',
+        sid,
+        username,
+        toTreatmentControl((assignment?.condition as any)?.type || 'unknown'),
+        assignment?.storyOrder || '',
+        assignment?.hintsStory || '',
+        student?.phase1Condition || '',
+        student?.phase1Story || '',
+        student?.phase2Condition || '',
+        student?.phase2Story || '',
+        story,
+        payload.storyIndex ?? '',
+        payload.paragraphIndex ?? '',
+        payload.sentenceIndex ?? '',
+        payload.occurrenceIndex ?? '',
+        payload.word || payload.targetWord || '',
+        payload.attempt || payload.attemptText || payload.spellingAttempt || '',
+        payload.correct ?? '',
+        payload.spellingScore ?? '',
+        payload.definitionCorrect ?? '',
+        payload.definitionScore ?? '',
+        payload.combinedScore ?? '',
+        payload.isNoise ?? '',
+        payload.attemptCount ?? '',
+        payload.position || payload.effortPosition || '',
+        payload.score ?? payload.effortScore ?? '',
+        payload.difficulty ?? payload.difficultyScore ?? '',
+        payload.interventionId || '',
+        e.type === 'intervention_started' ? true : '',
+        e.type === 'intervention_completed' ? true : '',
+        e.type === 'intervention_completed'
+          ? ((payload.mcqAttempts || 0) + (payload.jumbleAttempts || 0) + (payload.sentenceAttempts || 0))
+          : '',
+        student?.baselineAccuracy ?? '',
+        student?.immediateOrthographicScore ?? '',
+        student?.delayedOrthographicScore ?? '',
+        student?.delayedSemanticScore ?? '',
+        student?.learningGain ?? '',
+        student?.avgMentalEffort ?? '',
+        student?.avgMentalEffortIntervention ?? '',
+        student?.avgMentalEffortControl ?? '',
+        off?.offloadingScore ?? '',
+        student?.delayedTestCompleted ?? '',
+        student?.delayedTestScore ?? '',
+        student?.timeOnTaskMin ?? '',
+      ];
+      rows.push(row);
+    }
+
+    if (!studentEvents.length) {
+      rows.push([
+        '',
+        'student_summary',
+        '',
+        sid,
+        username,
+        toTreatmentControl((assignment?.condition as any)?.type || 'unknown'),
+        assignment?.storyOrder || '',
+        assignment?.hintsStory || '',
+        student?.phase1Condition || '',
+        student?.phase1Story || '',
+        student?.phase2Condition || '',
+        student?.phase2Story || '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        student?.baselineAccuracy ?? '',
+        student?.immediateOrthographicScore ?? '',
+        student?.delayedOrthographicScore ?? '',
+        student?.delayedSemanticScore ?? '',
+        student?.learningGain ?? '',
+        student?.avgMentalEffort ?? '',
+        student?.avgMentalEffortIntervention ?? '',
+        student?.avgMentalEffortControl ?? '',
+        off?.offloadingScore ?? '',
+        student?.delayedTestCompleted ?? '',
+        student?.delayedTestScore ?? '',
+        student?.timeOnTaskMin ?? '',
+      ]);
+    }
+  }
+
+  return { header, rows };
+}
+
 async function computeOffloadingAnalytics(experimentId: string, filters: AnalyticsFilters = {}) {
   // Load assignments and surveys
   const assignments = await Assignment.find({ experiment: experimentId })
@@ -1475,6 +1671,34 @@ router.get('/experiment/:id/research-export', requireAuth, requireRole('teacher'
     archive.finalize();
   } catch (e) {
     return res.status(500).json({ error: 'Failed to build research export' });
+  }
+});
+
+router.get('/experiment/:id/research-export/csv', requireAuth, requireRole('teacher'), async (req, res) => {
+  const expId = req.params.id;
+  try {
+    const filters = parseFilters(req);
+    const [summaryData, offloading, assignments, events] = await Promise.all([
+      computeExperimentAnalytics(expId, filters),
+      computeOffloadingAnalytics(expId, filters),
+      Assignment.find({ experiment: expId }).populate('condition', 'type').lean(),
+      Event.find({ experiment: expId }).lean(),
+    ]);
+
+    const master = buildMasterResearchCsv({
+      summaryData,
+      offloading,
+      assignments,
+      events,
+      filters,
+    });
+
+    const csv = toCsv([master.header, ...master.rows]);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="experiment_${expId}_master_export.csv"`);
+    return res.send(csv);
+  } catch (e) {
+    return res.status(500).json({ error: 'Failed to build master export' });
   }
 });
 
