@@ -967,22 +967,6 @@ function RunFull() {
           storyIndex={storyIndex}
           isStoryComplete={isStoryComplete}
           onPlaySentence={playSentence}
-          onShowFeedback={() => {
-            if (!isStoryComplete) {
-              toast.error('Please complete every blank before submitting the story.')
-              return
-            }
-            if (!effortDoneByKey[effortKey(lastParagraphIndex)]) {
-              setPendingEffortContext({
-                completedPara: lastParagraphIndex,
-                nextPara: null,
-                final: true,
-              })
-              setShowMentalEffort(true)
-            } else {
-              setShowFeedback(true)
-            }
-          }}
           onGoToStory={restartStory}
           renderBlank={renderBlankInput}
           splitSentences={splitSentences}

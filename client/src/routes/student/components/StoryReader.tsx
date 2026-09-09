@@ -34,7 +34,6 @@ type Props = {
   storyIndex: number
   isStoryComplete: boolean
   onPlaySentence: (pIdx: number, sIdx: number) => void
-  onShowFeedback: () => void
   onGoToStory: (targetIndex: number) => void // NEW PROP
   renderBlank: (blank: Blank) => React.ReactNode
   splitSentences: (text: string) => string[]
@@ -49,7 +48,6 @@ export default function StoryReader({
   storyIndex,
   isStoryComplete,
   onPlaySentence,
-  onShowFeedback,
   onGoToStory, // NEW PROP
   renderBlank,
   splitSentences
@@ -157,17 +155,6 @@ export default function StoryReader({
         </div>
       )}
 
-      {/* Final Submission Button - Visible only when Story 2 is complete */}
-      {isStoryComplete && storyIndex === 1 && (
-        <div className="mt-6 p-6 bg-gradient-to-r from-green-100 to-emerald-100 rounded-xl border-2 border-green-300 text-center transition-colors">
-            <button
-              onClick={onShowFeedback} // Triggers Feedback Modal and then submission
-              className="px-6 py-2 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors"
-            >
-              Submit All
-            </button>
-          </div>
-      )}
     </div>
   )
 }
