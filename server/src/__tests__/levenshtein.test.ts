@@ -54,9 +54,9 @@ describe('normalizedLevenshtein', () => {
   });
 
   describe('case sensitivity', () => {
-    it('should treat uppercase and lowercase as different', () => {
-      expect(normalizedLevenshtein('Hello', 'hello')).toBe(0.8);
-      expect(normalizedLevenshtein('ABC', 'abc')).toBe(0);
+    it('should treat uppercase and lowercase as equivalent', () => {
+      expect(normalizedLevenshtein('Hello', 'hello')).toBe(1);
+      expect(normalizedLevenshtein('ABC', 'abc')).toBe(1);
     });
   });
 
@@ -180,9 +180,11 @@ describe('positionCorrectness', () => {
   });
 
   describe('case sensitivity', () => {
-    it('should treat uppercase and lowercase as different', () => {
-      expect(positionCorrectness('Hello', 'hello')).toEqual([false, true, true, true, true]);
-      expect(positionCorrectness('HELLO', 'hello')).toEqual([false, false, false, false, false]);
+    it('should treat uppercase and lowercase as equivalent', () => {
+      expect(normalizedLevenshtein('Hello', 'hello')).toBe(1);
+      expect(normalizedLevenshtein('HELLO', 'hello')).toBe(1);
+      expect(positionCorrectness('Hello', 'hello')).toEqual([true, true, true, true, true]);
+      expect(positionCorrectness('HELLO', 'hello')).toEqual([true, true, true, true, true]);
     });
   });
 

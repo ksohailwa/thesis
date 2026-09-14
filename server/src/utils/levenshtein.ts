@@ -1,4 +1,6 @@
 export function normalizedLevenshtein(a: string, b: string): number {
+  a = a.toLowerCase();
+  b = b.toLowerCase();
   const dp: number[] = Array(b.length + 1).fill(0);
   for (let j = 0; j <= b.length; j++) dp[j] = j;
   for (let i = 1; i <= a.length; i++) {
@@ -18,8 +20,10 @@ export function normalizedLevenshtein(a: string, b: string): number {
 }
 
 export function positionCorrectness(guess: string, target: string): boolean[] {
-  const len = Math.max(guess.length, target.length);
+  const normalizedGuess = guess.toLowerCase();
+  const normalizedTarget = target.toLowerCase();
+  const len = Math.max(normalizedGuess.length, normalizedTarget.length);
   const out: boolean[] = [];
-  for (let i = 0; i < len; i++) out.push(guess[i] === target[i]);
+  for (let i = 0; i < len; i++) out.push(normalizedGuess[i] === normalizedTarget[i]);
   return out;
 }

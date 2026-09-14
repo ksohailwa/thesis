@@ -115,16 +115,20 @@ async function resolveStoryMongoAudio(input: {
 }
 
 function computeHighlightIndices(guess: string, target: string): number[] {
+  const normalizedGuess = guess.toLowerCase();
+  const normalizedTarget = target.toLowerCase();
   // If equal length: mark mismatched positions
-  if (guess.length === target.length) {
+  if (normalizedGuess.length === normalizedTarget.length) {
     const arr: number[] = [];
-    for (let i = 0; i < guess.length; i++) if (guess[i] !== target[i]) arr.push(i);
+    for (let i = 0; i < normalizedGuess.length; i++) {
+      if (normalizedGuess[i] !== normalizedTarget[i]) arr.push(i);
+    }
     return arr;
   }
   // If different length: find the first index where they diverge
-  const min = Math.min(guess.length, target.length);
+  const min = Math.min(normalizedGuess.length, normalizedTarget.length);
   for (let i = 0; i < min; i++) {
-    if (guess[i] !== target[i]) return [i];
+    if (normalizedGuess[i] !== normalizedTarget[i]) return [i];
   }
   // otherwise highlight trailing difference index
   return [min];

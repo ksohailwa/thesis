@@ -71,9 +71,13 @@ router.post('/attempt', requireAuth, requireRole('student'), async (req: AuthedR
   const allowHints = condLabel === 'H' && occurrenceIndex < 4;
   let correctnessByPosition: boolean[] | undefined = undefined;
   if (allowHints) {
-    const target = targetWord;
-    const len = Math.max(text.length, target.length);
-    correctnessByPosition = Array.from({ length: len }, (_, i) => text[i] === target[i]);
+    const normalizedText = text.toLowerCase();
+    const normalizedTarget = targetWord.toLowerCase();
+    const len = Math.max(normalizedText.length, normalizedTarget.length);
+    correctnessByPosition = Array.from(
+      { length: len },
+      (_, i) => normalizedText[i] === normalizedTarget[i]
+    );
   }
 
   res.json({ ok: true, attemptId: attempt._id, correctnessByPosition });
