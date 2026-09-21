@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { useAuth } from '../store/auth'
 import { logger } from './logger'
-import { updateStoredStudentSessionAuth } from './studentSession'
+import { loadSavedStudentSession, updateStoredStudentSessionAuth } from './studentSession'
 
 const AUTH_KEY = 'spellwise-auth'
 
@@ -97,6 +97,7 @@ api.interceptors.response.use(
           return api(originalRequest)
         }
       } catch (refreshError) {
+        const isStudentSession = state?.role === 'student' || Boolean(loadSavedStudentSession())
         localStorage.removeItem('accessToken')
         localStorage.removeItem('role')
         localStorage.removeItem('email')
@@ -104,7 +105,7 @@ api.interceptors.response.use(
         localStorage.removeItem('refreshToken')
         if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
           const base = import.meta.env.BASE_URL || '/'
-          window.location.href = `${base}login`
+          window.location.href = `${base}${isStudentSession ? 'student-login' : 'login'}`
         }
         return Promise.reject(refreshError)
       }

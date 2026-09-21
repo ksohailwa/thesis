@@ -5,6 +5,14 @@ import { config } from '../config';
 
 const authService = new AuthService();
 
+const refreshCookieOptions = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === 'production',
+  sameSite: 'lax' as const,
+  path: '/',
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+};
+
 const LoginSchema = z.object({ username: z.string().min(1), password: z.string().min(6) });
 const StudentSchema = z.object({
   username: z
@@ -23,11 +31,7 @@ export const login = async (req: Request, res: Response) => {
       parsed.data.password
     );
 
-    res.cookie('refresh', refreshToken, {
-      httpOnly: true,
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-      secure: process.env.NODE_ENV === 'production',
-    });
+    res.cookie('refresh', refreshToken, refreshCookieOptions);
 
     res.json({
       accessToken,
@@ -49,11 +53,7 @@ export const refresh = async (req: Request, res: Response) => {
 
   try {
     const { accessToken, refreshToken } = await authService.refresh(token);
-    res.cookie('refresh', refreshToken, {
-      httpOnly: true,
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-      secure: process.env.NODE_ENV === 'production',
-    });
+    res.cookie('refresh', refreshToken, refreshCookieOptions);
     res.json({
       accessToken,
       refreshToken: config.allowRefreshTokenInResponse ? refreshToken : undefined,
@@ -64,7 +64,7 @@ export const refresh = async (req: Request, res: Response) => {
 };
 
 export const logout = (req: Request, res: Response) => {
-  res.clearCookie('refresh');
+  res.clearCookie('refresh', refreshCookieOptions);
   res.json({ ok: true });
 };
 
@@ -91,11 +91,7 @@ export const studentLogin = async (req: Request, res: Response) => {
     const { accessToken, refreshToken, role, username, consented, newUser } =
       await authService.studentLogin(parsed.data.username, parsed.data.password);
 
-    res.cookie('refresh', refreshToken, {
-      httpOnly: true,
-      sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-      secure: process.env.NODE_ENV === 'production',
-    });
+    res.cookie('refresh', refreshToken, refreshCookieOptions);
 
     res.json({
       accessToken,
