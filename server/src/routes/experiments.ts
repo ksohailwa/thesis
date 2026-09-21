@@ -504,7 +504,7 @@ router.post('/', requireAuth, requireRole('teacher'), async (req: AuthedRequest,
     level: z.enum(['A1', 'A2', 'B1', 'B2', 'C1', 'C2']).optional(),
     cefr: z.enum(['A2', 'B1', 'B2', 'C1', 'C2']).optional(),
   });
-  const parsed = schema.safeParse(req.body);
+  const parsed = schema.safeParse(req.body || {});
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { title, description, level, cefr } = parsed.data as any;
   const code = makeCode();
@@ -1241,8 +1241,8 @@ router.post(
 );
 
 router.post('/:id/launch', requireAuth, requireRole('teacher'), async (req, res) => {
-  const schema = z.object({ condition: z.enum(['with-hints', 'without-hints']) });
-  const parsed = schema.safeParse(req.body);
+  const schema = z.object({}).passthrough();
+  const parsed = schema.safeParse(req.body || {});
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   // Validate that stories are confirmed before launching
@@ -1274,10 +1274,10 @@ router.post('/:id/launch', requireAuth, requireRole('teacher'), async (req, res)
 
   const updated = await Experiment.findByIdAndUpdate(
     req.params.id,
-    { assignedCondition: parsed.data.condition, status: 'live' },
+    { $unset: { assignedCondition: '' }, $set: { status: 'live' } },
     { new: true }
   );
-  return res.json({ code: updated?.classCode, condition: updated?.assignedCondition, status: updated?.status });
+  return res.json({ code: updated?.classCode, allocation: 'four-way-counterbalanced', status: updated?.status });
 });
 
 router.post(

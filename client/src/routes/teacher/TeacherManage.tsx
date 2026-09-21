@@ -6,9 +6,9 @@ import { logger } from '../../lib/logger'
 import LoadingScreen from '../../components/LoadingScreen'
 import StoryManager from './StoryManager'
 import { toast } from '../../store/toasts'
+import { toMessage } from '../../lib/err'
 
 type ExperimentStatus = 'draft' | 'live' | 'closed'
-type Condition = 'with-hints' | 'without-hints'
 
 const participationEnabled = import.meta.env.VITE_ENABLE_PARTICIPATION === 'true'
 
@@ -20,7 +20,6 @@ export default function TeacherManage() {
   const [level, setLevel] = useState<'A1' | 'A2' | 'B1' | 'B2' | 'C1' | 'C2'>('B1')
   const [loading, setLoading] = useState(true)
   const [experimentStatus, setExperimentStatus] = useState<ExperimentStatus>('draft')
-  const [assignedCondition, setAssignedCondition] = useState<Condition>('with-hints')
   const [launchLoading, setLaunchLoading] = useState(false)
   const [savingLevel, setSavingLevel] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
@@ -44,7 +43,6 @@ export default function TeacherManage() {
       setTitle(data.title || '')
       setLevel(data.level || data.cefr || 'B1')
       setExperimentStatus(data.status || 'draft')
-      setAssignedCondition(data.assignedCondition || 'with-hints')
       setStoriesConfirmed(data.storiesConfirmed || false)
       if (data.status === 'live') await fetchParticipation()
     } catch {
@@ -75,13 +73,13 @@ export default function TeacherManage() {
     setLaunchLoading(true)
     setStatusMessage('')
     try {
-      const { data } = await api.post(`api/experiments/${expId}/launch`, { condition: assignedCondition })
+      const { data } = await api.post(`api/experiments/${expId}/launch`)
       setExperimentStatus(data?.status || 'live')
       setStatusMessage(`Experiment launched! Join code: ${data.code}`)
       toast.success(`Experiment launched! Code: ${data.code}`)
       await fetchParticipation()
     } catch (e: any) {
-      const error = e?.response?.data?.error || 'Failed to launch'
+      const error = toMessage(e?.response?.data?.error || 'Failed to launch')
       setStatusMessage(`Launch failed: ${error}`)
       toast.error(error)
     } finally {
@@ -224,14 +222,6 @@ export default function TeacherManage() {
             </Link>
             {experimentStatus === 'draft' && (
               <>
-                <select
-                  value={assignedCondition}
-                  onChange={(e) => setAssignedCondition(e.target.value as Condition)}
-                  className="px-4 py-2 border-2 border-gray-200 rounded-lg text-sm font-medium hover:border-gray-300 transition"
-                >
-                  <option value="with-hints">Treatment (with interventions)</option>
-                  <option value="without-hints">Control (no interventions)</option>
-                </select>
                 <div className="relative group">
                   <button
                     className={`px-6 py-2 rounded-lg font-semibold transition ${
@@ -317,7 +307,7 @@ export default function TeacherManage() {
                 <thead>
                   <tr className="border-b-2 border-gray-300">
                     <th className="text-left p-3 text-gray-700">Student</th>
-                    <th className="text-left p-3 text-gray-700">Condition</th>
+                    <th className="text-left p-3 text-gray-700">Treatment Story</th>
                     <th className="text-left p-3 text-gray-700">Progress</th>
                     <th className="text-left p-3 text-gray-700">Joined</th>
                     <th className="text-left p-3 text-gray-700">Action</th>
@@ -328,7 +318,11 @@ export default function TeacherManage() {
                     <tr key={student.id} className="border-b hover:bg-gray-50">
                       <td className="p-3 font-medium text-gray-900">{student.username}</td>
                       <td className="p-3 text-sm text-gray-600">
-                        {student.condition === 'with-hints' ? 'Treatment (with interventions)' : 'Control (no interventions)'}
+                        {student.hintsStory
+                          ? `Story ${student.hintsStory}`
+                          : student.condition === 'with-hints'
+                            ? 'Story A (legacy)'
+                            : 'Story B (legacy)'}
                       </td>
                       <td className="p-3 text-sm">
                         {student.completed ? (
@@ -371,7 +365,12 @@ export default function TeacherManage() {
                   <strong>Username:</strong> {studentProgress.username}
                 </div>
                 <div>
-                  <strong>Condition:</strong> {studentProgress.condition === 'with-hints' ? 'Treatment (with interventions)' : 'Control (no interventions)'}
+                  <strong>Treatment story:</strong>{' '}
+                  {studentProgress.hintsStory
+                    ? `Story ${studentProgress.hintsStory}`
+                    : studentProgress.condition === 'with-hints'
+                      ? 'Story A (legacy)'
+                      : 'Story B (legacy)'}
                 </div>
                 <div>
                   <strong>Started:</strong> {new Date(studentProgress.startedAt).toLocaleString()}

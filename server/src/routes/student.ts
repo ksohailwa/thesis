@@ -20,6 +20,10 @@ import { Assignment } from '../models/Assignment';
 import { User } from '../models/User';
 import { toDbLabel } from '../utils/labelMapper';
 import { clearAnalyticsCache } from '../utils/analyticsCache';
+import {
+  counterbalanceCellKey,
+  selectLeastFilledCounterbalanceCell,
+} from '../utils/counterbalance';
 import { WordMetadata } from '../models/WordMetadata';
 import { InterventionAttempt } from '../models/InterventionAttempt';
 import { PreStudySurvey } from '../models/PreStudySurvey';
@@ -378,38 +382,30 @@ router.post('/join', requireAuth, requireRole('student'), async (req: AuthedRequ
   let storyOrder: StoryOrder | undefined = existing?.storyOrder as StoryOrder | undefined;
   let hintsStory: HintsStory | undefined = existing?.hintsStory as HintsStory | undefined;
   if (!existing) {
-    if (exp.assignedCondition === 'with-hints') {
-      chosen = withHints;
-    } else if (exp.assignedCondition === 'without-hints') {
-      chosen = withoutHints;
-    } else {
-      const [cWith, cWithout] = await Promise.all([
-        Assignment.countDocuments({ experiment: exp._id, condition: (withHints as any)._id }),
-        Assignment.countDocuments({ experiment: exp._id, condition: (withoutHints as any)._id }),
-      ]);
-      if (cWith > cWithout) chosen = withoutHints;
-      else if (cWith === cWithout) {
-        const seed = (exp as any).randomSeed || (exp as any).seed || '';
-        const key = `${seed}:${req.user!.sub}`;
-        let h = 0;
-        for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-        chosen = h % 2 === 0 ? withHints : withoutHints;
-      }
-    }
-    const [countAFirst, countBFirst] = await Promise.all([
-      Assignment.countDocuments({ experiment: exp._id, storyOrder: 'A-first' }),
-      Assignment.countDocuments({ experiment: exp._id, storyOrder: 'B-first' }),
+    const groupedAssignments = await Assignment.aggregate([
+      { $match: { experiment: exp._id } },
+      {
+        $group: {
+          _id: { hintsStory: '$hintsStory', storyOrder: '$storyOrder' },
+          count: { $sum: 1 },
+        },
+      },
     ]);
-    if (countAFirst > countBFirst) storyOrder = 'B-first';
-    else if (countBFirst > countAFirst) storyOrder = 'A-first';
-    else {
-      const seed = (exp as any).randomSeed || (exp as any).seed || '';
-      const key = `${seed}:order:${req.user!.sub}`;
-      let h = 0;
-      for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0;
-      storyOrder = h % 2 === 0 ? 'A-first' : 'B-first';
-    }
-    hintsStory = (chosen as any)._id.toString() === (withHints as any)._id.toString() ? 'A' : 'B';
+    const cellCounts: Record<string, number> = {};
+    groupedAssignments.forEach((group: any) => {
+      const treatmentStory = group?._id?.hintsStory;
+      const order = group?._id?.storyOrder;
+      if ((treatmentStory === 'A' || treatmentStory === 'B') && (order === 'A-first' || order === 'B-first')) {
+        cellCounts[counterbalanceCellKey({ treatmentStory, storyOrder: order })] = group.count;
+      }
+    });
+
+    const seed = (exp as any).randomSeed || (exp as any).seed || '';
+    const cell = selectLeastFilledCounterbalanceCell(cellCounts, `${seed}:counterbalance:${req.user!.sub}`);
+    storyOrder = cell.storyOrder;
+    hintsStory = cell.treatmentStory;
+    // `condition` remains for legacy data compatibility; `hintsStory` is the treatment source of truth.
+    chosen = hintsStory === 'A' ? withHints : withoutHints;
     assignmentDoc = await Assignment.create({
       experiment: exp._id,
       student: req.user!.sub,

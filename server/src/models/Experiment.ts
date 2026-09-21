@@ -23,6 +23,7 @@ export interface IExperiment {
   noiseWords?: string[]; // shared noise words for both stories
   randomSeed?: string;
   seed?: string;
+  // Legacy launch-level setting. New assignments are always four-way counterbalanced.
   assignedCondition?: 'with-hints' | 'without-hints';
   status?: 'draft' | 'live' | 'closed' | 'archived';
   storiesConfirmed?: boolean; // true when teacher has approved the stories
@@ -67,6 +68,7 @@ const ExperimentSchema = new Schema<IExperiment>(
     noiseWords: { type: [String], default: [] },
     randomSeed: { type: String },
     seed: { type: String },
+    // Retained only to read older experiment documents; ignored for new assignments.
     assignedCondition: { type: String, enum: ['with-hints', 'without-hints'], required: false },
     status: { type: String, enum: ['draft', 'live', 'closed', 'archived'], default: 'draft' },
     storiesConfirmed: { type: Boolean, default: false },
