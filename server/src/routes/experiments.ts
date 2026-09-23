@@ -30,6 +30,10 @@ import { splitSentences } from '../utils/sentenceSplitter';
 const router = Router();
 const OPENAI_CHAT_MODEL = process.env.OPENAI_MODEL || 'gpt-5.2-2025-12-11';
 
+function openAiChatSampling(temperature: number): { temperature?: number } {
+  return /^gpt-5\.5(?:-|$)/i.test(OPENAI_CHAT_MODEL) ? {} : { temperature };
+}
+
 function audioAssetUrl(experimentId: unknown, assetId: unknown, timestamp = Date.now()) {
   const env = process.env.NODE_ENV || 'development';
   const basePath = env === 'production' ? '/SpellWise' : '';
@@ -438,7 +442,7 @@ async function selectNoiseOccurrencesLLM(
     const r = await oa.chat.completions.create({
       model: OPENAI_CHAT_MODEL,
       response_format: { type: 'json_object' },
-      temperature: 0.2,
+      ...openAiChatSampling(0.2),
       messages: [
         {
           role: 'system',
@@ -800,7 +804,7 @@ router.post(
           const r = await oa.chat.completions.create({
             model: OPENAI_CHAT_MODEL,
             response_format: { type: 'json_object' },
-            temperature: 0.8,
+            ...openAiChatSampling(0.8),
             messages: [
               { role: 'system', content: storySystemBold(0) }, // 0 = flexible paragraph count
               {
@@ -997,7 +1001,7 @@ router.post(
         const r = await oa.chat.completions.create({
           model: OPENAI_CHAT_MODEL,
           response_format: { type: 'json_object' },
-          temperature: 0.8,
+          ...openAiChatSampling(0.8),
           messages: [
             { role: 'system', content: storySystemBold(0) }, // 0 = flexible paragraph count
             {
@@ -1107,7 +1111,7 @@ router.post(
           const r = await oa.chat.completions.create({
             model: OPENAI_CHAT_MODEL,
             response_format: { type: 'json_object' },
-            temperature: 0.2,
+            ...openAiChatSampling(0.2),
             messages: [
               {
                 role: 'system',
