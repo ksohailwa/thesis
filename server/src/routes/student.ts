@@ -25,6 +25,7 @@ import {
   selectLeastFilledCounterbalanceCell,
 } from '../utils/counterbalance';
 import { WordMetadata } from '../models/WordMetadata';
+import { splitSentences } from '../utils/sentenceSplitter';
 import { InterventionAttempt } from '../models/InterventionAttempt';
 import { PreStudySurvey } from '../models/PreStudySurvey';
 import { AudioAsset } from '../models/AudioAsset';
@@ -80,10 +81,7 @@ async function resolveStoryMongoAudio(input: {
   const url = fullAsset ? audioAssetUrl(input.experiment, (fullAsset as any)._id) : null;
 
   const segmentKeys = (input.story.paragraphs || []).flatMap((paragraph: string, paragraphIndex: number) => {
-    const sentences = paragraph
-      .split(/(?<=[.!?])\s+/)
-      .map((sentence) => sentence.trim())
-      .filter(Boolean);
+    const sentences = splitSentences(paragraph);
     if (sentences.length === 0 && paragraph.trim()) sentences.push(paragraph.trim());
     return sentences.map((_, sentenceIndex) => `${input.conditionLabel}_${paragraphIndex}_${sentenceIndex}.mp3`);
   });
@@ -141,16 +139,11 @@ function computeHighlightIndices(guess: string, target: string): number[] {
 const router = Router();
 
 function splitParagraphSentences(paragraph: string): string[] {
-  const parts: string[] = [];
-  const re = /([^.!?]*[.!?])/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(paragraph))) parts.push(m[1].trim());
-  if (parts.length === 0 && paragraph.trim()) parts.push(paragraph.trim());
-  return parts;
+  return splitSentences(paragraph);
 }
 
 function sentenceIndexAt(paragraph: string, charPos: number) {
-  const sentences = paragraph.split(/(?<=[.!?])\s+/).filter(Boolean);
+  const sentences = splitSentences(paragraph);
   if (!sentences.length) return 0;
   let cumulative = 0;
   for (let i = 0; i < sentences.length; i++) {

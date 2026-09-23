@@ -21,7 +21,7 @@ export default function Login() {
     e.preventDefault()
     setError('')
     const un = username.trim()
-    const pw = password.trim()
+    const pw = password
     if (!un) return setError('Please enter your username')
     if (pw.length < 6) return setError('Password must be at least 6 characters')
     setBusy(true)

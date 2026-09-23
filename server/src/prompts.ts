@@ -169,6 +169,7 @@ STORY GUIDELINES:
 - Keep the language at the specified CEFR level.
 - The story should be coherent, engaging, and read naturally despite the word requirements.
 - CRITICAL: Two different target words CANNOT appear in the same sentence. Each sentence should contain at most ONE target word.
+- Avoid abbreviations containing periods (for example Mr., Dr., etc.); write full forms such as Mister and Doctor so sentence boundaries remain clear for audio.
 - Distribute target word occurrences evenly across paragraphs for natural flow.
 
 BEFORE RETURNING: Scan the entire story and ensure EVERY occurrence of every target and noise word is marked with the appropriate markers.

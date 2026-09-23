@@ -1,10 +1,23 @@
 import type { Blank, StoryPayload } from './types'
 
 export function splitSentences(paragraph: string): string[] {
-  const parts = paragraph
-    .split(/(?<=[.!?])\s+/g)
-    .map((s) => s.trim())
-    .filter(Boolean)
+  const abbreviations = new Set(['mr.', 'mrs.', 'ms.', 'dr.', 'prof.', 'sr.', 'jr.', 'st.', 'mt.', 'vs.', 'etc.', 'no.', 'approx.', 'fig.', 'e.g.', 'i.e.'])
+  const parts: string[] = []
+  let start = 0
+  for (let index = 0; index < paragraph.length; index += 1) {
+    const character = paragraph[index]
+    if (!'.!?'.includes(character)) continue
+    if (index < paragraph.length - 1 && !/\s/.test(paragraph[index + 1])) continue
+    if (character === '.') {
+      const tokenStart = Math.max(paragraph.lastIndexOf(' ', index - 1), paragraph.lastIndexOf('\n', index - 1)) + 1
+      if (abbreviations.has(paragraph.slice(tokenStart, index + 1).toLowerCase())) continue
+    }
+    const sentence = paragraph.slice(start, index + 1).trim()
+    if (sentence) parts.push(sentence)
+    start = index + 1
+  }
+  const remainder = paragraph.slice(start).trim()
+  if (remainder) parts.push(remainder)
   return parts.length ? parts : [paragraph]
 }
 

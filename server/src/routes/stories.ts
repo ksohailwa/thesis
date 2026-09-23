@@ -7,6 +7,7 @@ import path from 'path';
 import { config } from '../config';
 import OpenAI from 'openai';
 import logger from '../utils/logger';
+import { splitSentences } from '../utils/sentenceSplitter';
 
 const router = Router();
 
@@ -225,21 +226,6 @@ router.post('/tts', requireAuth, requireRole('teacher'), async (req: AuthedReque
   await tpl.save();
   return res.json({ ttsAudioUrl: tpl.ttsAudioUrl, used: 'mock' });
 });
-
-function splitSentences(text?: string): string[] {
-  if (!text) return [];
-  // Simple sentence splitter on ., !, ? keeping punctuation
-  const parts: string[] = [];
-  let cursor = 0;
-  const re = /([^.!?]*[.!?])/g;
-  const matchAll = text.matchAll(re);
-  for (const m of matchAll) {
-    parts.push(m[1].trim());
-    cursor = (m.index || 0) + m[0].length;
-  }
-  if (cursor < text.length) parts.push(text.slice(cursor).trim());
-  return parts.filter(Boolean);
-}
 
 // Quick endpoint to test ElevenLabs config with a short fixed text
 

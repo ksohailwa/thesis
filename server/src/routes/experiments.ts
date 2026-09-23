@@ -25,6 +25,7 @@ import { parseBoldMarkers } from '../utils/boldParser';
 import { generateFallbackStory } from '../utils/fallbackStory';
 import logger from '../utils/logger';
 import { getWordsForLevel, getWordDefinition } from '../data/wordLists';
+import { splitSentences } from '../utils/sentenceSplitter';
 
 const router = Router();
 const OPENAI_CHAT_MODEL = process.env.OPENAI_MODEL || 'gpt-5.2-2025-12-11';
@@ -237,7 +238,7 @@ function computeOccurrences(paragraphs: string[], storyWords: string[]) {
   const wordSet = new Set(storyWords.map(w => w.toLowerCase()));
 
   paragraphs.forEach((para, pIdx) => {
-    const sentences = para.split(/(?<=[.!?])\s+/).filter(Boolean);
+    const sentences = splitSentences(para);
     sentences.forEach((sent, sIdx) => {
       const words = sent.match(/\b[a-zA-Z]+\b/g) || [];
       words.forEach((word) => {
@@ -386,7 +387,7 @@ function collectSetWords(
 }
 
 function sentenceIndexAt(paragraph: string, charPos: number) {
-  const sentences = paragraph.split(/(?<=[.!?])\s+/).filter(Boolean);
+  const sentences = splitSentences(paragraph);
   let cumulative = 0;
   for (let si = 0; si < sentences.length; si++) {
     const len = sentences[si].length + 1;
@@ -1155,7 +1156,7 @@ router.post(
       // Helper to map char positions to sentenceIndex
       const sentencesPerParagraph: string[][] = [];
       paragraphs.forEach((p) => {
-        const sentences = p.split(/(?<=[.!?])\s+/).filter(Boolean);
+        const sentences = splitSentences(p);
         sentencesPerParagraph.push(sentences.length ? sentences : [p]);
       });
 
@@ -1332,10 +1333,7 @@ router.post(
 
         for (let pIdx = 0; pIdx < story.paragraphs.length; pIdx++) {
           const paragraph = story.paragraphs[pIdx] || '';
-          const sentences = paragraph
-            .split(/(?<=[.!?])\s+/)
-            .map((s) => s.trim())
-            .filter(Boolean);
+          const sentences = splitSentences(paragraph);
           if (sentences.length === 0 && paragraph.trim()) sentences.push(paragraph.trim());
 
           for (let sIdx = 0; sIdx < sentences.length; sIdx++) {
@@ -1599,12 +1597,7 @@ router.get('/:id/story/:label', requireAuth, requireRole('teacher'), async (req,
     $or: [{ storySet: set }, { storySet: { $exists: false } }],
   });
   if (!story) return res.status(404).json({ error: 'Story not found' });
-  const sentences = story.paragraphs.map((p) =>
-    p
-      .split(/(?<=[.!?])\s+/)
-      .map((s) => s.trim())
-      .filter(Boolean)
-  );
+  const sentences = story.paragraphs.map((p) => splitSentences(p));
 
   // Find noise word occurrences - ONLY from teacher-selected noise words
   const storyKey = map === 'A' ? 'story1' : 'story2';
@@ -1616,7 +1609,7 @@ router.get('/:id/story/:label', requireAuth, requireRole('teacher'), async (req,
   );
   if (story.paragraphs.length && teacherNoiseWords.length > 0) {
     const sentencesPerParagraph = story.paragraphs.map((p) => {
-      const parts = p.split(/(?<=[.!?])\s+/).filter(Boolean);
+      const parts = splitSentences(p);
       return parts.length ? parts : [p];
     });
 
