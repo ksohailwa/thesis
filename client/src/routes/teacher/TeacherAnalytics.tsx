@@ -218,6 +218,19 @@ export default function TeacherAnalytics() {
               className="px-4 py-2 border-2 border-gray-200 rounded-lg text-sm font-semibold hover:border-gray-300 transition"
               onClick={() =>
                 downloadCsv(
+                  `api/analytics/experiment/${summary.experiment._id}/csv?type=delayed-test${buildQuery().replace('?', '&')}`,
+                  `experiment_${summary.experiment._id}_delayed_test.csv`
+                )
+              }
+            >
+              <span className="inline-flex items-center gap-2">
+                <Download size={16} /> Delayed Test CSV
+              </span>
+            </button>
+            <button
+              className="px-4 py-2 border-2 border-gray-200 rounded-lg text-sm font-semibold hover:border-gray-300 transition"
+              onClick={() =>
+                downloadCsv(
                   `api/analytics/experiment/${summary.experiment._id}/events/csv${buildQuery()}`,
                   `experiment_${summary.experiment._id}_events.csv`
                 )

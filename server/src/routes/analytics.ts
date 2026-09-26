@@ -1490,6 +1490,67 @@ router.get('/experiment/:id/csv', requireAuth, requireRole('teacher'), async (re
     return res.send(csv);
   }
   const filters = parseFilters(req);
+  if (type === 'delayed-test') {
+    const [assignments, events] = await Promise.all([
+      Assignment.find({ experiment: req.params.id }).populate('condition', 'type').lean(),
+      Event.find({ experiment: req.params.id }).lean(),
+    ]);
+    const allowedAssignments = assignments.filter((assignment: any) => {
+      const conditionMatches =
+        !filters.condition || String((assignment.condition as any)?.type || '') === filters.condition;
+      const studentMatches = !filters.studentId || String(assignment.student) === filters.studentId;
+      return conditionMatches && studentMatches;
+    });
+    const allowedStudentIds = Array.from(
+      new Set(allowedAssignments.map((assignment: any) => String(assignment.student)))
+    );
+    const assignmentMap = new Map(
+      allowedAssignments.map((assignment: any) => [String(assignment.student), assignment])
+    );
+    const users = await User.find({ _id: { $in: allowedStudentIds } })
+      .select('username email')
+      .lean();
+    const userMap = new Map(users.map((user: any) => [String(user._id), user]));
+    const delayedEvents = filterEvents(events, { ...filters, story: undefined }, allowedStudentIds)
+      .filter((event: any) =>
+        event.type === 'recall-attempt' &&
+        (event.taskType === 'delayed-recall' || event.payload?.delayed)
+      )
+      .sort((left: any, right: any) => new Date(left.ts).getTime() - new Date(right.ts).getTime());
+    const header = [
+      'eventTs', 'studentId', 'username', 'condition', 'word', 'spellingScore',
+      'spellingCorrect', 'definitionScore', 'definitionCorrect', 'combinedScore',
+      'spellingAverage', 'definitionAverage', 'combinedAverage',
+    ];
+    const rows = delayedEvents.flatMap((event: any) => {
+      const studentId = String(event.student || '');
+      const user = userMap.get(studentId) as any;
+      const assignment = assignmentMap.get(studentId) as any;
+      const scores = Array.isArray(event.payload?.scores) ? event.payload.scores : [];
+      return scores.map((score: any) => [
+        event.ts ? new Date(event.ts).toISOString() : '',
+        studentId,
+        user?.username || user?.email || 'unknown',
+        toTreatmentControl((assignment?.condition as any)?.type || 'unknown'),
+        score.word || '',
+        score.spellingScore ?? '',
+        score.spellingCorrect ?? '',
+        score.definitionScore ?? '',
+        score.definitionCorrect ?? '',
+        score.combinedScore ?? '',
+        event.payload?.spellingAvg ?? '',
+        event.payload?.definitionAvg ?? '',
+        event.payload?.combinedAvg ?? '',
+      ]);
+    });
+    const csv = toCsv([header, ...rows]);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="experiment_${req.params.id}_delayed_test.csv"`
+    );
+    return res.send(csv);
+  }
   if (type === 'offloading') {
     const off = await computeOffloadingAnalytics(req.params.id, filters);
     const header = [
