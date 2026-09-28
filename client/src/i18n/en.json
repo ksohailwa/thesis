@@ -49,6 +49,7 @@
   },
   "survey": {
     "title": "Short Pre-Study Survey",
+    "postTitle": "Post Test",
     "subtitle": "Rate each statement from 1 (Strongly disagree) to 6 (Strongly agree).",
     "items": {
       "1": "I look up information on my phone rather than trying to remember it.",

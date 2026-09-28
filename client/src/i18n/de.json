@@ -12,6 +12,7 @@
   },
   "survey": {
     "title": "Kurzer Vorerhebungs‑Fragebogen",
+    "postTitle": "Nachtest",
     "subtitle": "Bewerte jede Aussage von 1 (stimme überhaupt nicht zu) bis 6 (stimme voll zu).",
     "items": {
       "1": "Ich suche Informationen auf meinem Handy, statt zu versuchen, sie mir zu merken.",

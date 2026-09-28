@@ -430,7 +430,7 @@ export default function StudentTest() {
 
           {!offloadingDone && (
             <div className="bg-white border border-indigo-200 rounded-2xl p-6 shadow-sm">
-              <h2 className="text-lg font-semibold text-gray-800 mb-2">{t('survey.title')}</h2>
+              <h2 className="text-lg font-semibold text-gray-800 mb-2">{t('survey.postTitle')}</h2>
               <p className="text-sm text-gray-600 mb-4">{t('survey.subtitle')}</p>
               <div className="space-y-4">
                 {offloadingItems.map((item) => (
