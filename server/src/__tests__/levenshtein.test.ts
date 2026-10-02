@@ -57,6 +57,7 @@ describe('normalizedLevenshtein', () => {
     it('should treat uppercase and lowercase as equivalent', () => {
       expect(normalizedLevenshtein('Hello', 'hello')).toBe(1);
       expect(normalizedLevenshtein('ABC', 'abc')).toBe(1);
+      expect(normalizedLevenshtein('Apple', 'apple')).toBe(1);
     });
   });
 

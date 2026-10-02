@@ -1518,7 +1518,7 @@ router.get('/experiment/:id/csv', requireAuth, requireRole('teacher'), async (re
       )
       .sort((left: any, right: any) => new Date(left.ts).getTime() - new Date(right.ts).getTime());
     const header = [
-      'eventTs', 'studentId', 'username', 'condition', 'word', 'spellingScore',
+      'eventTs', 'studentId', 'username', 'condition', 'word', 'spellingAttempt', 'spellingScore',
       'spellingCorrect', 'definitionScore', 'definitionCorrect', 'combinedScore',
       'spellingAverage', 'definitionAverage', 'combinedAverage',
     ];
@@ -1533,6 +1533,7 @@ router.get('/experiment/:id/csv', requireAuth, requireRole('teacher'), async (re
         user?.username || user?.email || 'unknown',
         toTreatmentControl((assignment?.condition as any)?.type || 'unknown'),
         score.word || '',
+        score.spellingAttempt ?? '',
         score.spellingScore ?? '',
         score.spellingCorrect ?? '',
         score.definitionScore ?? '',

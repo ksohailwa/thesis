@@ -350,6 +350,9 @@ export default function StudentTest() {
             {scores.map((score, idx) => {
               const item = items.find(i => i.word === score.word)
               const answer = answers[score.word]
+              const normalizedAnswer = (answer?.spelling || '').normalize('NFKC').trim().toLowerCase()
+              const normalizedWord = score.word.normalize('NFKC').trim().toLowerCase()
+              const spellingCorrect = normalizedAnswer === normalizedWord
               return (
                 <div key={`${score.word}-${idx}`} className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
@@ -360,9 +363,9 @@ export default function StudentTest() {
                   </div>
 
                   <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div className={`p-3 rounded-lg ${score.spellingCorrect ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                    <div className={`p-3 rounded-lg ${spellingCorrect ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
                       <div className="flex items-center gap-2 mb-1">
-                        {score.spellingCorrect ? (
+                        {spellingCorrect ? (
                           <CheckCircle className="w-4 h-4 text-green-600" />
                         ) : (
                           <XCircle className="w-4 h-4 text-red-600" />
@@ -370,9 +373,9 @@ export default function StudentTest() {
                         <span className="font-medium">Spelling</span>
                       </div>
                       <div className="text-gray-600">
-                        Your answer: <span className={score.spellingCorrect ? 'text-green-700' : 'text-red-700 line-through'}>{answer?.spelling || '(empty)'}</span>
+                        Your answer: <span className={spellingCorrect ? 'text-green-700' : 'text-red-700 line-through'}>{answer?.spelling || '(empty)'}</span>
                       </div>
-                      {!score.spellingCorrect && (
+                      {!spellingCorrect && (
                         <div className="text-green-700 mt-1">Correct: {score.word}</div>
                       )}
                     </div>
@@ -531,6 +534,7 @@ export default function StudentTest() {
                     onChange={(e) => updateAnswer(item.word, 'spelling', e.target.value)}
                     placeholder="Type the word here"
                     autoComplete="off"
+                    autoCapitalize="none"
                     spellCheck={false}
                   />
                 </div>

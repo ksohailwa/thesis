@@ -1525,6 +1525,7 @@ router.post(
 
       return {
         word: i.word,
+        spellingAttempt: i.spellingAttempt,
         spellingScore,
         spellingCorrect: spellingScore === 1,
         definitionCorrect,
