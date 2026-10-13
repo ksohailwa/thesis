@@ -109,6 +109,139 @@ function pearson(x: number[], y: number[]) {
 
 type MasterCsvRow = (string | number | boolean | null | undefined)[];
 
+function buildBehavioralMetricsCsv(params: {
+  assignments: any[];
+  events: any[];
+  effortResponses: any[];
+  surveys: any[];
+  users: any[];
+  summaryStudents?: any[];
+  filters: AnalyticsFilters;
+}) {
+  const { assignments, events, effortResponses, surveys, users, summaryStudents = [], filters } = params;
+  const allowedAssignments = assignments.filter((assignment: any) => {
+    if (filters.condition && String(assignment.condition?.type || '') !== filters.condition) return false;
+    if (filters.studentId && String(assignment.student) !== filters.studentId) return false;
+    return true;
+  });
+  const studentIds = Array.from(new Set(allowedAssignments.map((a: any) => String(a.student))));
+  const assignmentMap = new Map(allowedAssignments.map((a: any) => [String(a.student), a]));
+  const userMap = new Map(users.map((u: any) => [String(u._id), u]));
+  const surveyMap = new Map(surveys.map((s: any) => [String(s.student), s]));
+  const summaryMap = new Map(summaryStudents.map((s: any) => [String(s.studentId), s]));
+  const effortByStudent = new Map<string, any[]>();
+  for (const response of effortResponses) {
+    const sid = String(response.student || '');
+    if (!studentIds.includes(sid)) continue;
+    const list = effortByStudent.get(sid) || [];
+    list.push(response);
+    effortByStudent.set(sid, list);
+  }
+  const eventByStudent = new Map<string, any[]>();
+  for (const event of events) {
+    const sid = String(event.student || '');
+    if (!studentIds.includes(sid)) continue;
+    if ((filters.from || filters.to) && !event.ts) continue;
+    if (filters.from && event.ts && new Date(event.ts) < filters.from) continue;
+    if (filters.to && event.ts && new Date(event.ts) > filters.to) continue;
+    if (filters.story) {
+      const story = normalizeStoryLabel(event.payload?.story || event.payload?.storyLabel || event.payload?.storyKey);
+      if (story !== filters.story) continue;
+    }
+    const list = eventByStudent.get(sid) || [];
+    list.push(event);
+    eventByStudent.set(sid, list);
+  }
+
+  const eventTypes = [
+    'audio_play', 'audio_pause', 'audio_skip', 'focus', 'blur', 'attempt',
+    'hint_request', 'feedback', 'mental_effort', 'paragraph_completed',
+    'break_completed', 'recall-attempt', 'intervention_started',
+    'intervention_completed', 'mcq_attempt', 'jumble_attempt', 'sentence_attempt',
+  ];
+  const header = [
+    'studentId', 'username', 'condition', 'storyOrder', 'treatmentStory', 'controlStory',
+    'offloadingScore', 'offloadingItem1', 'offloadingItem2', 'offloadingItem3', 'offloadingItem4', 'offloadingItem5',
+    'mentalEffortAverage', 'mentalEffortTreatment', 'mentalEffortControl', 'mentalEffortRatings',
+    'difficultyAverage', 'difficultyTreatment', 'difficultyControl', 'difficultyRatings', 'enjoymentAverage', 'enjoymentRatings', 'selfReportedEffort',
+    'attempts', 'wrongAttempts', 'correctAttempts', 'interventionStarted', 'interventionCompleted',
+    'interventionCompletionRate', 'mcqAttempts', 'jumbleAttempts', 'sentenceAttempts', 'recallAttempts',
+    'audioPlays', 'audioPauses', 'audioSkips', 'focusEvents', 'blurEvents', 'paragraphsCompleted', 'breaksCompleted',
+    'feedbackRecords', 'timeOnTaskMin', 'immediateOrthographicScore', 'delayedOrthographicScore', 'delayedSemanticScore',
+  ];
+  const average = (values: number[]) => values.length
+    ? Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 1000) / 1000
+    : '';
+  const rows = studentIds.map((sid) => {
+    const assignment = assignmentMap.get(sid) as any;
+    const user = userMap.get(sid) as any;
+    const survey = surveyMap.get(sid) as any;
+    const summary = summaryMap.get(sid) as any;
+    const studentEvents = eventByStudent.get(sid) || [];
+    const studentEffort = effortByStudent.get(sid) || [];
+    const counts = Object.fromEntries(eventTypes.map((type) => [type, 0])) as Record<string, number>;
+    const enjoyment: number[] = [];
+    const reportedEffort: string[] = [];
+    for (const event of studentEvents) {
+      if (eventTypes.includes(event.type)) counts[event.type] += 1;
+      if (event.type === 'feedback') {
+        if (typeof event.payload?.enjoyment === 'number') enjoyment.push(event.payload.enjoyment);
+        if (event.payload?.effort) reportedEffort.push(String(event.payload.effort));
+      }
+    }
+    const mentalEffortResponses = studentEffort.filter((response: any) => response.taskType !== 'difficulty');
+    const difficultyResponses = studentEffort.filter((response: any) => response.taskType === 'difficulty');
+    const mentalEffortValues = mentalEffortResponses.map((response: any) => Number(response.score)).filter(Number.isFinite);
+    const difficultyValues = difficultyResponses.map((response: any) => Number(response.score)).filter(Number.isFinite);
+    const treatmentStory = assignment?.hintsStory || '';
+    const controlStory = treatmentStory === 'A' ? 'B' : treatmentStory === 'B' ? 'A' : '';
+    return [
+      sid,
+      user?.username || user?.email || 'unknown',
+      toTreatmentControl(assignment?.condition?.type || 'unknown'),
+      assignment?.storyOrder || '',
+      treatmentStory,
+      controlStory,
+      survey?.offloadingScore ?? '',
+      ...(Array.isArray(survey?.offloadingItems) ? survey.offloadingItems.slice(0, 5) : ['', '', '', '', '']),
+      average(mentalEffortValues),
+      average(mentalEffortResponses.filter((r: any) => r.storyLabel === treatmentStory).map((r: any) => Number(r.score)).filter(Number.isFinite)),
+      average(mentalEffortResponses.filter((r: any) => r.storyLabel === controlStory).map((r: any) => Number(r.score)).filter(Number.isFinite)),
+      mentalEffortValues.length,
+      average(difficultyValues),
+      average(difficultyResponses.filter((r: any) => r.storyLabel === treatmentStory).map((r: any) => Number(r.score)).filter(Number.isFinite)),
+      average(difficultyResponses.filter((r: any) => r.storyLabel === controlStory).map((r: any) => Number(r.score)).filter(Number.isFinite)),
+      difficultyValues.length,
+      average(enjoyment),
+      enjoyment.length,
+      reportedEffort.join('|'),
+      counts.attempt,
+      studentEvents.filter((e: any) => e.type === 'attempt' && e.payload?.correct === false).length,
+      studentEvents.filter((e: any) => e.type === 'attempt' && e.payload?.correct === true).length,
+      counts.intervention_started,
+      counts.intervention_completed,
+      counts.intervention_started ? Math.round((counts.intervention_completed / counts.intervention_started) * 1000) / 1000 : '',
+      counts.mcq_attempt,
+      counts.jumble_attempt,
+      counts.sentence_attempt,
+      counts['recall-attempt'],
+      counts.audio_play,
+      counts.audio_pause,
+      counts.audio_skip,
+      counts.focus,
+      counts.blur,
+      counts.paragraph_completed,
+      counts.break_completed,
+      counts.feedback,
+      summary?.timeOnTaskMin ?? '',
+      summary?.immediateOrthographicScore ?? '',
+      summary?.delayedOrthographicScore ?? '',
+      summary?.delayedSemanticScore ?? '',
+    ];
+  });
+  return { header, rows };
+}
+
 function buildMasterResearchCsv(params: {
   summaryData: Awaited<ReturnType<typeof computeExperimentAnalytics>>;
   offloading: Awaited<ReturnType<typeof computeOffloadingAnalytics>>;
@@ -228,8 +361,8 @@ function buildMasterResearchCsv(params: {
         payload.isNoise ?? '',
         payload.attemptCount ?? '',
         payload.position || payload.effortPosition || '',
-        payload.score ?? payload.effortScore ?? '',
-        payload.difficulty ?? payload.difficultyScore ?? '',
+        payload.taskType === 'difficulty' ? '' : (payload.score ?? payload.effortScore ?? ''),
+        payload.taskType === 'difficulty' ? (payload.score ?? payload.difficulty ?? payload.difficultyScore ?? '') : (payload.difficulty ?? payload.difficultyScore ?? ''),
         payload.interventionId || '',
         e.type === 'intervention_started' ? true : '',
         e.type === 'intervention_completed' ? true : '',
@@ -1490,6 +1623,30 @@ router.get('/experiment/:id/csv', requireAuth, requireRole('teacher'), async (re
     return res.send(csv);
   }
   const filters = parseFilters(req);
+  if (type === 'behavioral-metrics') {
+    const [assignments, events, effortResponses, surveys] = await Promise.all([
+      Assignment.find({ experiment: req.params.id }).populate('condition', 'type').lean(),
+      Event.find({ experiment: req.params.id }).lean(),
+      EffortResponse.find({ experiment: req.params.id }).lean(),
+      PreStudySurvey.find({ experiment: req.params.id }).lean(),
+    ]);
+    const allowedStudentIds = Array.from(new Set(assignments.map((a: any) => String(a.student))));
+    const users = await User.find({ _id: { $in: allowedStudentIds } }).select('username email').lean();
+    const summary = await computeExperimentAnalytics(req.params.id, filters);
+    const behavioral = buildBehavioralMetricsCsv({
+      assignments,
+      events,
+      effortResponses,
+      surveys,
+      users,
+      summaryStudents: summary.students,
+      filters,
+    });
+    const csv = toCsv([behavioral.header, ...behavioral.rows]);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="experiment_${req.params.id}_behavioral_metrics.csv"`);
+    return res.send(csv);
+  }
   if (type === 'delayed-test') {
     const [assignments, events] = await Promise.all([
       Assignment.find({ experiment: req.params.id }).populate('condition', 'type').lean(),
@@ -1715,6 +1872,21 @@ router.get('/experiment/:id/research-export', requireAuth, requireRole('teacher'
     const offRows = offloading.perStudent.map((r: any) => [r.studentId, r.username, r.condition, r.offloadingScore ?? '', r.attempts, r.hints, r.hintRate, r.reveals, r.revealRate, r.delayedRecallAvg ?? '']);
     const offCsv = toCsv([offHeader, ...offRows]);
 
+    const [effortResponses, surveys] = await Promise.all([
+      EffortResponse.find({ experiment: expId }).lean(),
+      PreStudySurvey.find({ experiment: expId }).lean(),
+    ]);
+    const behavioral = buildBehavioralMetricsCsv({
+      assignments,
+      events,
+      effortResponses,
+      surveys,
+      users,
+      summaryStudents: summaryData.students,
+      filters,
+    });
+    const behavioralCsv = toCsv([behavioral.header, ...behavioral.rows]);
+
     // Codebook (markdown) - concise and practical
     const codebook = `# Research Export Codebook\n\n- students.csv: One row per student in the experiment.\n  - baselineAccuracy: target-word spelling accuracy at first occurrence (0-1).\n  - immediateOrthographicScore: target-word spelling accuracy at fourth occurrence/immediate recall (0-1).\n  - delayedOrthographicScore: spelling score from delayed recall (0-1).\n  - delayedSemanticScore: definition score from delayed recall (0-1).\n  - learningGain: delayedOrthographicScore minus baselineAccuracy.\n  - avgMentalEffort: Paas effort average, excluding difficulty ratings.\n  - avgMentalEffortIntervention/control: Paas effort by story condition.\n  - offloadingScore: 1-6 cognitive offloading survey average.\n  - phase1Condition/phase2Condition: treatment|control by story order.\n\n- words.csv: Per-word aggregates.\n- timeline.csv: Daily aggregates.\n- events.csv: Event log filtered by current UI filters.\n- offloading.csv: Per-student offloading analytics.\n\nRQ mapping:\n- RQ1: delayedOrthographicScore and learningGain.\n- RQ2: delayedSemanticScore.\n- RQ3: avgMentalEffort with immediateOrthographicScore and delayedOrthographicScore/delayedSemanticScore.\n- RQ4: offloadingScore, avgMentalEffortIntervention, avgMentalEffortControl, learningGain, and condition.\n`;
 
@@ -1729,6 +1901,7 @@ router.get('/experiment/:id/research-export', requireAuth, requireRole('teacher'
     archive.append(Buffer.from(timelineCsv, 'utf8'), { name: 'timeline.csv' });
     archive.append(Buffer.from(eventsCsv, 'utf8'), { name: 'events.csv' });
     archive.append(Buffer.from(offCsv, 'utf8'), { name: 'offloading.csv' });
+    archive.append(Buffer.from(behavioralCsv, 'utf8'), { name: 'behavioral_metrics.csv' });
     archive.append(Buffer.from(codebook, 'utf8'), { name: 'codebook.md' });
     archive.finalize();
   } catch (e) {

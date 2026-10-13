@@ -1042,7 +1042,7 @@ router.post('/effort', requireAuth, requireRole('student'), async (req: AuthedRe
       session: sessionId || undefined,
       student: req.user!.sub,
       type: 'mental_effort',
-      payload: { storyLabel, paragraphIndex, position, score },
+      payload: { taskType, storyLabel, paragraphIndex, position, score },
       ts: new Date(),
     });
     clearAnalyticsCache();
