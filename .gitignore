@@ -36,3 +36,9 @@ coverage/
 # Root-level env file (critical - never commit)
 /.env
 nul
+
+# Local/private research and AI-tool artifacts
+mongodb_backup_data/
+.claude/
+.agent.md
+.env.docker

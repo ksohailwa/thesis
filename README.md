@@ -68,7 +68,6 @@ SpellWise/
 ├── server/                 Express API, auth, persistence, AI, analytics
 ├── shared/                 Shared TypeScript contracts
 ├── docs/                   Architecture and application-flow notes
-├── mongodb_backup_data/    Local MongoDB backup artifacts
 ├── Dockerfile              Production multi-stage image
 ├── docker-compose.yml      Local container setup
 └── nginx.conf              Production proxy configuration
