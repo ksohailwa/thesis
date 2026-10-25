@@ -198,15 +198,6 @@ For Render or another container host, expose the configured `PORT`, use a MongoD
 - Test a complete student flow with a test experiment before inviting participants.
 - Verify condition mapping, recall timing, audio assets, and progress restoration before data collection.
 
-## Documentation
-
-- [Application flow](docs/APP_FLOW.md)
-- [Architecture](docs/ARCHITECTURE.md)
-- [Thesis framework](THESIS_FRAMEWORK.md)
-- [Thesis analysis](THESIS_ANALYSIS.md)
-- [Final thesis preparation](thesis%20final%20prep.md)
-- [Iteration notes](thesis%20iteration%20notes.md)
-
 ## License
 
 SpellWise is an internal research and educational prototype. Usage and redistribution must follow the applicable institutional, research, and data-protection requirements.
